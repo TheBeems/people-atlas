@@ -1,0 +1,29 @@
+import { PLUGIN_DATA_SCHEMA_VERSION } from "../constants";
+import type { PeopleAtlasSettings } from "./types";
+
+export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
+	schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
+	typeProperty: "type",
+	personTypeValue: "person",
+	relationshipTypeValue: "relationship",
+	personTag: "person",
+	personIdProperty: "person_id",
+	nameProperty: "name",
+	aliasesProperty: "aliases",
+	organisationsProperty: "organisations",
+	photoProperty: "photo",
+	contactsProperty: "contacts",
+	relationshipIdProperty: "relationship_id",
+	relationshipFromProperty: "from",
+	relationshipToProperty: "to",
+	relationshipTypesProperty: "relationship_types",
+	directionProperty: "direction",
+	closenessProperty: "closeness",
+	sinceProperty: "since",
+	lastContactProperty: "last_contact",
+	statusProperty: "status",
+	defaultCenterPersonId: "",
+	enableBases: true,
+	showLabels: true,
+	showDiagnostics: true,
+};

@@ -1,0 +1,9 @@
+{
+  "id": "people-atlas",
+  "name": "People Atlas",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.0",
+  "description": "Map people, relationships and interactions in your Obsidian vault.",
+  "author": "Mathijs",
+  "isDesktopOnly": false
+}

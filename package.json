@@ -1,0 +1,30 @@
+{
+  "name": "obsidian-people-atlas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Bases-native people and relationship atlas for Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run test && npm run build"
+  },
+  "keywords": [
+    "obsidian",
+    "people",
+    "contacts",
+    "personal-crm",
+    "relationship-graph",
+    "bases"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "esbuild": "^0.28.1",
+    "obsidian": "1.13.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

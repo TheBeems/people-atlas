@@ -1,4 +1,4 @@
-Status: open
+Status: done
 Created: 2026-07-25
 Updated: 2026-07-25
 
@@ -37,7 +37,7 @@ This is a parent plan and is not executable.
 1. `.10x/tickets/2026-07-25-incremental-graph-equivalence.md`
 2. `.10x/tickets/2026-07-25-mutation-identity-serialization.md`
 3. `.10x/tickets/2026-07-25-view-state-write-coordination.md`
-4. Shape a focused relationship-mutation UI spec and ticket with the user.
+4. `.10x/tickets/2026-07-25-relationship-editor-ui.md`
 
 The first three repairs are semantically independent but will be executed
 sequentially to keep review and evidence attributable to one ticket at a time.
@@ -88,22 +88,35 @@ sequentially to keep review and evidence attributable to one ticket at a time.
   56 passing tests, a passing production build and a pass review. All three
   correctness regressions are repaired; the next leg is the separate
   relationship-mutation UI shaping checkpoint.
+- 2026-07-25: The user ratified the relationship-editor surface, entrypoints,
+  storage path, confirmation and completion behavior. The active governing
+  spec is `.10x/specs/relationship-editor-ui.md`; implementation is owned by
+  the executable open ticket
+  `.10x/tickets/2026-07-25-relationship-editor-ui.md`. This parent shaping and
+  remediation plan is complete.
 
 ## Blockers
 
-None for the first three child repairs. Relationship UI shaping is intentionally
-deferred until it becomes the next executable leg.
+None. Relationship-editor implementation is separately owned by
+`.10x/tickets/2026-07-25-relationship-editor-ui.md`.
 
 ## Evidence
 
-See `.10x/evidence/2026-07-25-audit-regressions.md`.
+See `.10x/evidence/2026-07-25-audit-regressions.md` for the three repaired
+regressions and `.10x/specs/relationship-editor-ui.md` for the ratified
+follow-up contract.
 
 ## Review
 
 The three regression children passed their focused reviews and repository
-quality gates. Relationship-mutation UI remains intentionally unimplemented
-until its user-visible semantics are ratified.
+quality gates. Relationship-editor shaping is complete and contains no
+unresolved execution semantics. Its implementation remains intentionally
+unstarted pending separate authorization.
 
 ## Retrospective
 
-Pending.
+Separating the relationship UI from the mutation foundation prevented safe
+write APIs from being mistaken for a complete user workflow. The decisive
+shaping gap was the storage path: once that and the entrypoint/completion
+semantics were explicit, one bounded executable ticket could own the UI
+without expanding into P5 renderer interaction work.

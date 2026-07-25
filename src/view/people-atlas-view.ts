@@ -222,6 +222,13 @@ export class PeopleAtlasView extends ItemView {
 			organisations.textContent = node.organisations.join(" · ");
 			this.detailsEl.append(organisations);
 		}
+		if (node.kind === "person" && node.filePath) {
+			const createRelationshipButton = this.detailsEl.ownerDocument.createElement("button");
+			createRelationshipButton.type = "button";
+			createRelationshipButton.textContent = "Create relationship";
+			createRelationshipButton.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
+			this.detailsEl.append(createRelationshipButton);
+		}
 	}
 
 	private renderDiagnostics(snapshot: AtlasSnapshot): void {

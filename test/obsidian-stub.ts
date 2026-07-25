@@ -22,6 +22,20 @@ export class BasesView extends Component {}
 export class EditorSuggest extends Component {}
 export class PluginSettingTab extends Component {}
 export class ListValue {}
+export class Modal {
+	app: unknown;
+	containerEl = {} as HTMLElement;
+	modalEl = {} as HTMLElement;
+	titleEl = {} as HTMLElement;
+	contentEl = {} as HTMLElement;
+
+	constructor(app: unknown) {
+		this.app = app;
+	}
+
+	open(): void {}
+	close(): void {}
+}
 
 export const notices: string[] = [];
 

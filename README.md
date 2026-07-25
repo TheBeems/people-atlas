@@ -12,6 +12,7 @@ People Atlas is an Obsidian 1.13+ plugin scaffold for mapping people, explicit r
 - Wikilink-based contact resolution instead of display-name matching.
 - An incremental vault index: changed files are reparsed without rescanning the whole vault.
 - `@` person suggestions that insert stable wikilinks and explicitly create new notes in the configured People folder.
+- A validated relationship editor available from commands and selected people in both atlas views.
 - A deterministic canvas layout, pan, zoom, node dragging and keyboard-accessible node list.
 - Diagnostics for duplicate IDs and broken relationship endpoints.
 - Unit tests for identity, wikilinks, graph building and graph projection.
@@ -38,6 +39,13 @@ Copy or symlink this repository into:
 Reload Obsidian and enable **People Atlas** under Community plugins.
 
 The default People folder is `People/`. New people created from the editor mention menu receive a generated `person_id`; typing alone never creates a note.
+
+Use **People Atlas: Create relationship** from the Command Palette or select a
+person in either atlas and choose **Create relationship**. New relationship
+notes default to `People/Relationships/<Person A> - <Person B>.md`; the path is
+reviewable and existing notes are never overwritten. Use **People Atlas: Edit
+current relationship** while a relationship note is active to edit its
+supported metadata.
 
 A ready-to-copy plugin folder is also generated at `release/people-atlas/`.
 

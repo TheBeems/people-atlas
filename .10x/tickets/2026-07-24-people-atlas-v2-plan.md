@@ -143,6 +143,16 @@ Gate: CI produces a reproducible, verified release from an exact source revision
 - 2026-07-25: P3 child ticket was implemented and closed with passing tests/build and no significant review finding; P4 child spec and ticket were opened for projection modes, contact-health ordering and persisted view state.
 - 2026-07-25: P4 child ticket was implemented and closed with passing tests/build and no significant review finding; P5 is now the next priority.
 - 2026-07-25: The post-P4 audit remediation sequence closed its incremental graph, mutation identity and view-state ordering regressions with focused before/after evidence and 56 passing tests. The separate relationship-mutation UI semantics must be shaped with the user before further implementation; P5 remains the next numbered roadmap priority.
+- 2026-07-25: Relationship-editor semantics were ratified and recorded in
+  `.10x/specs/relationship-editor-ui.md`; the executable P3b follow-up is
+  `.10x/tickets/2026-07-25-relationship-editor-ui.md`. It is the immediate
+  implementation candidate before resuming the numbered roadmap at P5.
+- 2026-07-25: P3b relationship-editor UI was implemented and closed with one
+  shared modal, canonical create/edit entrypoints in standalone and Bases,
+  changed-field-only writes, 71 passing tests, a passing production build and
+  a pass review. P5 accessible/mobile renderer is again the next numbered
+  priority; live modal, Bases and mobile behavior remain part of its/P7's
+  integration risk.
 
 ## Blockers
 

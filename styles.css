@@ -110,6 +110,50 @@
 	min-height: 300px;
 }
 
+.people-atlas-selection-actions {
+	position: absolute;
+	z-index: var(--layer-popover);
+	inset: var(--size-4-3) var(--size-4-3) auto auto;
+	padding: var(--size-4-2);
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+}
+
+.people-atlas-relationship-form {
+	display: grid;
+	gap: var(--size-4-3);
+}
+
+.people-atlas-form-field {
+	display: grid;
+	gap: var(--size-4-1);
+}
+
+.people-atlas-form-field label {
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-form-field small {
+	color: var(--text-muted);
+}
+
+.people-atlas-form-field input,
+.people-atlas-form-field select {
+	width: 100%;
+}
+
+.people-atlas-form-error {
+	min-height: 1.5em;
+	color: var(--text-error);
+}
+
+.people-atlas-form-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+}
+
 @media (max-width: 700px) {
 	.people-atlas-body {
 		grid-template-columns: 1fr;

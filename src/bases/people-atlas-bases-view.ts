@@ -21,6 +21,7 @@ export class PeopleAtlasBasesView extends BasesView {
 	private visiblePaths = new Set<string>();
 	private selectedPath: string | undefined;
 	private activePath: string | undefined;
+	private selectionActionsEl: HTMLElement | undefined;
 
 	constructor(controller: QueryController, parent: HTMLElement, private readonly plugin: PeopleAtlasPlugin) {
 		super(controller);
@@ -47,10 +48,15 @@ export class PeopleAtlasBasesView extends BasesView {
 			},
 			onSelectNode: (node) => {
 				this.selectedPath = node?.filePath;
+				this.renderSelectionActions(node);
 				if (this.readCenterMode() === "selected-node") this.onDataUpdated();
 			},
 			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
+		this.selectionActionsEl = this.root.ownerDocument.createElement("div");
+		this.selectionActionsEl.className = "people-atlas-selection-actions";
+		this.selectionActionsEl.hidden = true;
+		this.root.append(this.selectionActionsEl);
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
 			this.activePath = this.app.workspace.getActiveFile()?.path;
 			if (this.readCenterMode() === "active-note") this.updateData();
@@ -195,6 +201,25 @@ export class PeopleAtlasBasesView extends BasesView {
 		if (!node.filePath) return;
 		const file = this.data.data.find((entry) => entry.file.path === node.filePath)?.file;
 		if (file) void this.app.workspace.getLeaf("tab").openFile(file);
+	}
+
+	private renderSelectionActions(node: AtlasNode | undefined): void {
+		if (!this.selectionActionsEl) return;
+		this.selectionActionsEl.replaceChildren();
+		if (
+			node?.kind !== "person"
+			|| !node.filePath
+			|| !this.plugin.index.getSnapshot().people.some((person) => person.filePath === node.filePath)
+		) {
+			this.selectionActionsEl.hidden = true;
+			return;
+		}
+		const button = this.selectionActionsEl.ownerDocument.createElement("button");
+		button.type = "button";
+		button.textContent = `Create relationship with ${node.label}`;
+		button.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
+		this.selectionActionsEl.append(button);
+		this.selectionActionsEl.hidden = false;
 	}
 }
 

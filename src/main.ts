@@ -1,4 +1,4 @@
-import { Notice, Plugin, type QueryController, type WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, TFile, type QueryController, type WorkspaceLeaf } from "obsidian";
 import { buildBasesOptions } from "./bases/options";
 import { PeopleAtlasBasesView } from "./bases/people-atlas-bases-view";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "./constants";
@@ -13,6 +13,7 @@ import { validatePeopleFolder, validateSettings } from "./settings/validate";
 import { PeopleAtlasView } from "./view/people-atlas-view";
 import { cloneViewState, DEFAULT_VIEW_STATE, type AtlasViewState } from "./settings/view-state";
 import { ViewStateWriteCoordinator } from "./settings/view-state-write-coordinator";
+import { RelationshipModal } from "./editor/relationship-modal";
 
 export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
@@ -52,6 +53,16 @@ export default class PeopleAtlasPlugin extends Plugin {
 			id: "open-people-atlas",
 			name: "Open People Atlas",
 			callback: () => void this.activateView(),
+		});
+		this.addCommand({
+			id: "create-relationship",
+			name: "Create relationship",
+			callback: () => this.openCreateRelationship(),
+		});
+		this.addCommand({
+			id: "edit-current-relationship",
+			name: "Edit current relationship",
+			callback: () => this.openEditCurrentRelationship(),
 		});
 		this.addSettingTab(new PeopleAtlasSettingTab(this));
 		this.registerEditorSuggest(new PersonMentionSuggest(this.app, this.index, this.mutations, () => this.settings));
@@ -127,5 +138,42 @@ export default class PeopleAtlasPlugin extends Plugin {
 		const leaf: WorkspaceLeaf = existing ?? this.app.workspace.getLeaf("tab");
 		if (!existing) await leaf.setViewState({ type: VIEW_TYPE_PEOPLE_ATLAS, active: true });
 		await this.app.workspace.revealLeaf(leaf);
+	}
+
+	openCreateRelationship(prefillPersonPath?: string): void {
+		const people = this.index.getSnapshot().people;
+		if (prefillPersonPath && !people.some((person) => person.filePath === prefillPersonPath)) {
+			new Notice("The selected person is no longer available in the People Atlas index.");
+			return;
+		}
+		new RelationshipModal(
+			this.app,
+			prefillPersonPath ? { kind: "create", prefillPersonPath } : { kind: "create" },
+			people,
+			this.mutations,
+		).open();
+	}
+
+	openEditCurrentRelationship(): void {
+		const file = this.app.workspace.getActiveFile();
+		const relationship = file
+			? this.index.getSnapshot().relationships.find((candidate) => candidate.filePath === file.path)
+			: undefined;
+		if (!(file instanceof TFile) || !relationship) {
+			new Notice("No editable relationship note is active.");
+			return;
+		}
+		const rawRelationshipId = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.relationshipIdProperty];
+		const explicitRelationshipId = typeof rawRelationshipId === "string" && rawRelationshipId.trim()
+			? rawRelationshipId.trim()
+			: undefined;
+		new RelationshipModal(
+			this.app,
+			explicitRelationshipId
+				? { kind: "edit", file, relationship, explicitRelationshipId }
+				: { kind: "edit", file, relationship },
+			this.index.getSnapshot().people,
+			this.mutations,
+		).open();
 	}
 }

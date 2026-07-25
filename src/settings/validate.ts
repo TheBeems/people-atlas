@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS } from "./defaults";
 import type { PeopleAtlasSettings } from "./types";
 
 const STRING_KEYS: Array<keyof PeopleAtlasSettings> = [
+	"peopleFolder",
 	"typeProperty",
 	"personTypeValue",
 	"relationshipTypeValue",
@@ -46,5 +47,12 @@ export function validateSettings(raw: unknown): PeopleAtlasSettings {
 export function validatePropertyName(value: string): string | undefined {
 	if (!value.trim()) return "Enter a property name.";
 	if (/\s/.test(value)) return "Property names cannot contain whitespace.";
+	return undefined;
+}
+
+export function validatePeopleFolder(value: string): string | undefined {
+	const normalized = value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+	if (!normalized) return "Enter a People folder.";
+	if (normalized.split("/").some((part) => part === ".." || part === ".")) return "The People folder must stay inside the vault.";
 	return undefined;
 }

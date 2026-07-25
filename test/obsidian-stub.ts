@@ -15,3 +15,7 @@ export class Component {
 		this.eventRefs.push(eventRef);
 	}
 }
+
+export function normalizePath(path: string): string {
+	return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+}

@@ -3,6 +3,7 @@ import type { PeopleAtlasSettings } from "./types";
 
 export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
 	schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
+	peopleFolder: "People",
 	typeProperty: "type",
 	personTypeValue: "person",
 	relationshipTypeValue: "relationship",

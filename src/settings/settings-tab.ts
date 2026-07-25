@@ -1,7 +1,7 @@
 import { PluginSettingTab, type SettingDefinitionItem } from "obsidian";
 import type PeopleAtlasPlugin from "../main";
 import type { PeopleAtlasSettings } from "./types";
-import { validatePropertyName } from "./validate";
+import { validatePeopleFolder, validatePropertyName } from "./validate";
 
 export class PeopleAtlasSettingTab extends PluginSettingTab {
 	plugin: PeopleAtlasPlugin;
@@ -31,6 +31,11 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		});
 
 		return [
+			{
+				name: "People folder",
+				desc: "Default vault folder for person notes created by People Atlas.",
+				control: { type: "text", key: "peopleFolder", placeholder: "People", validate: validatePeopleFolder },
+			},
 			{
 				name: "Person type value",
 				desc: "Value in the type property that identifies a person note.",

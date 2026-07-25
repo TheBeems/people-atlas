@@ -1,5 +1,6 @@
 export interface PeopleAtlasSettings {
 	schemaVersion: number;
+	peopleFolder: string;
 	typeProperty: string;
 	personTypeValue: string;
 	relationshipTypeValue: string;

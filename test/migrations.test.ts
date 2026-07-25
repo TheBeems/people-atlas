@@ -30,4 +30,19 @@ describe("plugin settings migrations", () => {
 		expect(result.writeEnabled).toBe(false);
 		expect(result.error).toContain("showLabels");
 	});
+
+	it("migrates schema v2 with an empty view-state collection", () => {
+		const result = loadPluginSettings({ schemaVersion: 2, peopleFolder: "People" });
+
+		expect(result.writeEnabled).toBe(true);
+		expect(result.migrated).toBe(true);
+		expect(result.settings.viewStates).toEqual({});
+	});
+
+	it("rejects malformed view state without enabling writes", () => {
+		const result = loadPluginSettings({ schemaVersion: PLUGIN_DATA_SCHEMA_VERSION, viewStates: "invalid" });
+
+		expect(result.writeEnabled).toBe(false);
+		expect(result.error).toContain("viewStates");
+	});
 });

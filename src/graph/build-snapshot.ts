@@ -12,6 +12,7 @@ import type {
 	RelationshipRecord,
 } from "../domain/types";
 import { stableHash } from "../utils/hash";
+import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-elements";
 
 export interface LinkResolver {
 	(referenceTarget: string, sourcePath: string): string | undefined;
@@ -44,11 +45,11 @@ function duplicateDiagnostics(resolutionPeople: PersonRecord[], outputPeople: Pe
 	for (const [id, people] of grouped) {
 		if (people.size < 2) continue;
 		diagnostics.push({
-			id: `duplicate:${id}`,
+			id: `duplicate-person-id:${id}`,
 			severity: "error",
 			code: "duplicate-person-id",
 			message: `Multiple person notes use the ID “${id}”.`,
-			filePaths: [...people.values()].map((person) => person.filePath),
+			filePaths: [...people.values()].map((person) => person.filePath).sort(),
 		});
 	}
 	return diagnostics;
@@ -118,11 +119,11 @@ function relationshipDuplicateDiagnostics(relationships: RelationshipRecord[]): 
 	for (const [id, matches] of grouped) {
 		if (matches.length < 2) continue;
 		diagnostics.push({
-			id: `duplicate-relationship:${id}`,
+			id: `duplicate-relationship-id:${id}`,
 			severity: "error",
 			code: "duplicate-relationship-id",
 			message: `Multiple relationship notes use the ID “${id}”.`,
-			filePaths: matches.map((relationship) => relationship.filePath),
+			filePaths: matches.map((relationship) => relationship.filePath).sort(),
 		});
 	}
 	return diagnostics;
@@ -131,16 +132,6 @@ function relationshipDuplicateDiagnostics(relationships: RelationshipRecord[]): 
 function nodeIdForOutputPerson(person: PersonRecord, duplicateIds: Set<PersonId>): NodeId {
 	if (!duplicateIds.has(person.id)) return person.id;
 	return `ambiguous:${stableHash(`${person.id}:${person.filePath}`)}`;
-}
-
-function filteredEndpointDiagnostic(filePath: string, label: string): AtlasDiagnostic {
-	return {
-		id: `filtered-endpoint:${filePath}:${label}`,
-		severity: "info",
-		code: "filtered-endpoint",
-		message: `The ${label} endpoint in “${filePath}” is a resolved person outside the current Base selection.`,
-		filePaths: [filePath],
-	};
 }
 
 export function buildAtlasSnapshot(
@@ -187,7 +178,7 @@ export function buildAtlasSnapshot(
 	for (const person of outputPeople) contactPeopleByPath.set(person.filePath, person);
 	for (const person of contactPeopleByPath.values()) {
 		const sourceId = outputNodeIdByPath.get(person.filePath);
-		for (const reference of person.contacts) {
+		for (const [contactIndex, reference] of person.contacts.entries()) {
 			const target = resolveReference(reference, person.filePath, context);
 			if (!target) {
 				const ambiguousMatches = context.peopleById.get(reference.target);
@@ -238,12 +229,16 @@ export function buildAtlasSnapshot(
 			const targetId = context.outputNodeIdByPath.get(target.filePath);
 			if (!sourceId || !targetId) {
 				hiddenEdgeCount += 1;
-				diagnostics.push(filteredEndpointDiagnostic(person.filePath, "contact"));
+				diagnostics.push(filteredEndpointDiagnostic(
+					person.filePath,
+					"contact",
+					`${referenceKey(reference)}:${contactIndex}`,
+				));
 				continue;
 			}
 			if (targetId === sourceId) continue;
 			edges.push({
-				id: `edge:${stableHash(`${sourceId}:${targetId}:contact`)}`,
+				id: inferredContactEdgeId(sourceId, targetId),
 				sourceId,
 				targetId,
 				types: ["contact"],

@@ -2,6 +2,7 @@ import { PLUGIN_DATA_SCHEMA_VERSION } from "../constants";
 import { DEFAULT_SETTINGS } from "./defaults";
 import { validatePeopleFolder, validateSettings } from "./validate";
 import type { PeopleAtlasSettings } from "./types";
+import { validateStoredViewStates } from "./view-state";
 
 export interface PluginSettingsLoadResult {
 	settings: PeopleAtlasSettings;
@@ -24,6 +25,11 @@ function validateStoredShape(value: Record<string, unknown>): string | undefined
 			if (typeof raw !== "boolean") return `${key} must be a boolean.`;
 			continue;
 		}
+		if (key === "viewStates") {
+			const viewStateError = validateStoredViewStates(raw);
+			if (viewStateError) return viewStateError;
+			continue;
+		}
 		if (key in DEFAULT_SETTINGS && typeof DEFAULT_SETTINGS[key as keyof PeopleAtlasSettings] === "string" && typeof raw !== "string") {
 			return `${key} must be a string.`;
 		}
@@ -39,8 +45,17 @@ function migrateV1ToV2(value: Record<string, unknown>): Record<string, unknown> 
 	};
 }
 
+function migrateV2ToV3(value: Record<string, unknown>): Record<string, unknown> {
+	return {
+		...value,
+		viewStates: value.viewStates ?? {},
+		schemaVersion: 3,
+	};
+}
+
 const MIGRATIONS: Record<number, (value: Record<string, unknown>) => Record<string, unknown>> = {
 	1: migrateV1ToV2,
+	2: migrateV2ToV3,
 };
 
 export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {

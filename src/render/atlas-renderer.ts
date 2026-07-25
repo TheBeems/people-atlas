@@ -2,11 +2,13 @@ import type { AtlasNode, AtlasSnapshot, NodeId } from "../domain/types";
 import type { PeopleAtlasSettings } from "../settings/types";
 import { Camera } from "./camera";
 import { createDeterministicLayout, type LayoutPoint } from "./layout";
+import { captureLayoutSnapshot, restoreLayoutSnapshot, type LayoutSnapshot } from "./layout-state";
 
 export interface AtlasRendererCallbacks {
 	onOpenNode(node: AtlasNode): void;
 	onCenterNode(node: AtlasNode): void;
 	onSelectNode(node: AtlasNode | undefined): void;
+	onLayoutChanged?(layout: LayoutSnapshot): void;
 }
 
 interface DragState {
@@ -72,9 +74,10 @@ export class AtlasRenderer {
 		this.resize();
 	}
 
-	setGraph(snapshot: AtlasSnapshot): void {
+	setGraph(snapshot: AtlasSnapshot, savedLayout?: LayoutSnapshot): void {
 		this.snapshot = snapshot;
 		this.positions = createDeterministicLayout(snapshot);
+		if (savedLayout) this.restoreLayoutSnapshot(savedLayout);
 		if (this.selectedId && !snapshot.nodes.some((node) => node.id === this.selectedId)) {
 			this.selectedId = undefined;
 			this.callbacks.onSelectNode(undefined);
@@ -100,6 +103,20 @@ export class AtlasRenderer {
 		this.camera.scale = Math.min(2, Math.max(0.2, Math.min((this.width - 80) / graphWidth, (this.height - 80) / graphHeight)));
 		this.camera.x = this.width / 2 - ((minX + maxX) / 2) * this.camera.scale;
 		this.camera.y = this.height / 2 - ((minY + maxY) / 2) * this.camera.scale;
+		this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
+		this.requestDraw();
+	}
+
+	getLayoutSnapshot(): LayoutSnapshot {
+		return captureLayoutSnapshot(this.positions, this.camera);
+	}
+
+	restoreLayoutSnapshot(layout: LayoutSnapshot): void {
+		const restored = restoreLayoutSnapshot(layout, this.snapshot.nodes, this.positions, this.camera, this.camera.minScale, this.camera.maxScale);
+		this.positions = restored.positions;
+		this.camera.x = restored.camera.x;
+		this.camera.y = restored.camera.y;
+		this.camera.scale = restored.camera.scale;
 		this.requestDraw();
 	}
 
@@ -278,12 +295,14 @@ export class AtlasRenderer {
 		if (!this.drag || this.drag.pointerId !== event.pointerId) return;
 		if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
 		this.drag = undefined;
+		this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
 	};
 
 	private readonly onWheel = (event: WheelEvent): void => {
 		event.preventDefault();
 		const point = this.pointerPosition(event);
 		this.camera.zoomAt(point.x, point.y, event.deltaY < 0 ? 1.12 : 0.88);
+		this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
 		this.requestDraw();
 	};
 

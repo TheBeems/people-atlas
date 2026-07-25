@@ -1,6 +1,6 @@
 import { BasesView, type BasesPropertyId, type QueryController } from "obsidian";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS } from "../constants";
-import type { AtlasNode, AtlasSnapshot, IndexDelta, RawIndexSnapshot } from "../domain/types";
+import type { AtlasNode, AtlasSnapshot, IndexDelta, ProjectionCenterMode, ProjectionMode, RawIndexSnapshot } from "../domain/types";
 import { buildGraphSnapshot } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
@@ -8,6 +8,8 @@ import type PeopleAtlasPlugin from "../main";
 import { AtlasRenderer } from "../render/atlas-renderer";
 import { adaptBasesEntries, type BasesFieldMapping } from "./entry-adapter";
 import { BASES_OPTION_KEYS } from "./options";
+import { buildLayoutKey, rememberCenter, type AtlasViewState } from "../settings/view-state";
+import type { LayoutSnapshot } from "../render/layout-state";
 
 export class PeopleAtlasBasesView extends BasesView {
 	override readonly type = BASES_VIEW_TYPE_PEOPLE_ATLAS;
@@ -17,6 +19,8 @@ export class PeopleAtlasBasesView extends BasesView {
 	private canonicalSnapshot: RawIndexSnapshot = { people: [], relationships: [], diagnostics: [] };
 	private fullSnapshot: AtlasSnapshot | undefined;
 	private visiblePaths = new Set<string>();
+	private selectedPath: string | undefined;
+	private activePath: string | undefined;
 
 	constructor(controller: QueryController, parent: HTMLElement, private readonly plugin: PeopleAtlasPlugin) {
 		super(controller);
@@ -25,27 +29,40 @@ export class PeopleAtlasBasesView extends BasesView {
 		parent.append(this.root);
 	}
 
-	override onload(): void {
+		override onload(): void {
+		this.activePath = this.app.workspace.getActiveFile()?.path;
 		this.renderer = new AtlasRenderer(this.root, () => ({
 			...this.plugin.settings,
 			showLabels: this.readBoolean(BASES_OPTION_KEYS.showLabels, this.plugin.settings.showLabels),
 		}), {
 			onOpenNode: (node) => this.openNode(node),
-			onCenterNode: (node) => {
+			 onCenterNode: (node) => {
 				if (node.kind === "person") {
 					this.config.set(BASES_OPTION_KEYS.centerPersonId, node.id);
+					this.config.set(BASES_OPTION_KEYS.centerMode, "configured");
+					this.selectedPath = node.filePath;
+					this.persistViewState(node.personId);
 					this.onDataUpdated();
 				}
 			},
-			onSelectNode: () => undefined,
+			onSelectNode: (node) => {
+				this.selectedPath = node?.filePath;
+				if (this.readCenterMode() === "selected-node") this.onDataUpdated();
+			},
+			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
+		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+			this.activePath = this.app.workspace.getActiveFile()?.path;
+			if (this.readCenterMode() === "active-note") this.updateData();
+		}));
 		this.unsubscribeIndex = this.plugin.index.subscribe((snapshot, delta) => {
 			this.canonicalSnapshot = snapshot;
 			this.updateData(delta);
 		});
 	}
 
-	override onunload(): void {
+		override onunload(): void {
+		void this.persistLayout(undefined, true);
 		this.unsubscribeIndex?.();
 		this.renderer?.destroy();
 		this.root.remove();
@@ -71,12 +88,34 @@ export class PeopleAtlasBasesView extends BasesView {
 			);
 		this.fullSnapshot = full;
 		this.visiblePaths = nextVisiblePaths;
+		this.activePath = this.app.workspace.getActiveFile()?.path;
+		const state = this.getViewState();
+		const centerMode = this.readCenterMode(state.centerMode);
+		const projectionMode = this.readProjectionMode(state.projectionMode);
+		const hops = this.readInteger(BASES_OPTION_KEYS.hops, state.hops, 0);
+		const maxNodes = this.readInteger(BASES_OPTION_KEYS.maxNodes, state.maxNodes, 1);
+		if (state.centerMode !== centerMode || state.projectionMode !== projectionMode || state.hops !== hops || state.maxNodes !== maxNodes) {
+			void this.plugin.saveViewState(this.viewConfigurationKey(), { ...state, centerMode, projectionMode, hops, maxNodes });
+		}
 		const center = this.config.get(BASES_OPTION_KEYS.centerPersonId);
-		this.renderer.setGraph(projectGraph(full, {
-			centerId: typeof center === "string" && center ? center : undefined,
-			hops: 2,
-			maxNodes: 500,
-		}));
+		const centerId = typeof center === "string" && center ? center : state.centerHistory[0];
+		const centerPath = centerMode === "active-note" ? this.activePath : centerMode === "selected-node" ? this.selectedPath : undefined;
+		const projected = projectGraph(full, {
+			centerMode,
+			projectionMode,
+			centerId: centerMode === "configured" ? centerId : undefined,
+			centerPath,
+			hops,
+			maxNodes,
+		});
+		const layoutKey = buildLayoutKey(this.viewConfigurationKey(), {
+			...state,
+			centerMode,
+			projectionMode,
+			hops,
+			maxNodes,
+		}, centerId, centerPath);
+		this.renderer.setGraph(projected, state.layouts[layoutKey]);
 	}
 
 	private readMapping(): BasesFieldMapping {
@@ -93,6 +132,63 @@ export class PeopleAtlasBasesView extends BasesView {
 	private readBoolean(key: string, fallback: boolean): boolean {
 		const value = this.config.get(key);
 		return typeof value === "boolean" ? value : fallback;
+	}
+
+	private readCenterMode(fallback: ProjectionCenterMode = "configured"): ProjectionCenterMode {
+		const value = this.config.get(BASES_OPTION_KEYS.centerMode);
+		return value === "configured" || value === "active-note" || value === "selected-node" || value === "none" ? value : fallback;
+	}
+
+	private readProjectionMode(fallback: ProjectionMode = "ego"): ProjectionMode {
+		const value = this.config.get(BASES_OPTION_KEYS.projectionMode);
+		return value === "ego" || value === "free-network" || value === "contact-health" ? value : fallback;
+	}
+
+	private readInteger(key: string, fallback: number, minimum: number): number {
+		const value = this.config.get(key);
+		const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+		return Number.isInteger(parsed) && parsed >= minimum ? parsed : fallback;
+	}
+
+	private viewConfigurationKey(): string {
+		const configured = this.config.get(BASES_OPTION_KEYS.stateKey);
+		const name = this.config.name.trim();
+		const key = typeof configured === "string" && configured.trim() ? configured.trim() : name;
+		return `bases:${key || "default"}`;
+	}
+
+	private getViewState(): AtlasViewState {
+		return this.plugin.getViewState(this.viewConfigurationKey());
+	}
+
+	private persistViewState(centerPersonId?: string): void {
+		const key = this.viewConfigurationKey();
+		const state = this.getViewState();
+		const next = {
+			...state,
+			centerMode: this.readCenterMode(state.centerMode),
+			projectionMode: this.readProjectionMode(state.projectionMode),
+			centerHistory: centerPersonId ? rememberCenter(state, centerPersonId).centerHistory : state.centerHistory,
+		};
+		void this.plugin.saveViewState(key, next);
+	}
+
+	private async persistLayout(layout?: LayoutSnapshot, flush = false): Promise<void> {
+		if (!this.renderer) return;
+		const viewConfigurationKey = this.viewConfigurationKey();
+		const state = this.getViewState();
+		const center = this.config.get(BASES_OPTION_KEYS.centerPersonId);
+		const centerId = typeof center === "string" && center ? center : state.centerHistory[0];
+		const centerMode = this.readCenterMode(state.centerMode);
+		const projectionMode = this.readProjectionMode(state.projectionMode);
+		const hops = this.readInteger(BASES_OPTION_KEYS.hops, state.hops, 0);
+		const maxNodes = this.readInteger(BASES_OPTION_KEYS.maxNodes, state.maxNodes, 1);
+		const centerPath = centerMode === "active-note" ? this.activePath : centerMode === "selected-node" ? this.selectedPath : undefined;
+		const key = buildLayoutKey(viewConfigurationKey, { ...state, centerMode, projectionMode, hops, maxNodes }, centerId, centerPath);
+		state.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
+		const pending = this.plugin.saveViewState(viewConfigurationKey, state);
+		if (flush) await this.plugin.flushViewState(viewConfigurationKey);
+		await pending;
 	}
 
 	private openNode(node: AtlasNode): void {

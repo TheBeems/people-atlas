@@ -1,5 +1,5 @@
 import { normalizePath, type App, type TFile } from "obsidian";
-import { resolveRelationshipId } from "../domain/identity";
+import { resolvePersonId, resolveRelationshipId } from "../domain/identity";
 import type { PersonIndex } from "../index/person-index";
 import type { PeopleAtlasSettings } from "../settings/types";
 import {
@@ -22,6 +22,13 @@ export class MutationError extends Error {
 }
 
 export class AtlasMutationService {
+	private mutationQueue: Promise<void> = Promise.resolve();
+	// 10x: reservations bridge plugin-owned writes until the asynchronous index
+	// observes them; replace with index acknowledgements if that lifecycle gains
+	// an awaitable commit API.
+	private readonly reservedPersonIds = new Map<string, string>();
+	private readonly reservedRelationshipIds = new Map<string, string>();
+
 	constructor(
 		private readonly app: App,
 		private readonly getSettings: () => PeopleAtlasSettings,
@@ -30,7 +37,23 @@ export class AtlasMutationService {
 		private readonly generateId: () => string = () => `person-${crypto.randomUUID()}`,
 	) {}
 
-	async createPerson(input: PersonMutationInput): Promise<TFile> {
+	createPerson(input: PersonMutationInput): Promise<TFile> {
+		return this.runExclusive(() => this.createPersonExclusive(input));
+	}
+
+	createRelationship(input: RelationshipMutationInput): Promise<TFile> {
+		return this.runExclusive(() => this.createRelationshipExclusive(input));
+	}
+
+	updatePerson(file: TFile, updates: PersonUpdates): Promise<void> {
+		return this.runExclusive(() => this.updatePersonExclusive(file, updates));
+	}
+
+	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void> {
+		return this.runExclusive(() => this.updateRelationshipExclusive(file, updates));
+	}
+
+	private async createPersonExclusive(input: PersonMutationInput): Promise<TFile> {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const errors = validatePersonInput(input, settings);
@@ -40,37 +63,51 @@ export class AtlasMutationService {
 		if (!fileName) errors.push("The person name cannot produce a valid note name.");
 		const path = normalizePath(`${folder}/${fileName}.md`);
 		const personId = input.personId?.trim() || this.generateId();
-		if (this.index.getPeoplePathsById(personId).length > 0) errors.push(`person_id “${personId}” is already in use.`);
+		if (this.identityInUse(personId, path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
+			errors.push(`person_id “${personId}” is already in use.`);
+		}
 		if (this.app.vault.getAbstractFileByPath(path)) errors.push(`A note already exists at “${path}”.`);
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
 		await this.ensureFolder(folder);
 		const frontmatter = this.personFrontmatter(input, personId, settings);
-		return this.app.vault.create(path, `---\n${frontmatter}---\n`);
+		const file = await this.app.vault.create(path, `---\n${frontmatter}---\n`);
+		this.rememberIdentity(this.reservedPersonIds, personId, path);
+		return file;
 	}
 
-	async createRelationship(input: RelationshipMutationInput): Promise<TFile> {
+	private async createRelationshipExclusive(input: RelationshipMutationInput): Promise<TFile> {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const path = normalizePath(input.path);
 		const errors = validateRelationshipInput({ ...input, path }, settings);
 
 		const relationshipId = input.relationshipId?.trim() || resolveRelationshipId(undefined, path);
-		if (this.index.getRelationshipPathsById(relationshipId).length > 0) errors.push(`relationship_id “${relationshipId}” is already in use.`);
+		if (this.identityInUse(relationshipId, path, this.reservedRelationshipIds, (id) => this.index.getRelationshipPathsById(id))) {
+			errors.push(`relationship_id “${relationshipId}” is already in use.`);
+		}
 		if (this.app.vault.getAbstractFileByPath(path)) errors.push(`A note already exists at “${path}”.`);
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
 		await this.ensureFolder(path.split("/").slice(0, -1).join("/"));
 		const frontmatter = this.relationshipFrontmatter({ ...input, path, relationshipId }, settings);
-		return this.app.vault.create(path, `---\n${frontmatter}---\n`);
+		const file = await this.app.vault.create(path, `---\n${frontmatter}---\n`);
+		this.rememberIdentity(this.reservedRelationshipIds, relationshipId, path);
+		return file;
 	}
 
-	async updatePerson(file: TFile, updates: PersonUpdates): Promise<void> {
+	private async updatePersonExclusive(file: TFile, updates: PersonUpdates): Promise<void> {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
 		const name = updates.name === null ? "" : updates.name ?? String(current[settings.nameProperty] ?? file.basename);
-		const personId = updates.personId === null ? undefined : updates.personId ?? (typeof current[settings.personIdProperty] === "string" ? current[settings.personIdProperty] : undefined);
+		const cachedPersonId = typeof current[settings.personIdProperty] === "string"
+			? current[settings.personIdProperty]
+			: this.reservedIdentityForPath(this.reservedPersonIds, file.path);
+		const personId = updates.personId === null ? undefined : updates.personId ?? cachedPersonId;
 		const errors = validatePersonInput({ name, personId }, settings);
-		if (personId && this.index.getPeoplePathsById(personId).some((path) => path !== file.path)) errors.push(`person_id “${personId}” is already in use.`);
+		const resultingPersonId = resolvePersonId(personId, file.path);
+		if (this.identityInUse(resultingPersonId, file.path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
+			errors.push(`person_id “${resultingPersonId}” is already in use.`);
+		}
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
 		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			this.apply(frontmatter, settings.nameProperty, updates.name);
@@ -80,15 +117,19 @@ export class AtlasMutationService {
 			this.apply(frontmatter, settings.photoProperty, updates.photo);
 			this.apply(frontmatter, settings.contactsProperty, updates.contacts);
 		});
+		this.rememberIdentity(this.reservedPersonIds, resultingPersonId, file.path);
 	}
 
-	async updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void> {
+	private async updateRelationshipExclusive(file: TFile, updates: RelationshipUpdates): Promise<void> {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
 		const value = <T>(key: string, update: T | null | undefined): T | undefined => update === null ? undefined : update ?? current[key] as T | undefined;
 		const path = file.path;
-		const relationshipId = value<string>(settings.relationshipIdProperty, updates.relationshipId);
+		const cachedRelationshipId = typeof current[settings.relationshipIdProperty] === "string"
+			? current[settings.relationshipIdProperty]
+			: this.reservedIdentityForPath(this.reservedRelationshipIds, file.path);
+		const relationshipId = updates.relationshipId === null ? undefined : updates.relationshipId ?? cachedRelationshipId;
 		const input: RelationshipMutationInput = {
 			path,
 			from: value<string>(settings.relationshipFromProperty, updates.from) ?? "",
@@ -108,7 +149,10 @@ export class AtlasMutationService {
 		const status = value<"active" | "dormant" | "ended">(settings.statusProperty, updates.status);
 		if (status !== undefined) input.status = status;
 		const errors = validateRelationshipInput(input, settings);
-		if (relationshipId && this.index.getRelationshipPathsById(relationshipId).some((existing) => existing !== file.path)) errors.push(`relationship_id “${relationshipId}” is already in use.`);
+		const resultingRelationshipId = resolveRelationshipId(relationshipId, file.path);
+		if (this.identityInUse(resultingRelationshipId, file.path, this.reservedRelationshipIds, (id) => this.index.getRelationshipPathsById(id))) {
+			errors.push(`relationship_id “${resultingRelationshipId}” is already in use.`);
+		}
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
 		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			this.apply(frontmatter, settings.relationshipIdProperty, updates.relationshipId);
@@ -121,6 +165,43 @@ export class AtlasMutationService {
 			this.apply(frontmatter, settings.lastContactProperty, updates.lastContact);
 			this.apply(frontmatter, settings.statusProperty, updates.status);
 		});
+		this.rememberIdentity(this.reservedRelationshipIds, resultingRelationshipId, file.path);
+	}
+
+	private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+		const result = this.mutationQueue.then(operation, operation);
+		this.mutationQueue = result.then(() => undefined, () => undefined);
+		return result;
+	}
+
+	private identityInUse(
+		id: string,
+		currentPath: string,
+		reservations: Map<string, string>,
+		getIndexedPaths: (id: string) => string[],
+	): boolean {
+		const indexedPaths = getIndexedPaths(id);
+		const reservedPath = reservations.get(id);
+		if (reservedPath && (indexedPaths.includes(reservedPath) || !this.app.vault.getAbstractFileByPath(reservedPath))) {
+			reservations.delete(id);
+		}
+		const activeReservation = reservations.get(id);
+		return indexedPaths.some((path) => path !== currentPath)
+			|| (activeReservation !== undefined && activeReservation !== currentPath);
+	}
+
+	private rememberIdentity(reservations: Map<string, string>, id: string, path: string): void {
+		for (const [reservedId, reservedPath] of reservations) {
+			if (reservedPath === path && reservedId !== id) reservations.delete(reservedId);
+		}
+		reservations.set(id, path);
+	}
+
+	private reservedIdentityForPath(reservations: Map<string, string>, path: string): string | undefined {
+		for (const [id, reservedPath] of reservations) {
+			if (reservedPath === path) return id;
+		}
+		return undefined;
 	}
 
 	private assertWritable(): void {

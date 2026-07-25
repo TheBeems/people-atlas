@@ -27,4 +27,5 @@ export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
 	enableBases: true,
 	showLabels: true,
 	showDiagnostics: true,
+	viewStates: {},
 };

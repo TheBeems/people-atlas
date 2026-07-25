@@ -7,6 +7,11 @@ export const BASES_OPTION_KEYS = {
 	organisationsProperty: "organisationsProperty",
 	contactsProperty: "contactsProperty",
 	centerPersonId: "centerPersonId",
+	centerMode: "centerMode",
+	projectionMode: "projectionMode",
+	hops: "hops",
+	maxNodes: "maxNodes",
+	stateKey: "stateKey",
 	showLabels: "showLabels",
 } as const;
 
@@ -47,6 +52,36 @@ export function buildBasesOptions(): BasesOptions[] {
 			key: BASES_OPTION_KEYS.centerPersonId,
 			displayName: "Center person ID",
 			placeholder: "Optional person_id",
+		},
+		{
+			type: "text",
+			key: BASES_OPTION_KEYS.centerMode,
+			displayName: "Center mode",
+			placeholder: "configured, active-note, selected-node or none",
+		},
+		{
+			type: "text",
+			key: BASES_OPTION_KEYS.projectionMode,
+			displayName: "Projection mode",
+			placeholder: "ego, free-network or contact-health",
+		},
+		{
+			type: "text",
+			key: BASES_OPTION_KEYS.hops,
+			displayName: "Ego hops",
+			placeholder: "2",
+		},
+		{
+			type: "text",
+			key: BASES_OPTION_KEYS.maxNodes,
+			displayName: "Maximum nodes",
+			placeholder: "500",
+		},
+		{
+			type: "text",
+			key: BASES_OPTION_KEYS.stateKey,
+			displayName: "View state key",
+			placeholder: "Optional stable key for this view",
 		},
 		{
 			type: "toggle",

@@ -11,11 +11,16 @@ import { PeopleAtlasSettingTab } from "./settings/settings-tab";
 import type { PeopleAtlasSettings } from "./settings/types";
 import { validatePeopleFolder, validateSettings } from "./settings/validate";
 import { PeopleAtlasView } from "./view/people-atlas-view";
+import { cloneViewState, DEFAULT_VIEW_STATE, type AtlasViewState } from "./settings/view-state";
+import { ViewStateWriteCoordinator } from "./settings/view-state-write-coordinator";
 
 export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
 	readonly index = new PersonIndex(this.app, () => this.settings);
 	private settingsWriteEnabled = true;
+	private readonly viewStateWrites = new ViewStateWriteCoordinator(
+		(viewConfigurationKey, state) => this.persistViewState(viewConfigurationKey, state),
+	);
 	readonly mutations = new AtlasMutationService(this.app, () => this.settings, () => this.settingsWriteEnabled, this.index);
 
 	override async onload(): Promise<void> {
@@ -59,23 +64,61 @@ export default class PeopleAtlasPlugin extends Plugin {
 			new Notice("People Atlas settings are read-only until the plugin data is repaired.");
 			return;
 		}
-		const previous = this.settings;
-		const next = validateSettings({ ...this.settings, [key]: value });
-		if (validatePeopleFolder(next.peopleFolder)) {
-			new Notice("The People folder is invalid.");
-			return;
+		const saved = await this.viewStateWrites.serialize(async () => {
+			const previous = this.settings;
+			const next = validateSettings({ ...this.settings, [key]: value });
+			if (validatePeopleFolder(next.peopleFolder)) {
+				new Notice("The People folder is invalid.");
+				return false;
+			}
+			this.settings = next;
+			try {
+				await this.saveData(this.settings);
+				return true;
+			} catch (error) {
+				this.settings = previous;
+				new Notice(`People Atlas settings could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+				return false;
+			}
+		});
+		if (!saved) return;
+		this.index.rebuildAll();
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PEOPLE_ATLAS)) {
+			if (leaf.view instanceof PeopleAtlasView) leaf.view.onSettingsChanged();
 		}
-		this.settings = next;
+	}
+
+	getViewState(viewConfigurationKey: string): AtlasViewState {
+		return this.viewStateWrites.getLatest(viewConfigurationKey)
+			?? cloneViewState(this.settings.viewStates[viewConfigurationKey] ?? DEFAULT_VIEW_STATE);
+	}
+
+	saveViewState(viewConfigurationKey: string, state: AtlasViewState): Promise<void> {
+		if (!this.settingsWriteEnabled) {
+			new Notice("People Atlas view state is read-only until the plugin data is repaired.");
+			return Promise.resolve();
+		}
+		return this.viewStateWrites.schedule(viewConfigurationKey, state);
+	}
+
+	flushViewState(viewConfigurationKey: string): Promise<void> {
+		return this.viewStateWrites.flush(viewConfigurationKey);
+	}
+
+	private async persistViewState(viewConfigurationKey: string, state: AtlasViewState): Promise<void> {
+		const previous = this.settings;
+		this.settings = {
+			...this.settings,
+			viewStates: {
+				...this.settings.viewStates,
+				[viewConfigurationKey]: structuredClone(state),
+			},
+		};
 		try {
 			await this.saveData(this.settings);
 		} catch (error) {
 			this.settings = previous;
-			new Notice(`People Atlas settings could not be saved: ${error instanceof Error ? error.message : String(error)}`);
-			return;
-		}
-		this.index.rebuildAll();
-		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PEOPLE_ATLAS)) {
-			if (leaf.view instanceof PeopleAtlasView) leaf.view.onSettingsChanged();
+			new Notice(`People Atlas view state could not be saved: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 

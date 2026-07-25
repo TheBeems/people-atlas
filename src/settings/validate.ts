@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS } from "./defaults";
+import { normalizeViewStates } from "./view-state";
 import type { PeopleAtlasSettings } from "./types";
 
 const STRING_KEYS: Array<keyof PeopleAtlasSettings> = [
@@ -40,6 +41,7 @@ export function validateSettings(raw: unknown): PeopleAtlasSettings {
 	for (const key of ["enableBases", "showLabels", "showDiagnostics"] as const) {
 		if (typeof source[key] === "boolean") result[key] = source[key];
 	}
+	if (source.viewStates !== undefined) result.viewStates = normalizeViewStates(source.viewStates);
 
 	return result;
 }

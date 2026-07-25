@@ -12,6 +12,7 @@ import type {
 } from "../domain/types";
 import { stableHash } from "../utils/hash";
 import type { LinkResolver } from "./build-snapshot";
+import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-elements";
 
 export interface ApplyGraphDeltaOptions {
 	resolutionPeople?: PersonRecord[];
@@ -74,6 +75,7 @@ function addContactEdge(
 	people: PersonRecord[],
 	resolveLink: LinkResolver,
 	diagnostics: Map<string, AtlasDiagnostic>,
+	contactIndex: number,
 ): void {
 	const source = findNodeForPerson(nodes, person);
 	const resolved = resolveReference(reference, person.filePath, people, resolveLink);
@@ -101,8 +103,9 @@ function addContactEdge(
 			filePaths: [person.filePath],
 		});
 		if (targetId === source.id) return;
-		edges.set(`edge:${stableHash(`${source.id}:${targetId}:contact`)}`, {
-			id: `edge:${stableHash(`${source.id}:${targetId}:contact`)}`,
+		const id = inferredContactEdgeId(source.id, targetId);
+		edges.set(id, {
+			id,
 			sourceId: source.id,
 			targetId,
 			types: ["contact"],
@@ -115,17 +118,18 @@ function addContactEdge(
 
 	const target = findNodeForPerson(nodes, resolved.person);
 	if (!source || !target) {
-		addDiagnostic(diagnostics, {
-			id: `filtered-endpoint:${person.filePath}:contact`,
-			severity: "info",
-			code: "filtered-endpoint",
-			message: `The contact endpoint in “${person.filePath}” is a resolved person outside the current Base selection.`,
-			filePaths: [person.filePath],
-		});
+		addDiagnostic(
+			diagnostics,
+			filteredEndpointDiagnostic(
+				person.filePath,
+				"contact",
+				`${referenceKey(reference)}:${contactIndex}`,
+			),
+		);
 		return;
 	}
 	if (source.id === target.id) return;
-	const id = `edge:${stableHash(`${source.id}:${target.id}:contact`)}`;
+	const id = inferredContactEdgeId(source.id, target.id);
 	edges.set(id, {
 		id,
 		sourceId: source.id,
@@ -254,7 +258,10 @@ export function applyGraphDelta(
 		if (affected) continue;
 		const sourceId = idRemap.get(edge.sourceId) ?? edge.sourceId;
 		const targetId = idRemap.get(edge.targetId) ?? edge.targetId;
-		edges.set(edge.id, { ...edge, sourceId, targetId });
+		const edgeId = edge.inferred && edge.types.includes("contact")
+			? inferredContactEdgeId(sourceId, targetId)
+			: edge.id;
+		edges.set(edgeId, { ...edge, id: edgeId, sourceId, targetId });
 	}
 
 	const diagnostics = new Map<string, AtlasDiagnostic>();
@@ -265,7 +272,9 @@ export function applyGraphDelta(
 	for (const diagnostic of delta.diagnostics) addDiagnostic(diagnostics, diagnostic);
 
 	for (const person of changedPeople.values()) {
-		for (const contact of person.contacts) addContactEdge(edges, remappedNodes, person, contact, people, resolveLink, diagnostics);
+		for (const [contactIndex, contact] of person.contacts.entries()) {
+			addContactEdge(edges, remappedNodes, person, contact, people, resolveLink, diagnostics, contactIndex);
+		}
 	}
 	for (const relationship of delta.affectedRelationships) {
 		addRelationshipEdge(edges, remappedNodes, relationship, people, duplicateRelationshipIds, resolveLink, diagnostics);

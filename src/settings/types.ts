@@ -1,3 +1,5 @@
+import type { AtlasViewState } from "./view-state";
+
 export interface PeopleAtlasSettings {
 	schemaVersion: number;
 	peopleFolder: string;
@@ -24,4 +26,5 @@ export interface PeopleAtlasSettings {
 	enableBases: boolean;
 	showLabels: boolean;
 	showDiagnostics: boolean;
+	viewStates: Record<string, AtlasViewState>;
 }

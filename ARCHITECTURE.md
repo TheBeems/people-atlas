@@ -32,12 +32,14 @@ projectGraph()
 AtlasRenderer
 ```
 
-## Current limitations of the scaffold
+## Current limitations
 
 - The layout is deterministic and radial/circular, not yet force-directed.
 - Photos are parsed but not yet decoded and painted.
-- Relationship editing and note creation are not implemented yet.
+- Full timeline, organization/community and shortest-path projections are not
+  implemented yet.
 - The Bases adapter maps the selected people while explicit relationship notes are supplied by the canonical `PersonIndex` for both views.
-- Graph state is not yet persisted per view.
+- Graph center, projection and layout state is persisted per view
+  configuration; mobile and pop-out integration coverage remains future work.
 
-These are intentional boundaries for v0.1. See `ROADMAP.md`.
+These are intentional boundaries for the current P4 slice. See `ROADMAP.md`.

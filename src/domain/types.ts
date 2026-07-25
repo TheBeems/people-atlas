@@ -3,6 +3,8 @@ export type RelationshipId = string;
 export type NodeId = PersonId | `ghost:${string}` | `ambiguous:${string}`;
 export type RelationshipDirection = "undirected" | "source-to-target";
 export type RelationshipStatus = "active" | "dormant" | "ended";
+export type ProjectionCenterMode = "configured" | "active-note" | "selected-node" | "none";
+export type ProjectionMode = "ego" | "free-network" | "contact-health";
 
 export interface PersonReference {
 	raw: string;
@@ -50,7 +52,9 @@ export interface AtlasDiagnostic {
 		| "filtered-endpoint"
 		| "unresolved-relationship-endpoint"
 		| "self-relationship"
-		| "node-limit";
+		| "node-limit"
+		| "projection-center-unresolved"
+		| "projection-center-ambiguous";
 	message: string;
 	filePaths: string[];
 	targetPath?: string | undefined;
@@ -116,7 +120,10 @@ export interface IndexDelta {
 }
 
 export interface ProjectGraphOptions {
+	centerMode?: ProjectionCenterMode | undefined;
+	projectionMode?: ProjectionMode | undefined;
 	centerId?: PersonId | undefined;
-	hops: number;
-	maxNodes: number;
+	centerPath?: string | undefined;
+	hops?: number | undefined;
+	maxNodes?: number | undefined;
 }

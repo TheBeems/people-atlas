@@ -1,6 +1,6 @@
 Status: open
 Created: 2026-07-24
-Updated: 2026-07-24
+Updated: 2026-07-25
 
 # People Atlas v2 implementation plan
 
@@ -140,6 +140,9 @@ Gate: CI produces a reproducible, verified release from an exact source revision
 - 2026-07-24: P1 remains the only executable child ticket; later child tickets will be opened as their prerequisites become verified.
 - 2026-07-24: P1 completed with passing tests/build and no significant review finding; P2 is now the next executable priority.
 - 2026-07-24: P2 child ticket was opened, implemented and closed with passing tests/build and no significant review finding; P3 is now the next executable priority.
+- 2026-07-25: P3 child ticket was implemented and closed with passing tests/build and no significant review finding; P4 child spec and ticket were opened for projection modes, contact-health ordering and persisted view state.
+- 2026-07-25: P4 child ticket was implemented and closed with passing tests/build and no significant review finding; P5 is now the next priority.
+- 2026-07-25: The post-P4 audit remediation sequence closed its incremental graph, mutation identity and view-state ordering regressions with focused before/after evidence and 56 passing tests. The separate relationship-mutation UI semantics must be shaped with the user before further implementation; P5 remains the next numbered roadmap priority.
 
 ## Blockers
 

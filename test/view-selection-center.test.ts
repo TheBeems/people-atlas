@@ -51,14 +51,18 @@ interface StandaloneHarness {
 	viewState: AtlasViewState;
 	viewConfigurationKey: string;
 	fullSnapshot: AtlasSnapshot;
+	plugin: { index: { getSnapshot(): { people: Array<{ id: string; filePath: string }> } } };
 	renderer: { setGraph: ReturnType<typeof vi.fn> };
 	handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void;
+	canCreateRelationship(node: AtlasNode | undefined): boolean;
 }
 
 interface BasesHarness {
 	selectedPath: string | undefined;
 	selectedCenterPath: string | undefined;
+	plugin: { index: { getSnapshot(): { people: Array<{ id: string; filePath: string }> } } };
 	handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void;
+	canCreateRelationship(node: AtlasNode | undefined): boolean;
 	renderSelectionActions: ReturnType<typeof vi.fn>;
 	readCenterMode: ReturnType<typeof vi.fn>;
 	onDataUpdated: ReturnType<typeof vi.fn>;
@@ -74,6 +78,7 @@ function standaloneHarness(): StandaloneHarness {
 		viewState: { ...structuredClone(DEFAULT_VIEW_STATE), centerMode: "selected-node", projectionMode: "ego", hops: 0 },
 		viewConfigurationKey: "standalone",
 		fullSnapshot,
+		plugin: { index: { getSnapshot: () => ({ people: [{ id: alice.id, filePath: alice.filePath as string }] }) } },
 		renderer: { setGraph: vi.fn() },
 	});
 	return harness;
@@ -84,6 +89,7 @@ function basesHarness(): BasesHarness {
 	Object.assign(harness, {
 		selectedPath: undefined,
 		selectedCenterPath: undefined,
+		plugin: { index: { getSnapshot: () => ({ people: [{ id: alice.id, filePath: alice.filePath as string }] }) } },
 		renderSelectionActions: vi.fn(),
 		readCenterMode: vi.fn(() => "selected-node"),
 		onDataUpdated: vi.fn(),
@@ -136,5 +142,17 @@ describe("owning-view selected-node center", () => {
 		view.handleNodeSelection(ambiguous, "list");
 		expect(view.selectedCenterPath).toBe(alice.filePath);
 		expect(view.onDataUpdated).not.toHaveBeenCalled();
+	});
+
+	it("both adapters grant Create only to the exact current canonical stable node", () => {
+		const staleSamePath: AtlasNode = { ...alice, id: "stale-alice" };
+		const staleSameId: AtlasNode = { ...alice, filePath: "People/Alice moved.md" };
+		for (const view of [standaloneHarness(), basesHarness()]) {
+			expect(view.canCreateRelationship(alice)).toBe(true);
+			expect(view.canCreateRelationship(staleSamePath)).toBe(false);
+			expect(view.canCreateRelationship(staleSameId)).toBe(false);
+			expect(view.canCreateRelationship(ghost)).toBe(false);
+			expect(view.canCreateRelationship(ambiguous)).toBe(false);
+		}
 	});
 });

@@ -120,6 +120,10 @@ export class PeopleAtlasView extends ItemView {
 				this.renderSnapshot();
 			},
 			onSelectNode: (node, source) => this.handleNodeSelection(node, source),
+			canCreateRelationship: (node) => this.canCreateRelationship(node),
+			onCreateRelationship: (node) => {
+				if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
+			},
 			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
@@ -230,7 +234,7 @@ export class PeopleAtlasView extends ItemView {
 			organisations.textContent = node.organisations.join(" · ");
 			this.detailsEl.append(organisations);
 		}
-		if (isResolvedAtlasPersonNode(node)) {
+		if (this.canCreateRelationship(node)) {
 			const createRelationshipButton = this.detailsEl.ownerDocument.createElement("button");
 			createRelationshipButton.type = "button";
 			createRelationshipButton.textContent = "Create relationship";
@@ -268,6 +272,13 @@ export class PeopleAtlasView extends ItemView {
 	private openNode(node: AtlasNode): void {
 		if (!isResolvedAtlasPersonNode(node)) return;
 		this.openPath(node.filePath);
+	}
+
+	private canCreateRelationship(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
+		return Boolean(
+			isResolvedAtlasPersonNode(node)
+			&& this.plugin.index.getSnapshot().people.some((person) => person.id === node.id && person.filePath === node.filePath),
+		);
 	}
 
 	private openPath(path: string): void {

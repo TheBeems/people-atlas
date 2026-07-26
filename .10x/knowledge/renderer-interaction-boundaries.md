@@ -61,6 +61,20 @@ selection, pop-out or view-adapter behavior after P5a.
   Playwright-backed Vitest browser project.
 - Owning-view projection side effects need adapter-level coverage because a
   renderer-only browser harness cannot observe private center inputs.
+- Match proof to the layer that can produce valid evidence. The pure touch
+  controller owns deterministic pointer identity, partial-lift re-baselining,
+  no-jump continuation and persistence cardinality. Protocol-valid trusted
+  Chromium input owns simultaneous pinch/centroid pan through final release.
+  The real two-to-one transition remains an Obsidian Mobile integration check.
+- Validate browser-protocol payloads before dispatch. A browser accepting an
+  out-of-contract CDP message does not make its gesture semantics portable or
+  reviewable.
+- Cardinality assertions must cover every intermediate transition. Checking
+  only the first lift and final release would not detect accidental
+  persistence during survivor moves.
+- Treat browser lifecycle APIs as failure boundaries: ignore non-finite
+  pointer coordinates, contain pointer-capture exceptions by stable pointer
+  ID and roll back all sheet state if native `showModal()` fails.
 - Inline Vitest projects require `extends: true` to inherit the repository's
   Obsidian alias.
 - Browser, adapter and pure graph tests prove different boundaries; do not
@@ -70,10 +84,13 @@ selection, pop-out or view-adapter behavior after P5a.
 ## References
 
 - `.10x/specs/accessible-semantic-renderer.md`
+- `.10x/specs/mobile-touch-interaction.md`
 - `.10x/specs/projection-modes-layout-state.md`
 - `.10x/tickets/2026-07-26-accessible-semantic-renderer.md`
+- `.10x/tickets/2026-07-26-mobile-touch-interaction.md`
 - `src/domain/node-capabilities.ts`
 - `src/render/atlas-renderer.ts`
+- `src/render/touch-gesture.ts`
 - `src/view/people-atlas-view.ts`
 - `src/bases/people-atlas-bases-view.ts`
 - `test/browser/atlas-renderer.browser.test.ts`

@@ -50,6 +50,10 @@ export class PeopleAtlasBasesView extends BasesView {
 				}
 			},
 			onSelectNode: (node, source) => this.handleNodeSelection(node, source),
+			canCreateRelationship: (node) => this.canCreateRelationship(node),
+			onCreateRelationship: (node) => {
+				if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
+			},
 			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
 		this.selectionActionsEl = this.root.ownerDocument.createElement("div");
@@ -211,13 +215,17 @@ export class PeopleAtlasBasesView extends BasesView {
 		if (file) void this.app.workspace.getLeaf("tab").openFile(file);
 	}
 
+	private canCreateRelationship(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
+		return Boolean(
+			isResolvedAtlasPersonNode(node)
+			&& this.plugin.index.getSnapshot().people.some((person) => person.id === node.id && person.filePath === node.filePath),
+		);
+	}
+
 	private renderSelectionActions(node: AtlasNode | undefined): void {
 		if (!this.selectionActionsEl) return;
 		this.selectionActionsEl.replaceChildren();
-		if (
-			!isResolvedAtlasPersonNode(node)
-			|| !this.plugin.index.getSnapshot().people.some((person) => person.filePath === node.filePath)
-		) {
+		if (!this.canCreateRelationship(node)) {
 			this.selectionActionsEl.hidden = true;
 			return;
 		}

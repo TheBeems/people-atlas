@@ -74,13 +74,18 @@ Gate: projections are pure transformations with deterministic output, explicit h
 
 ### P5 — Accessible renderer and mobile interaction
 
-Owner: `.10x/tickets/2026-07-26-accessible-semantic-renderer.md` (P5a)
+Completed: `.10x/tickets/2026-07-26-accessible-semantic-renderer.md` (P5a)
+
+Completed: `.10x/tickets/2026-07-26-mobile-touch-interaction.md` (P5b)
 
 Split renderer responsibilities where the boundaries are justified. Keep canvas as the visual surface and add a semantic alternative graph/list with keyboard navigation, focus management, relation descriptions, context actions and reduced-motion handling. Add pinch zoom, one-finger pan, long press, touch-sized targets, bottom-sheet controls and pop-out-window correctness.
 
 Depends on: P4 projection/state contract and P2 diagnostics/navigation data.
 
-Gate: keyboard, screen-reader-oriented alternative view, touch and pop-out behavior are covered by a browser harness.
+Gate: keyboard and semantic alternatives are browser-covered; touch combines
+isolated gesture-state proof with protocol-valid trusted Chromium input.
+Actual Obsidian Mobile partial lift and pop-out behavior remain explicit
+P7/manual validation items.
 
 ### P6 — Worker, image cache and performance
 
@@ -168,12 +173,26 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   final verification passed 19 files and 82 tests plus production build and
   diff hygiene. P5b touch gestures and complete mobile controls are now the
   next shaping priority.
+- 2026-07-26: P5b touch semantics were ratified: tap selects, one-finger
+  touch always pans, two fingers pinch/centroid-pan, and touch never drags
+  nodes. A 500 ms long press with an 8 CSS pixel movement boundary opens an
+  action-only sheet; 44-pixel Zoom out, Zoom in, Fit and Details controls
+  provide discoverable alternatives. `.10x/specs/mobile-touch-interaction.md`
+  is active and `.10x/tickets/2026-07-26-mobile-touch-interaction.md` is the
+  next executable child.
+- 2026-07-26: P5b closed after implementation, two independent-review repair
+  rounds and a final pass verdict. Touch tap/pan/pinch/long-press, mobile
+  controls, guarded native sheet actions, owning-window cleanup and
+  protocol-valid trusted Chromium input are complete with 96 passing tests
+  and a passing production build. The user ratified layered partial-lift
+  evidence: deterministic controller coverage now, with real Obsidian Mobile
+  integration retained as P7/manual validation. P6 worker/cache/performance
+  shaping is the next numbered roadmap priority.
 
 ## Blockers
 
-None for planning. P5a has an executable child ticket; its Playwright provider
-and Chromium setup are expected implementation prerequisites, not parent-plan
-blockers.
+None for planning. P5 is complete within its explicit automated/source
+boundary; P6 is the next child to shape.
 
 ## Evidence
 

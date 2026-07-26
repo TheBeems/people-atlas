@@ -65,15 +65,19 @@
 }
 
 .people-atlas-view-modes button,
+.people-atlas-graph-actions button,
 .people-atlas-person-button,
-.people-atlas-semantic-actions button {
+.people-atlas-semantic-actions button,
+.people-atlas-details-sheet button {
 	min-width: 24px;
 	min-height: 24px;
 }
 
 .people-atlas-view-modes button:focus-visible,
+.people-atlas-graph-actions button:focus-visible,
 .people-atlas-person-button:focus-visible,
-.people-atlas-semantic-actions button:focus-visible {
+.people-atlas-semantic-actions button:focus-visible,
+.people-atlas-details-sheet button:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
@@ -101,6 +105,60 @@
 
 .people-atlas-canvas:focus-visible {
 	box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+
+.people-atlas-graph-actions {
+	position: absolute;
+	z-index: var(--layer-popover);
+	inset: var(--size-4-3, 12px) var(--size-4-3, 12px) auto auto;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: var(--size-4-2, 8px);
+	max-width: calc(100% - 2 * var(--size-4-3, 12px));
+}
+
+.people-atlas-details-sheet {
+	width: min(560px, calc(100% - 2 * var(--size-4-4, 16px)));
+	max-width: none;
+	max-height: min(80vh, 720px);
+	padding: 0;
+	overflow: hidden;
+	color: var(--text-normal);
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l, 12px);
+	transition: none;
+	animation: none;
+}
+
+.people-atlas-details-sheet::backdrop {
+	background: var(--background-modifier-cover);
+}
+
+.people-atlas-details-sheet-content {
+	max-height: inherit;
+	padding: var(--size-4-4, 16px);
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.people-atlas-details-sheet-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--size-4-3, 12px);
+}
+
+.people-atlas-details-sheet-header h2 {
+	margin-block: 0 var(--size-4-3, 12px);
+}
+
+.people-atlas-details-sheet-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2, 8px);
+	margin-top: var(--size-4-4, 16px);
 }
 
 .people-atlas-sidebar {
@@ -250,6 +308,32 @@
 		max-height: 32vh;
 		border-left: 0;
 		border-top: 1px solid var(--background-modifier-border);
+	}
+}
+
+@media (max-width: 700px), (pointer: coarse) {
+	.people-atlas-view-modes button,
+	.people-atlas-graph-actions button,
+	.people-atlas-details-sheet button {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.people-atlas-details-sheet {
+		inset: auto 0 0;
+		width: 100%;
+		max-height: min(78vh, calc(100dvh - env(safe-area-inset-top, 0px)));
+		margin: auto 0 0;
+		border-width: 1px 0 0;
+		border-radius: var(--radius-l, 12px) var(--radius-l, 12px) 0 0;
+	}
+
+	.people-atlas-details-sheet-content {
+		padding:
+			var(--size-4-4, 16px)
+			max(var(--size-4-4, 16px), env(safe-area-inset-right, 0px))
+			max(var(--size-4-4, 16px), env(safe-area-inset-bottom, 0px))
+			max(var(--size-4-4, 16px), env(safe-area-inset-left, 0px));
 	}
 }
 

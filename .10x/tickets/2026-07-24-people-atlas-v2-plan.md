@@ -1,6 +1,6 @@
 Status: open
 Created: 2026-07-24
-Updated: 2026-07-26
+Updated: 2026-07-27
 
 # People Atlas v2 implementation plan
 
@@ -115,12 +115,13 @@ remain proposals until the user explicitly ratifies them.
 
 ### P7 — Expanded test matrix
 
-Completed child:
+Completed children:
 
 - `.10x/tickets/2026-07-26-controlled-obsidian-integration-harness.md` (P7a)
+- `.10x/tickets/2026-07-26-generated-graph-index-invariants.md` (P7b)
 
-Next shaping candidate: P7b generated graph/index invariants. It has no active
-specification or executable ticket yet.
+Next shaping candidate: P7c missing high-DPI and real-pop-out browser coverage.
+It has no active specification or executable ticket yet.
 
 P7 is split into independently verifiable children:
 
@@ -308,11 +309,36 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   its executor. Reusable controlled-runtime boundaries are distilled in
   `.10x/knowledge/controlled-obsidian-integration-testing.md`. P7b generated
   graph/index invariant shaping is the next automated roadmap checkpoint.
+- 2026-07-26: P7a was committed locally as `0047449`. Read-only P7b shaping
+  traced the remaining generated-coverage gap to three pure contracts:
+  canonical snapshot invariants, valid graph-delta/full-rebuild equivalence
+  and `IndexState` equivalence with a path-owned reference model. The active
+  contract is `.10x/specs/generated-graph-index-invariants.md`; the executable
+  child is `.10x/tickets/2026-07-26-generated-graph-index-invariants.md`.
+  It uses a bounded dependency-free deterministic corpus and stops for separate
+  repair authorization if a valid seed exposes a product defect. No P7b
+  implementation occurred in this shaping turn.
+- 2026-07-26: The user explicitly authorized P7b implementation. The child now
+  adds dependency-free deterministic snapshot, graph-delta and index-state
+  families with 64 fixed seeds each and replayable family/seed/operation
+  context. Executor verification passed 3 generated files/192 focused tests,
+  25 files/302 full-suite tests, the production build and diff hygiene without
+  product source, dependency, lockfile, browser/integration, performance or
+  release changes. P7b remains `active` pending fresh independent review.
+- 2026-07-27: Initial independent P7b review found three significant proof
+  gaps in relationship-entity churn, direct snapshot assertions and lifecycle
+  failure context. The user authorized exactly those repairs. Post-repair
+  focused 3-file/192-test and full 25-file/302-test gates, production build and
+  diff hygiene passed without product or dependency changes. Fresh independent
+  re-review returned `pass`; P7b closed as `done`. Reusable generated-test
+  boundaries are distilled in
+  `.10x/knowledge/generated-invariant-testing.md`. P7c high-DPI and real-pop-out
+  browser-matrix shaping is the next automated roadmap checkpoint.
 
 ## Blockers
 
-None for planning. P5, measured P6 and P7a are closed within their explicit
-evidence boundaries. P7b generated invariant shaping is next.
+None for planning. P5, measured P6, P7a and P7b are closed within their
+explicit evidence boundaries. P7c browser-matrix shaping is next.
 
 ## Evidence
 
@@ -335,6 +361,15 @@ evidence boundaries. P7b generated invariant shaping is next.
 - P7a controlled-runtime implementation, executor gates, initial findings,
   authorized repairs and final `pass` re-review are owned by
   `.10x/tickets/2026-07-26-controlled-obsidian-integration-harness.md`.
+- P7b's active generated-invariant contract and executable ticket are
+  `.10x/specs/generated-graph-index-invariants.md` and
+  `.10x/tickets/2026-07-26-generated-graph-index-invariants.md`.
+- P7b executor evidence is owned by its child ticket: 3 generated files/192
+  focused tests, 25 files/302 full-suite tests, production build and diff
+  hygiene passed without product-source or dependency changes.
+- P7b's authorized repair and fresh independent `pass` re-review are recorded
+  in its child ticket; reusable lessons are in
+  `.10x/knowledge/generated-invariant-testing.md`.
 
 ## Review
 

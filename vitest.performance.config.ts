@@ -77,6 +77,15 @@ export default defineConfig({
 			{
 				extends: true,
 				test: {
+					name: "performance-graph-delta",
+					environment: "node",
+					include: ["test/performance/graph-delta-characterization.perf.ts"],
+					testTimeout: 1_200_000,
+				},
+			},
+			{
+				extends: true,
+				test: {
 					name: "performance-browser",
 					include: ["test/performance/browser-characterization.perf.ts"],
 					testTimeout: 1_200_000,

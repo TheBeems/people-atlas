@@ -89,8 +89,10 @@ P7/manual validation items.
 
 ### P6 — Worker, image cache and performance
 
-Completed child:
-`.10x/tickets/2026-07-26-performance-characterization.md` (P6a)
+Completed children:
+
+- `.10x/tickets/2026-07-26-performance-characterization.md` (P6a)
+- `.10x/tickets/2026-07-26-incremental-graph-delta-performance.md` (P6b)
 
 Move expensive physics/community work to a Web Worker when graph size warrants it. Add seeded positions, incremental layout updates, bounded image decoding/cache and frame-coalesced rendering. Establish thresholds for worker activation and memory/latency budgets.
 
@@ -228,12 +230,40 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   around incremental graph-delta substage attribution and main-thread lookup
   simplification before considering a Worker; candidate budgets remain
   unratified.
+- 2026-07-26: P6a was committed locally as `2fb576c`. Read-only P6b shaping
+  then traced the leading hypothesis to the retained-edge loop in
+  `applyGraphDelta()`: each edge performs two linear
+  `previous.nodes.find()` endpoint lookups, yielding an O(E*N) path for the
+  calibrated 5,000-node/40,000-edge stress case. The durable investigation is
+  `.10x/research/2026-07-26-graph-delta-hot-path.md`. The smallest recommended
+  scope is direct graph-delta substage timing followed, if confirmed, by
+  per-call lookup maps that preserve full-rebuild equivalence. A Worker,
+  persistent cache, image cache, dependency and public API change remain out
+  of scope. The performance gate and conditional implementation trigger await
+  user ratification before a P6b spec or executable ticket is opened.
+- 2026-07-26: The user ratified P6b's conditional trigger: direct graph-delta
+  must account for at least 80% of the pre-change 5,000-node stress aggregate
+  median before optimization. The final calibrated aggregate gates are
+  `750 ms` median and `1,000 ms` p95. The benchmark remains manual; Workers,
+  persistent caches, image caches, dependencies, public API changes and CI
+  thresholds remain excluded. The active governing contract is
+  `.10x/specs/incremental-graph-delta-performance.md`; the executable child is
+  `.10x/tickets/2026-07-26-incremental-graph-delta-performance.md`.
+- 2026-07-26: P6b execution persisted a pre-change graph-delta/aggregate
+  median ratio of `0.990815`, authorizing only local lookup maps in
+  `applyGraphDelta()`. Final 5,000-node/40,000-edge stress aggregate timing was
+  `30.231 ms` median / `41.898 ms` p95 versus the ratified
+  `750/1,000 ms` gates. Correctness, build and diff gates passed, and fresh
+  independent review returned `pass` with no finding. P6b closed as `done`.
+  P6 is complete within the measured scope: current evidence rejects a Worker
+  and image cache rather than leaving them as assumed deliverables. New
+  workload evidence may shape a later P6 child without weakening this result.
 
 ## Blockers
 
 None for planning. P5 is complete within its explicit automated/source
-boundary and P6a is closed. Later P6 behavior awaits the user checkpoint for
-candidate budgets and the bounded P6b architecture scope.
+boundary. P6a and P6b are closed; P7 expanded test-matrix shaping is the next
+roadmap checkpoint.
 
 ## Evidence
 
@@ -244,6 +274,15 @@ candidate budgets and the bounded P6b architecture scope.
   `.10x/evidence/.storage/2026-07-26-performance-characterization.json`.
 - P6a's final targeted independent confirmation returned `pass`; the child is
   closed as `done`.
+- P6b hot-path source attribution is recorded in
+  `.10x/research/2026-07-26-graph-delta-hot-path.md`; it does not yet constitute
+  direct substage timing or implementation authorization.
+- P6b's active contract and executable ticket are
+  `.10x/specs/incremental-graph-delta-performance.md` and
+  `.10x/tickets/2026-07-26-incremental-graph-delta-performance.md`.
+- P6b baseline/final raw and Markdown evidence are the four
+  `.10x/evidence/2026-07-26-incremental-graph-delta-*` artifacts. Independent
+  review returned `pass`; the child is closed as `done`.
 
 ## Review
 

@@ -19,6 +19,7 @@ export interface ScalingTrend {
 }
 
 export function validateCombinedPerformanceResults(nodeResult: unknown, browserResult: unknown): void;
+export function validateGraphDeltaPerformanceResult(result: unknown): void;
 export function buildScalingTrend(
 	nodeResult: {
 		cases: Array<{

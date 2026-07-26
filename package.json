@@ -8,6 +8,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "perf:characterize": "node scripts/performance-characterize.mjs",
+    "perf:graph-delta": "node scripts/graph-delta-characterize.mjs",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
     "test:watch": "vitest",

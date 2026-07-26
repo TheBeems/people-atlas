@@ -16,8 +16,15 @@ export const EXPECTED_BROWSER_STAGES = [
 	"incremental-canvas-paint",
 	"lifecycle-cleanup",
 ];
+export const EXPECTED_GRAPH_DELTA_STAGES = [
+	"graph-delta",
+	"incremental-projection",
+	"incremental-layout",
+	"incremental-recomputation",
+];
 
 const EXPECTED_RUNNER_VERSION = "p6a-characterization-v1";
+const EXPECTED_GRAPH_DELTA_RUNNER_VERSION = "p6b-graph-delta-v1";
 const EXPECTED_FIXTURE_CONTRACT_VERSION = "p6a-ring-lattice-v1";
 const NODE_WARMUPS = 5;
 const NODE_SAMPLES = 20;
@@ -183,6 +190,63 @@ export function validateCombinedPerformanceResults(nodeResultValue, browserResul
 	}
 	validateCases(nodeResult, "node");
 	validateCases(browserResult, "browser");
+}
+
+export function validateGraphDeltaPerformanceResult(resultValue) {
+	const result = objectValue(resultValue, "graph-delta result");
+	if (result.runnerVersion !== EXPECTED_GRAPH_DELTA_RUNNER_VERSION) {
+		fail("graph-delta runnerVersion is incompatible.");
+	}
+	if (result.fixtureContractVersion !== EXPECTED_FIXTURE_CONTRACT_VERSION) {
+		fail("graph-delta fixtureContractVersion is incompatible.");
+	}
+	if (typeof result.runtime?.node !== "string" || result.runtime.node.length === 0) {
+		fail("graph-delta runtime.node must be a non-empty string.");
+	}
+	if (!Array.isArray(result.cases)) fail("graph-delta.cases must be an array.");
+	const seen = new Set();
+	for (const [index, resultCaseValue] of result.cases.entries()) {
+		const resultCase = objectValue(resultCaseValue, `graph-delta.cases[${index}]`);
+		if (!EXPECTED_PERFORMANCE_SIZES.includes(resultCase.size)) {
+			fail(`graph-delta.cases[${index}] has unsupported size ${String(resultCase.size)}.`);
+		}
+		if (!EXPECTED_PERFORMANCE_PROFILES.includes(resultCase.profile)) {
+			fail(`graph-delta.cases[${index}] has unsupported profile ${String(resultCase.profile)}.`);
+		}
+		const key = `${resultCase.profile}/${resultCase.size}`;
+		if (seen.has(key)) fail(`graph-delta contains duplicate case ${key}.`);
+		seen.add(key);
+		validateCounts(resultCase.counts, resultCase.size, resultCase.profile, `graph-delta.${key}`);
+		if (resultCase.warmups !== NODE_WARMUPS) {
+			fail(`graph-delta.${key}.warmups must equal ${NODE_WARMUPS}.`);
+		}
+		if (resultCase.recordedSamples !== NODE_SAMPLES) {
+			fail(`graph-delta.${key}.recordedSamples must equal ${NODE_SAMPLES}.`);
+		}
+		validateStages(
+			resultCase.timings,
+			EXPECTED_GRAPH_DELTA_STAGES,
+			NODE_SAMPLES,
+			`graph-delta.${key}`,
+		);
+		const aggregateSamples = resultCase.timings["incremental-recomputation"].samples;
+		for (let sampleIndex = 0; sampleIndex < NODE_SAMPLES; sampleIndex += 1) {
+			const substageTotal = (
+				resultCase.timings["graph-delta"].samples[sampleIndex]
+				+ resultCase.timings["incremental-projection"].samples[sampleIndex]
+				+ resultCase.timings["incremental-layout"].samples[sampleIndex]
+			);
+			if (aggregateSamples[sampleIndex] + 1e-9 < substageTotal) {
+				fail(`graph-delta.${key} aggregate sample ${sampleIndex} is smaller than its substages.`);
+			}
+		}
+	}
+	for (const profile of EXPECTED_PERFORMANCE_PROFILES) {
+		for (const size of EXPECTED_PERFORMANCE_SIZES) {
+			const key = `${profile}/${size}`;
+			if (!seen.has(key)) fail(`graph-delta is missing case ${key}.`);
+		}
+	}
 }
 
 export function buildScalingTrend(nodeResult, stage = "incremental-recomputation", profile = "stress") {

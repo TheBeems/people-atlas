@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { applyGraphDelta } from "../src/graph/graph-delta";
 import { buildAtlasSnapshot } from "../src/graph/build-snapshot";
-import type { AtlasSnapshot, IndexDelta, PersonRecord, RawIndexSnapshot } from "../src/domain/types";
+import type {
+	AtlasSnapshot,
+	IndexDelta,
+	PersonRecord,
+	RawIndexSnapshot,
+	RelationshipRecord,
+} from "../src/domain/types";
 
 function person(id: string, filePath: string, contacts: string[] = []): PersonRecord {
 	return {
@@ -159,5 +165,65 @@ describe("applyGraphDelta", () => {
 		const rebuiltRestored = buildAtlasSnapshot({ people: [alice, bob], relationships: [], diagnostics: [] }, resolve);
 
 		expect(comparable(incrementalRestored)).toEqual(comparable(rebuiltRestored));
+	});
+
+	it("matches a full rebuild when resolving a ghost and adding rich relationship metadata", () => {
+		const alice = person("alice", "People/Alice.md", ["missing"]);
+		const bob = person("bob", "People/Bob.md");
+		const previous = buildAtlasSnapshot(
+			{ people: [alice, bob], relationships: [], diagnostics: [] },
+			resolve,
+		);
+		const changedAlice = person("alice", "People/Alice.md", ["bob"]);
+		const relationship: RelationshipRecord = {
+			id: "relationship-alice-bob",
+			filePath: "Relationships/alice-bob.md",
+			from: { raw: "alice", target: "alice" },
+			to: { raw: "bob", target: "bob" },
+			direction: "source-to-target",
+			types: ["friend", "mentor"],
+			closeness: 5,
+			since: "2020-01-02",
+			lastContact: "2026-07-26",
+			status: "active",
+		};
+		const after: RawIndexSnapshot = {
+			people: [changedAlice, bob],
+			relationships: [relationship],
+			diagnostics: [],
+		};
+		const delta: IndexDelta = {
+			revision: 1,
+			changedPaths: [changedAlice.filePath, relationship.filePath],
+			removedPaths: [],
+			affectedPersonIds: [changedAlice.id, bob.id],
+			affectedRelationshipIds: [relationship.id],
+			addedPeople: [],
+			updatedPeople: [changedAlice],
+			removedPeople: [],
+			addedRelationships: [relationship],
+			updatedRelationships: [],
+			removedRelationships: [],
+			affectedPeople: [changedAlice],
+			affectedRelationships: [relationship],
+			diagnostics: [],
+			duplicatePersonIds: [],
+			duplicateRelationshipIds: [],
+		};
+
+		const incremental = applyGraphDelta(previous, delta, resolve, { resolutionPeople: after.people });
+		const rebuilt = buildAtlasSnapshot(after, resolve);
+
+		expect(comparable(incremental)).toEqual(comparable(rebuilt));
+		expect(incremental.nodes.some((node) => node.kind === "ghost")).toBe(false);
+		expect(incremental.diagnostics.some((diagnostic) => diagnostic.code === "unresolved-contact")).toBe(false);
+		expect(incremental.edges.find((edge) => edge.id === relationship.id)).toMatchObject({
+			types: relationship.types,
+			closeness: relationship.closeness,
+			direction: relationship.direction,
+			since: relationship.since,
+			lastContact: relationship.lastContact,
+			status: relationship.status,
+		});
 	});
 });

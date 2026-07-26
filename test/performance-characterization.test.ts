@@ -3,6 +3,7 @@ import {
 	buildScalingTrend,
 	garbageCollectionStatements,
 	validateCombinedPerformanceResults,
+	validateGraphDeltaPerformanceResult,
 } from "../scripts/performance-result.mjs";
 import {
 	applyPerformanceIncrementalScenario,
@@ -161,6 +162,32 @@ function deepCopy<T>(value: T): T {
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function validGraphDeltaResult(): Record<string, unknown> {
+	return {
+		runnerVersion: "p6b-graph-delta-v1",
+		fixtureContractVersion: FIXTURE_CONTRACT_VERSION,
+		runtime: { node: process.version },
+		cases: PERFORMANCE_PROFILES.flatMap((profile) => PERFORMANCE_SIZES.map((size) => ({
+			size,
+			profile,
+			counts: {
+				people: size,
+				relationships: size * (profile === "sparse" ? 2 : 8),
+				nodes: size,
+				edges: size * (profile === "sparse" ? 2 : 8),
+			},
+			warmups: NODE_WARMUP_COUNT,
+			recordedSamples: NODE_SAMPLE_COUNT,
+			timings: {
+				"graph-delta": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 8)),
+				"incremental-projection": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 1)),
+				"incremental-layout": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 1)),
+				"incremental-recomputation": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 10)),
+			},
+		}))),
+	};
+}
+
 describe("combined performance result validation", () => {
 	it("accepts the complete semantic result and derives its ordered scaling trend", () => {
 		const result = validPartialResults();
@@ -230,5 +257,30 @@ describe("combined performance result validation", () => {
 		expect(() => validateCombinedPerformanceResults(wrongSummary.node, wrongSummary.browser)).toThrow(
 			/does not match its raw samples/i,
 		);
+	});
+});
+
+describe("graph-delta performance result validation", () => {
+	it("accepts the complete direct-substage matrix", () => {
+		expect(() => validateGraphDeltaPerformanceResult(validGraphDeltaResult())).not.toThrow();
+	});
+
+	it("rejects missing substages and aggregate samples smaller than their substages", () => {
+		const missingStage = validGraphDeltaResult();
+		const firstCase = (missingStage.cases as Array<Record<string, unknown>>)[0];
+		delete (firstCase?.timings as Record<string, unknown>)["graph-delta"];
+		expect(() => validateGraphDeltaPerformanceResult(missingStage)).toThrow(/missing stage/i);
+
+		const invalidAggregate = validGraphDeltaResult();
+		const invalidFirstCase = (invalidAggregate.cases as Array<Record<string, unknown>>)[0];
+		const aggregate = (invalidFirstCase?.timings as Record<string, {
+			samples: number[];
+			summary: { min: number; median: number; p95: number; max: number };
+		}>)["incremental-recomputation"];
+		if (aggregate) {
+			aggregate.samples = Array.from({ length: NODE_SAMPLE_COUNT }, () => 9);
+			aggregate.summary = { min: 9, median: 9, p95: 9, max: 9 };
+		}
+		expect(() => validateGraphDeltaPerformanceResult(invalidAggregate)).toThrow(/smaller than its substages/i);
 	});
 });

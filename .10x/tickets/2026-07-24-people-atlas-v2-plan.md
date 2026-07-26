@@ -1,6 +1,6 @@
 Status: open
 Created: 2026-07-24
-Updated: 2026-07-25
+Updated: 2026-07-26
 
 # People Atlas v2 implementation plan
 
@@ -73,6 +73,8 @@ Depends on: P1 shared graph contract and P2 stable deltas. P3 is required for ma
 Gate: projections are pure transformations with deterministic output, explicit hidden-node accounting and no view-to-view state coupling.
 
 ### P5 — Accessible renderer and mobile interaction
+
+Owner: `.10x/tickets/2026-07-26-accessible-semantic-renderer.md` (P5a)
 
 Split renderer responsibilities where the boundaries are justified. Keep canvas as the visual surface and add a semantic alternative graph/list with keyboard navigation, focus management, relation descriptions, context actions and reduced-motion handling. Add pinch zoom, one-finger pan, long press, touch-sized targets, bottom-sheet controls and pop-out-window correctness.
 
@@ -153,10 +155,25 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   a pass review. P5 accessible/mobile renderer is again the next numbered
   priority; live modal, Bases and mobile behavior remain part of its/P7's
   integration risk.
+- 2026-07-26: The user ratified P5a's visible session-local Graph/List mode,
+  roving keyboard/action contract and selected-person relationship
+  descriptions. `.10x/specs/accessible-semantic-renderer.md` is active and
+  `.10x/tickets/2026-07-26-accessible-semantic-renderer.md` is the next
+  executable child. Touch gestures and the complete mobile workflow remain a
+  separate P5b shaping step after P5a.
+- 2026-07-26: P5a closed after browser-first implementation, two bounded
+  independent-review repair passes and a final pass verdict. The shared
+  Graph/List renderer, semantic relationship details, stable keyboard/focus
+  behavior, owning-window lifecycle and Node/Chromium test split are complete;
+  final verification passed 19 files and 82 tests plus production build and
+  diff hygiene. P5b touch gestures and complete mobile controls are now the
+  next shaping priority.
 
 ## Blockers
 
-None for planning. P1 still requires dependency installation before runtime verification.
+None for planning. P5a has an executable child ticket; its Playwright provider
+and Chromium setup are expected implementation prerequisites, not parent-plan
+blockers.
 
 ## Evidence
 

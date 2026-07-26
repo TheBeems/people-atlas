@@ -1,11 +1,12 @@
 import { BasesView, type BasesPropertyId, type QueryController } from "obsidian";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS } from "../constants";
 import type { AtlasNode, AtlasSnapshot, IndexDelta, ProjectionCenterMode, ProjectionMode, RawIndexSnapshot } from "../domain/types";
+import { isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { buildGraphSnapshot } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
 import type PeopleAtlasPlugin from "../main";
-import { AtlasRenderer } from "../render/atlas-renderer";
+import { AtlasRenderer, type AtlasSelectionSource } from "../render/atlas-renderer";
 import { adaptBasesEntries, type BasesFieldMapping } from "./entry-adapter";
 import { BASES_OPTION_KEYS } from "./options";
 import { buildLayoutKey, rememberCenter, type AtlasViewState } from "../settings/view-state";
@@ -20,6 +21,7 @@ export class PeopleAtlasBasesView extends BasesView {
 	private fullSnapshot: AtlasSnapshot | undefined;
 	private visiblePaths = new Set<string>();
 	private selectedPath: string | undefined;
+	private selectedCenterPath: string | undefined;
 	private activePath: string | undefined;
 	private selectionActionsEl: HTMLElement | undefined;
 
@@ -38,19 +40,16 @@ export class PeopleAtlasBasesView extends BasesView {
 		}), {
 			onOpenNode: (node) => this.openNode(node),
 			 onCenterNode: (node) => {
-				if (node.kind === "person") {
+				if (isResolvedAtlasPersonNode(node)) {
 					this.config.set(BASES_OPTION_KEYS.centerPersonId, node.id);
 					this.config.set(BASES_OPTION_KEYS.centerMode, "configured");
 					this.selectedPath = node.filePath;
+					this.selectedCenterPath = node.filePath;
 					this.persistViewState(node.personId);
 					this.onDataUpdated();
 				}
 			},
-			onSelectNode: (node) => {
-				this.selectedPath = node?.filePath;
-				this.renderSelectionActions(node);
-				if (this.readCenterMode() === "selected-node") this.onDataUpdated();
-			},
+			onSelectNode: (node, source) => this.handleNodeSelection(node, source),
 			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
 		this.selectionActionsEl = this.root.ownerDocument.createElement("div");
@@ -76,6 +75,15 @@ export class PeopleAtlasBasesView extends BasesView {
 
 	override onDataUpdated(): void {
 		this.updateData();
+	}
+
+	private handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
+		const previousSelectedPath = this.selectedPath;
+		this.selectedPath = node?.filePath;
+		this.renderSelectionActions(node);
+		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
+		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath) this.selectedCenterPath = undefined;
+		if (this.readCenterMode() === "selected-node" && source !== "list") this.onDataUpdated();
 	}
 
 	private updateData(delta?: IndexDelta): void {
@@ -105,7 +113,7 @@ export class PeopleAtlasBasesView extends BasesView {
 		}
 		const center = this.config.get(BASES_OPTION_KEYS.centerPersonId);
 		const centerId = typeof center === "string" && center ? center : state.centerHistory[0];
-		const centerPath = centerMode === "active-note" ? this.activePath : centerMode === "selected-node" ? this.selectedPath : undefined;
+		const centerPath = centerMode === "active-note" ? this.activePath : centerMode === "selected-node" ? this.selectedCenterPath : undefined;
 		const projected = projectGraph(full, {
 			centerMode,
 			projectionMode,
@@ -189,7 +197,7 @@ export class PeopleAtlasBasesView extends BasesView {
 		const projectionMode = this.readProjectionMode(state.projectionMode);
 		const hops = this.readInteger(BASES_OPTION_KEYS.hops, state.hops, 0);
 		const maxNodes = this.readInteger(BASES_OPTION_KEYS.maxNodes, state.maxNodes, 1);
-		const centerPath = centerMode === "active-note" ? this.activePath : centerMode === "selected-node" ? this.selectedPath : undefined;
+		const centerPath = centerMode === "active-note" ? this.activePath : centerMode === "selected-node" ? this.selectedCenterPath : undefined;
 		const key = buildLayoutKey(viewConfigurationKey, { ...state, centerMode, projectionMode, hops, maxNodes }, centerId, centerPath);
 		state.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
 		const pending = this.plugin.saveViewState(viewConfigurationKey, state);
@@ -198,7 +206,7 @@ export class PeopleAtlasBasesView extends BasesView {
 	}
 
 	private openNode(node: AtlasNode): void {
-		if (!node.filePath) return;
+		if (!isResolvedAtlasPersonNode(node)) return;
 		const file = this.data.data.find((entry) => entry.file.path === node.filePath)?.file;
 		if (file) void this.app.workspace.getLeaf("tab").openFile(file);
 	}
@@ -207,8 +215,7 @@ export class PeopleAtlasBasesView extends BasesView {
 		if (!this.selectionActionsEl) return;
 		this.selectionActionsEl.replaceChildren();
 		if (
-			node?.kind !== "person"
-			|| !node.filePath
+			!isResolvedAtlasPersonNode(node)
 			|| !this.plugin.index.getSnapshot().people.some((person) => person.filePath === node.filePath)
 		) {
 			this.selectionActionsEl.hidden = true;

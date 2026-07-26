@@ -1,13 +1,14 @@
-import { ItemView, Notice, TFile, type WorkspaceLeaf } from "obsidian";
+import { ItemView, TFile, type WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_PEOPLE_ATLAS } from "../constants";
 import type { AtlasNode, AtlasSnapshot, ProjectionCenterMode, ProjectionMode, RawIndexSnapshot } from "../domain/types";
+import { isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { buildGraphSnapshot } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
 import { buildLayoutKey, rememberCenter, type AtlasViewState } from "../settings/view-state";
 import type { LayoutSnapshot } from "../render/layout-state";
 import type PeopleAtlasPlugin from "../main";
-import { AtlasRenderer } from "../render/atlas-renderer";
+import { AtlasRenderer, type AtlasSelectionSource } from "../render/atlas-renderer";
 
 export class PeopleAtlasView extends ItemView {
 	private renderer: AtlasRenderer | undefined;
@@ -23,6 +24,7 @@ export class PeopleAtlasView extends ItemView {
 	private centerMode: ProjectionCenterMode;
 	private projectionMode: ProjectionMode;
 	private selectedPath: string | undefined;
+	private selectedCenterPath: string | undefined;
 	private activePath: string | undefined;
 	private centerModeSelect: HTMLSelectElement | undefined;
 
@@ -108,19 +110,16 @@ export class PeopleAtlasView extends ItemView {
 		this.renderer = new AtlasRenderer(graph, () => this.plugin.settings, {
 			onOpenNode: (node) => this.openNode(node),
 				onCenterNode: (node) => {
-				if (node.kind !== "person") return;
+				if (!isResolvedAtlasPersonNode(node)) return;
 				this.centerMode = "selected-node";
 				if (this.centerModeSelect) this.centerModeSelect.value = "selected-node";
 				this.selectedPath = node.filePath;
+				this.selectedCenterPath = node.filePath;
 				this.centerId = node.personId;
 				this.persistViewState(node.personId);
 				this.renderSnapshot();
 			},
-			onSelectNode: (node) => {
-				this.selectedPath = node?.filePath;
-				this.renderDetails(node);
-				if (this.centerMode === "selected-node") this.renderSnapshot();
-			},
+			onSelectNode: (node, source) => this.handleNodeSelection(node, source),
 			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
@@ -147,13 +146,22 @@ export class PeopleAtlasView extends ItemView {
 		this.renderSnapshot();
 	}
 
+	private handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
+		const previousSelectedPath = this.selectedPath;
+		this.selectedPath = node?.filePath;
+		this.renderDetails(node);
+		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
+		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath) this.selectedCenterPath = undefined;
+		if (this.centerMode === "selected-node" && source !== "list") this.renderSnapshot();
+	}
+
 	private renderSnapshot(): void {
 		const full = this.fullSnapshot ?? buildGraphSnapshot(
 			{ visible: this.rawSnapshot, canonical: this.rawSnapshot },
 			(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
 		);
 		this.fullSnapshot = full;
-		const centerPath = this.centerMode === "active-note" ? this.activePath : this.centerMode === "selected-node" ? this.selectedPath : undefined;
+		const centerPath = this.centerMode === "active-note" ? this.activePath : this.centerMode === "selected-node" ? this.selectedCenterPath : undefined;
 		const projected = projectGraph(full, {
 			centerMode: this.centerMode,
 			projectionMode: this.projectionMode,
@@ -194,7 +202,7 @@ export class PeopleAtlasView extends ItemView {
 
 	private async persistLayout(layout?: LayoutSnapshot, flush = false): Promise<void> {
 		if (!this.renderer) return;
-		const centerPath = this.centerMode === "active-note" ? this.activePath : this.centerMode === "selected-node" ? this.selectedPath : undefined;
+		const centerPath = this.centerMode === "active-note" ? this.activePath : this.centerMode === "selected-node" ? this.selectedCenterPath : undefined;
 		const key = buildLayoutKey(this.viewConfigurationKey, this.viewState, this.centerId, centerPath);
 		this.viewState.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
 		const pending = this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
@@ -222,7 +230,7 @@ export class PeopleAtlasView extends ItemView {
 			organisations.textContent = node.organisations.join(" · ");
 			this.detailsEl.append(organisations);
 		}
-		if (node.kind === "person" && node.filePath) {
+		if (isResolvedAtlasPersonNode(node)) {
 			const createRelationshipButton = this.detailsEl.ownerDocument.createElement("button");
 			createRelationshipButton.type = "button";
 			createRelationshipButton.textContent = "Create relationship";
@@ -258,10 +266,7 @@ export class PeopleAtlasView extends ItemView {
 	}
 
 	private openNode(node: AtlasNode): void {
-		if (!node.filePath) {
-			new Notice("This unresolved contact does not have a note yet.");
-			return;
-		}
+		if (!isResolvedAtlasPersonNode(node)) return;
 		this.openPath(node.filePath);
 	}
 

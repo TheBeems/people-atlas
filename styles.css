@@ -36,6 +36,61 @@
 	background: var(--background-primary);
 }
 
+.people-atlas-renderer {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	width: 100%;
+	height: 100%;
+	min-height: inherit;
+}
+
+.people-atlas-view-modes {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2, 8px);
+	min-width: 0;
+	margin: 0;
+	padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+	border: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	transition: none;
+	animation: none;
+}
+
+.people-atlas-view-modes legend {
+	float: inline-start;
+	padding: 0;
+	margin-inline-end: var(--size-4-1, 4px);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-view-modes button,
+.people-atlas-person-button,
+.people-atlas-semantic-actions button {
+	min-width: 24px;
+	min-height: 24px;
+}
+
+.people-atlas-view-modes button:focus-visible,
+.people-atlas-person-button:focus-visible,
+.people-atlas-semantic-actions button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.people-atlas-view-modes button[aria-pressed="true"],
+.people-atlas-person-button[aria-pressed="true"] {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.people-atlas-graph-surface {
+	position: relative;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
 .people-atlas-canvas {
 	display: block;
 	width: 100%;
@@ -76,33 +131,64 @@
 	color: var(--text-warning);
 }
 
-.people-atlas-accessible-list {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	padding: 0;
-	margin: -1px;
-	overflow: hidden;
-	clip: rect(0, 0, 0, 0);
-	white-space: nowrap;
-	border: 0;
+.people-atlas-semantic-panel {
+	min-width: 0;
+	min-height: 0;
+	padding: var(--size-4-3, 12px);
+	overflow: auto;
+	background: var(--background-primary);
+	transition: none;
+	animation: none;
 }
 
-.people-atlas-accessible-list:focus-within {
-	position: absolute;
-	z-index: var(--layer-popover);
-	inset: var(--size-4-3) auto auto var(--size-4-3);
-	width: min(320px, calc(100% - 24px));
-	height: auto;
-	max-height: 50%;
+.people-atlas-semantic-summary {
+	color: var(--text-muted);
+}
+
+.people-atlas-people-list,
+.people-atlas-relationship-list {
 	margin: 0;
-	padding: var(--size-4-2);
-	overflow: auto;
-	clip: auto;
-	white-space: normal;
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m);
+	padding: 0;
+	list-style: none;
+}
+
+.people-atlas-people-list {
+	display: grid;
+	gap: var(--size-4-2, 8px);
+}
+
+.people-atlas-person-button {
+	display: grid;
+	width: 100%;
+	padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+	text-align: start;
+}
+
+.people-atlas-person-button small {
+	color: inherit;
+	opacity: 0.8;
+}
+
+.people-atlas-semantic-details {
+	margin-top: var(--size-4-4, 16px);
+	padding-top: var(--size-4-3, 12px);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.people-atlas-relationship-list {
+	display: grid;
+	gap: var(--size-4-2, 8px);
+}
+
+.people-atlas-relationship-list li {
+	padding-block: var(--size-4-1, 4px);
+}
+
+.people-atlas-semantic-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2, 8px);
+	margin-top: var(--size-4-3, 12px);
 }
 
 .people-atlas-bases-view {
@@ -170,7 +256,10 @@
 @media (prefers-reduced-motion: reduce) {
 	.people-atlas-view *,
 	.people-atlas-view *::before,
-	.people-atlas-view *::after {
+	.people-atlas-view *::after,
+	.people-atlas-renderer *,
+	.people-atlas-renderer *::before,
+	.people-atlas-renderer *::after {
 		scroll-behavior: auto !important;
 		transition-duration: 0.01ms !important;
 		animation-duration: 0.01ms !important;

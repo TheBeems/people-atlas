@@ -10,6 +10,8 @@
 6. **One graph contract** — standalone and Bases views both emit `AtlasSnapshot`.
 7. **Renderer isolation** — rendering does not read the vault or parse frontmatter.
 8. **No hidden inference** — unresolved or ambiguous data is reported as a diagnostic.
+9. **Equivalent navigation** — the canvas and semantic list share stable-ID
+   selection while explicit view actions remain owned by the view adapter.
 
 ## Layers
 
@@ -29,7 +31,7 @@ buildAtlasSnapshot()
 projectGraph()
         │
         ▼
-AtlasRenderer
+AtlasRenderer (canvas + semantic list)
 ```
 
 ## Current limitations
@@ -40,6 +42,10 @@ AtlasRenderer
   implemented yet.
 - The Bases adapter maps the selected people while explicit relationship notes are supplied by the canonical `PersonIndex` for both views.
 - Graph center, projection and layout state is persisted per view
-  configuration; mobile and pop-out integration coverage remains future work.
+  configuration. Graph/List mode is renderer-local and intentionally not
+  persisted.
+- Owning-window renderer lifecycle and semantic keyboard behavior are covered
+  in Chromium; live Obsidian screen-reader, mobile gesture and pop-out
+  integration remain future validation/work.
 
-These are intentional boundaries for the current P4 slice. See `ROADMAP.md`.
+These are intentional boundaries for the current P5a slice. See `ROADMAP.md`.

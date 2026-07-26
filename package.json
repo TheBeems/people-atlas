@@ -8,6 +8,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs production",
     "test": "vitest run",
+    "test:browser": "vitest run --project browser",
     "test:watch": "vitest",
     "check": "npm run test && npm run build"
   },
@@ -22,8 +23,10 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "@vitest/browser-playwright": "^4.1.10",
     "esbuild": "^0.28.1",
     "obsidian": "1.13.1",
+    "playwright": "^1.62.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

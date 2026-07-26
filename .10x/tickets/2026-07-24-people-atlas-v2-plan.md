@@ -89,11 +89,27 @@ P7/manual validation items.
 
 ### P6 — Worker, image cache and performance
 
+Completed child:
+`.10x/tickets/2026-07-26-performance-characterization.md` (P6a)
+
 Move expensive physics/community work to a Web Worker when graph size warrants it. Add seeded positions, incremental layout updates, bounded image decoding/cache and frame-coalesced rendering. Establish thresholds for worker activation and memory/latency budgets.
 
 Depends on: P4 layout contract and P5 renderer lifecycle. Do not introduce worker complexity before profiling demonstrates the need.
 
 Gate: fixed datasets meet agreed index, first-render, frame-time and memory budgets without layout jumps on small deltas.
+
+P6a is a characterization-only precursor: it measures deterministic sparse
+and stress workloads, records calibrated Windows/Chromium evidence and
+proposes budgets plus the smallest next architecture step. It does not
+implement a Worker, image cache, optimization or regression threshold. Later
+P6 behavior is shaped only after its evidence and candidate budgets are
+ratified.
+
+Evidence-backed next shaping candidate: a bounded P6b split of aggregate
+incremental recomputation into graph-delta, projection and layout substages,
+followed by main-thread lookup simplification if the split confirms it.
+Current evidence does not justify a Worker or image cache. Candidate budgets
+remain proposals until the user explicitly ratifies them.
 
 ### P7 — Expanded test matrix
 
@@ -188,15 +204,46 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   evidence: deterministic controller coverage now, with real Obsidian Mobile
   integration retained as P7/manual validation. P6 worker/cache/performance
   shaping is the next numbered roadmap priority.
+- 2026-07-26: P6a performance-characterization semantics were ratified:
+  measure only before setting budgets; use deterministic 100/1,000/5,000-node
+  sparse `2N` and stress `8N` workloads; calibrate on the current
+  Windows/headless-Chromium environment; keep Linux CI informative and live
+  Obsidian under P7/manual validation. The active contract is
+  `.10x/specs/performance-characterization.md`; the next executable child is
+  `.10x/tickets/2026-07-26-performance-characterization.md`. No benchmark or
+  optimization implementation was authorized during shaping.
+- 2026-07-26: The user subsequently authorized P6a implementation. The child
+  produced deterministic Node/Chromium characterization and date-stamped raw
+  plus human-readable evidence without a Worker, cache, product optimization,
+  accepted threshold or CI automation. Its first independent review found
+  four bounded report/validation/record defects; the user authorized exactly
+  that closure-repair round. The repair regenerated evidence and passed its
+  focused/full/build/diff gates; P6a remains `active` pending fresh independent
+  re-review.
+- 2026-07-26: Fresh independent review verified the four authorized repairs
+  and found one minor stale median pair in the owning ticket. After explicit
+  user authorization, a record-only reconciliation changed it to the raw and
+  generated values `15.070/2.735 ms`; targeted independent confirmation
+  returned `pass`. P6a closed as `done`. Its evidence recommends shaping P6b
+  around incremental graph-delta substage attribution and main-thread lookup
+  simplification before considering a Worker; candidate budgets remain
+  unratified.
 
 ## Blockers
 
 None for planning. P5 is complete within its explicit automated/source
-boundary; P6 is the next child to shape.
+boundary and P6a is closed. Later P6 behavior awaits the user checkpoint for
+candidate budgets and the bounded P6b architecture scope.
 
 ## Evidence
 
-Pending child-ticket execution.
+- P6a execution and repair evidence are owned by
+  `.10x/tickets/2026-07-26-performance-characterization.md`.
+- Durable calibrated outputs are
+  `.10x/evidence/2026-07-26-performance-characterization.md` and
+  `.10x/evidence/.storage/2026-07-26-performance-characterization.json`.
+- P6a's final targeted independent confirmation returned `pass`; the child is
+  closed as `done`.
 
 ## Review
 

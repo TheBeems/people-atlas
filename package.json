@@ -11,6 +11,7 @@
     "perf:graph-delta": "node scripts/graph-delta-characterize.mjs",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
+    "test:integration": "vitest run --project integration",
     "test:watch": "vitest",
     "check": "npm run test && npm run build"
   },

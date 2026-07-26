@@ -115,11 +115,31 @@ remain proposals until the user explicitly ratifies them.
 
 ### P7 — Expanded test matrix
 
-Add Obsidian integration tests for vault and metadata lifecycle, Bases data updates, renderer interaction tests for pan/zoom/pinch/drag/keyboard/reduced-motion/pop-out/high-DPI, property-based graph invariants and fixed performance fixtures for 100/1,000/5,000 nodes.
+Completed child:
+
+- `.10x/tickets/2026-07-26-controlled-obsidian-integration-harness.md` (P7a)
+
+Next shaping candidate: P7b generated graph/index invariants. It has no active
+specification or executable ticket yet.
+
+P7 is split into independently verifiable children:
+
+1. P7a — controlled plugin/index/standalone/Bases integration harness and
+   explicit Chromium CI provisioning;
+2. P7b — generated graph/index invariants;
+3. P7c — missing high-DPI and real-pop-out browser matrix;
+4. P7d — separately initiated live/manual Obsidian Desktop, Bases, pop-out,
+   assistive-technology and Mobile evidence.
+
+Existing P5 browser cases and P6 deterministic 100/1,000/5,000-node fixtures
+are reused. Later P7 shaping must not duplicate them or convert calibrated
+performance observations into unratified thresholds.
 
 Depends on: P1–P6 contracts and test seams.
 
-Gate: the full test matrix is repeatable in CI and failures identify the owning layer.
+Gate: the automated Node/browser/integration/generated matrix is repeatable in
+CI and failures identify the owning layer. Live/manual P7d evidence is explicit
+and must not be represented as CI certification.
 
 ### P8 — Release hardening
 
@@ -258,12 +278,41 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   P6 is complete within the measured scope: current evidence rejects a Worker
   and image cache rather than leaving them as assumed deliverables. New
   workload evidence may shape a later P6 child without weakening this result.
+- 2026-07-26: Read-only P7 gap analysis found that P5/P6 already cover the
+  renderer, trusted Chromium touch and deterministic performance seams, while
+  every automated `obsidian` import still resolves to the minimal test stub.
+  The durable findings are
+  `.10x/research/2026-07-26-p7-test-matrix-gap-analysis.md`. The recommended
+  first P7 child is a controlled plugin/index/view-adapter integration harness;
+  live Obsidian Desktop/Bases/Mobile evidence and CI/browser-provisioning scope
+  require user ratification before a P7 spec or executable ticket is opened.
+- 2026-07-26: The user ratified controlled automated P7a plus explicit
+  Chromium provisioning in CI. Live Obsidian Desktop/Bases/Mobile remains a
+  separately initiated manual P7 child; lockfile and release hardening remain
+  P8. `.10x/specs/controlled-obsidian-integration-harness.md` is active and
+  `.10x/tickets/2026-07-26-controlled-obsidian-integration-harness.md` is the
+  next executable child. No implementation occurred in the shaping turn.
+- 2026-07-26: The user subsequently authorized P7a implementation. The child
+  now contains the controlled plugin/index/standalone/Bases runtime, named
+  Playwright Chromium integration project, focused/default test wiring and
+  explicit CI Chromium provisioning without a lockfile or npm cache. Its
+  executor gates passed; initial independent review returned `concerns` about
+  two assertion-observability gaps and this stale parent status. The user
+  authorized exactly that bounded repair; its focused/full/build/diff gates
+  passed, so P7a is implemented and active pending fresh independent re-review.
+- 2026-07-26: Fresh independent P7a re-review verified both mutation-sensitive
+  unsubscribe paths, the observed asynchronous Bases flush, fail-closed
+  same-label ghost/diagnostic behavior until explicit path resolution and the
+  reconciled parent state. Verdict was `pass`; P7a closed as `done` with
+  22 files/110 tests, a passing production build and diff hygiene recorded by
+  its executor. Reusable controlled-runtime boundaries are distilled in
+  `.10x/knowledge/controlled-obsidian-integration-testing.md`. P7b generated
+  graph/index invariant shaping is the next automated roadmap checkpoint.
 
 ## Blockers
 
-None for planning. P5 is complete within its explicit automated/source
-boundary. P6a and P6b are closed; P7 expanded test-matrix shaping is the next
-roadmap checkpoint.
+None for planning. P5, measured P6 and P7a are closed within their explicit
+evidence boundaries. P7b generated invariant shaping is next.
 
 ## Evidence
 
@@ -283,6 +332,9 @@ roadmap checkpoint.
 - P6b baseline/final raw and Markdown evidence are the four
   `.10x/evidence/2026-07-26-incremental-graph-delta-*` artifacts. Independent
   review returned `pass`; the child is closed as `done`.
+- P7a controlled-runtime implementation, executor gates, initial findings,
+  authorized repairs and final `pass` re-review are owned by
+  `.10x/tickets/2026-07-26-controlled-obsidian-integration-harness.md`.
 
 ## Review
 

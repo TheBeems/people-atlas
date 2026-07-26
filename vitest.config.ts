@@ -66,7 +66,10 @@ export default defineConfig({
 					name: "node",
 					environment: "node",
 					include: ["test/**/*.test.ts"],
-					exclude: ["test/browser/**/*.browser.test.ts"],
+					exclude: [
+						"test/browser/**/*.browser.test.ts",
+						"test/integration/**/*.integration.test.ts",
+					],
 				},
 			},
 			{
@@ -82,6 +85,19 @@ export default defineConfig({
 						commands: {
 							dispatchTouch,
 						},
+					},
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: "integration",
+					include: ["test/integration/**/*.integration.test.ts"],
+					browser: {
+						enabled: true,
+						headless: true,
+						provider: playwright(),
+						instances: [{ browser: "chromium" }],
 					},
 				},
 			},

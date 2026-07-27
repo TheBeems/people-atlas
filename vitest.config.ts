@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { defineBrowserCommand, playwright } from "@vitest/browser-playwright";
+import type { BrowserMatrixFactor } from "./test/browser-matrix/browser-matrix-context";
 
 interface CdpTouchPoint {
 	id: number;
@@ -52,6 +53,8 @@ const dispatchTouch = defineBrowserCommand<[selector: string, steps: CdpTouchSte
 	}
 });
 
+const browserMatrixFactors = [1, 1.5, 2] as const satisfies readonly BrowserMatrixFactor[];
+
 export default defineConfig({
 	resolve: {
 		alias: {
@@ -68,6 +71,7 @@ export default defineConfig({
 					include: ["test/**/*.test.ts"],
 					exclude: [
 						"test/browser/**/*.browser.test.ts",
+						"test/browser-matrix/**/*.browser-matrix.test.ts",
 						"test/integration/**/*.integration.test.ts",
 					],
 				},
@@ -98,6 +102,30 @@ export default defineConfig({
 						headless: true,
 						provider: playwright(),
 						instances: [{ browser: "chromium" }],
+					},
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: "browser-matrix",
+					include: ["test/browser-matrix/**/*.browser-matrix.test.ts"],
+					browser: {
+						enabled: true,
+						headless: true,
+						provider: playwright(),
+						instances: browserMatrixFactors.map((factor) => ({
+							browser: "chromium",
+							name: `chromium-dpr-${factor}`,
+							provider: playwright({
+								contextOptions: {
+									deviceScaleFactor: factor,
+								},
+							}),
+							provide: {
+								browserMatrixExpectedFactor: factor,
+							},
+						})),
 					},
 				},
 			},

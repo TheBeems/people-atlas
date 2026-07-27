@@ -119,9 +119,11 @@ Completed children:
 
 - `.10x/tickets/2026-07-26-controlled-obsidian-integration-harness.md` (P7a)
 - `.10x/tickets/2026-07-26-generated-graph-index-invariants.md` (P7b)
+- `.10x/tickets/2026-07-27-high-dpi-popup-browser-matrix.md` (P7c)
 
-Next shaping candidate: P7c missing high-DPI and real-pop-out browser coverage.
-It has no active specification or executable ticket yet.
+Next shaping candidate: P7d live/manual Obsidian Desktop, Bases, pop-out,
+assistive-technology and Mobile evidence. It has no active specification or
+executable ticket yet.
 
 P7 is split into independently verifiable children:
 
@@ -334,11 +336,48 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   boundaries are distilled in
   `.10x/knowledge/generated-invariant-testing.md`. P7c high-DPI and real-pop-out
   browser-matrix shaping is the next automated roadmap checkpoint.
+- 2026-07-27: P7b was committed locally as `c146dc5`. Read-only P7c shaping
+  confirmed a dependency-free path through per-instance Playwright Chromium
+  contexts at DPR `1`, `1.5` and `2` plus a user-activated same-origin
+  top-level browser popup. The durable feasibility record is
+  `.10x/research/2026-07-27-p7c-browser-matrix-feasibility.md`; the active
+  contract and executable child are
+  `.10x/specs/high-dpi-popup-browser-matrix.md` and
+  `.10x/tickets/2026-07-27-high-dpi-popup-browser-matrix.md`. A Chromium popup
+  is not an Obsidian/Electron pop-out; that live boundary remains P7d. No P7c
+  implementation occurred in this shaping turn.
+- 2026-07-27: The user explicitly authorized P7c implementation and a local
+  commit after successful closure. The child now contains a disjoint typed
+  Chromium matrix at DPR `1`, `1.5` and `2`, narrow scale/resize/stable-ID
+  assertions and a real user-activated same-origin top-level popup ownership
+  and teardown case. Executor gates passed 3 instance files/6 focused tests,
+  28 files/308 full-suite tests and the production build without product
+  source, dependency, lockfile, CI, existing P5/P7a/P7b test, performance or
+  release changes. P7c remains `active` pending fresh independent review.
+- 2026-07-27: Initial independent P7c review found one significant
+  test-diagnostic gap: canvas timeouts omitted expected dimensions and popup
+  teardown assertions did not name their boundary. The user authorized
+  exactly that repair. The P7c test now reports factor, boundary and concrete
+  expected CSS/backing sizes on every canvas timeout and names every teardown
+  assertion explicitly; no behavior assertion or implementation scope was
+  weakened. Fresh executor gates and independent re-review remain required.
+- 2026-07-27: The authorized P7c diagnostic repair passed its focused
+  3-file/6-test matrix, full 28-file/308-test suite, production build and
+  targeted static context scan. The repair touched only the P7c test and
+  owning records; P7c remains `active` pending fresh independent re-review.
+- 2026-07-27: Fresh independent P7c repair re-review returned `pass`. It
+  verified concrete DPR/boundary/CSS/backing timeout messages and explicit
+  teardown context on all twelve popup cleanup checks without assertion
+  weakening or scope expansion. P7c closed as `done` with 3 matrix instance
+  files/6 focused tests, 28 files/308 full-suite tests, a passing production
+  build and diff hygiene. Reusable scale/popup boundaries are distilled in
+  `.10x/knowledge/browser-scale-popup-testing.md`. P7d live/manual evidence
+  shaping is the next P7 checkpoint.
 
 ## Blockers
 
-None for planning. P5, measured P6, P7a and P7b are closed within their
-explicit evidence boundaries. P7c browser-matrix shaping is next.
+None for planning. P5, measured P6 and P7a-P7c are closed within their
+explicit evidence boundaries. P7d live/manual evidence shaping is next.
 
 ## Evidence
 
@@ -370,6 +409,12 @@ explicit evidence boundaries. P7c browser-matrix shaping is next.
 - P7b's authorized repair and fresh independent `pass` re-review are recorded
   in its child ticket; reusable lessons are in
   `.10x/knowledge/generated-invariant-testing.md`.
+- P7c feasibility, active contract and executable ticket are
+  `.10x/research/2026-07-27-p7c-browser-matrix-feasibility.md`,
+  `.10x/specs/high-dpi-popup-browser-matrix.md` and
+  `.10x/tickets/2026-07-27-high-dpi-popup-browser-matrix.md`.
+- P7c's fresh independent repair re-review returned `pass`; reusable lessons
+  are recorded in `.10x/knowledge/browser-scale-popup-testing.md`.
 
 ## Review
 

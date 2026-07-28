@@ -176,7 +176,7 @@ describe("reproducible digest comparison", () => {
 });
 
 describe("release workflow tag guard", () => {
-	test("requires the remote SHA check and --verify-tag immediately before publication", async () => {
+	test("requires the remote SHA check, verified tag and optional versioned notes before publication", async () => {
 		const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "release.yml"), "utf8");
 		const remoteGuardIndex = workflow.indexOf("- name: Verify remote release tag revision");
 		const publishIndex = workflow.indexOf("- name: Publish GitHub release");
@@ -184,8 +184,17 @@ describe("release workflow tag guard", () => {
 		expect(remoteGuardIndex).toBeGreaterThan(-1);
 		expect(publishIndex).toBeGreaterThan(remoteGuardIndex);
 		expect(workflow).toContain('if [[ "$remote_commit" != "$EXPECTED_SHA" ]]');
-		expect(workflow).toContain(
-			'gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes main.js manifest.json styles.css',
-		);
+		expect(workflow).toContain("--verify-tag");
+		expect(workflow).toContain('release_notes_file=".github/release-notes/${TAG}.md"');
+		expect(workflow).toContain('release_args+=(--notes "$(cat "$release_notes_file")")');
+		expect(workflow).toContain('gh release create "${release_args[@]}" main.js manifest.json styles.css');
+	});
+
+	test("0.1.0 release notes state the exact Obsidian compatibility boundary", async () => {
+		const notes = await readFile(path.join(process.cwd(), ".github", "release-notes", "0.1.0.md"), "utf8");
+
+		expect(notes).toContain("only supports Obsidian 1.13.0 or newer");
+		expect(notes).toContain("Obsidian 1.12.x and older are not supported");
+		expect(notes).toContain("Catalyst early-access (beta) release");
 	});
 });

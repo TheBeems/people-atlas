@@ -2,6 +2,11 @@
 
 People Atlas is an Obsidian 1.13+ plugin scaffold for mapping people, explicit relationships and unresolved contacts in a vault. It is designed as a clean v2 foundation rather than as a backwards-compatible rewrite of an existing plugin.
 
+> [!IMPORTANT]
+> **People Atlas 0.1.0 only supports Obsidian 1.13.0 or newer. Obsidian 1.12.x and older are not supported.**
+>
+> As of 28 July 2026, Obsidian 1.13 is a [Catalyst early-access (beta) release](https://obsidian.md/help/catalyst). Catalyst access and **Receive early access versions** are therefore currently required to use People Atlas.
+
 ## Included in this scaffold
 
 - A standalone People Atlas view.
@@ -20,7 +25,7 @@ People Atlas is an Obsidian 1.13+ plugin scaffold for mapping people, explicit r
 
 ## Requirements
 
-- Obsidian 1.13.0 or newer.
+- Obsidian 1.13.0 or newer (currently a Catalyst early-access release).
 - Node.js 22 or newer for development.
 
 ## Development

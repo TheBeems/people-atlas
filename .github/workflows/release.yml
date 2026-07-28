@@ -67,4 +67,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes main.js manifest.json styles.css
+          set -euo pipefail
+          release_args=(
+            "$TAG"
+            --verify-tag
+            --title "People Atlas $TAG"
+            --generate-notes
+          )
+          release_notes_file=".github/release-notes/${TAG}.md"
+          if [[ -f "$release_notes_file" ]]; then
+            release_args+=(--notes "$(cat "$release_notes_file")")
+          fi
+          gh release create "${release_args[@]}" main.js manifest.json styles.css

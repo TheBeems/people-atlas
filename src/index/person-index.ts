@@ -190,7 +190,7 @@ export class PersonIndex extends Component {
 	private getMetadataDependents(targetPath: string): string[] {
 		const resolvedLinks = this.app.metadataCache.resolvedLinks ?? {};
 		return Object.entries(resolvedLinks)
-			.filter(([, targets]) => Object.prototype.hasOwnProperty.call(targets, targetPath))
+			.filter(([, targets]) => Object.hasOwn(targets, targetPath))
 			.map(([sourcePath]) => sourcePath);
 	}
 

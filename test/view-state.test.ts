@@ -14,7 +14,9 @@ describe("view state", () => {
 
 		expect(state.centerHistory).toHaveLength(MAX_CENTER_HISTORY);
 		expect(state.centerHistory[0]).toBe(`person-${MAX_CENTER_HISTORY + 2}`);
-		expect(rememberCenter(state, state.centerHistory[5]!).centerHistory[0]).toBe(state.centerHistory[5]);
+		const rememberedId = state.centerHistory[5];
+		if (!rememberedId) throw new Error("Expected a sixth center-history entry.");
+		expect(rememberCenter(state, rememberedId).centerHistory[0]).toBe(rememberedId);
 	});
 
 	it("isolates layout keys by view and projection inputs", () => {

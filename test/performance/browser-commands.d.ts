@@ -15,5 +15,3 @@ declare module "vitest/browser" {
 		writePerformanceBrowserResult(result: unknown): Promise<void>;
 	}
 }
-
-export {};

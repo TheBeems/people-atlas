@@ -2,7 +2,7 @@ export interface EventRef {
 	unload(): void;
 }
 
-type EventCallback = (...args: any[]) => void;
+type EventCallback = (...args: unknown[]) => void;
 
 class ControlledEventSource {
 	private readonly handlers = new Map<string, Set<EventCallback>>();
@@ -22,7 +22,7 @@ class ControlledEventSource {
 		};
 	}
 
-	emit(name: string, ...args: any[]): void {
+	emit(name: string, ...args: unknown[]): void {
 		for (const callback of [...(this.handlers.get(name) ?? [])]) callback(...args);
 	}
 
@@ -56,7 +56,7 @@ export class TFile {
 
 export class Component {
 	private readonly eventRefs = new Set<EventRef>();
-	private readonly callbacks = new Set<() => any>();
+	private readonly callbacks = new Set<() => unknown>();
 	private readonly children = new Set<Component>();
 	private loaded = false;
 
@@ -100,7 +100,7 @@ export class Component {
 		return component;
 	}
 
-	register(callback: () => any): void {
+	register(callback: () => unknown): void {
 		this.callbacks.add(callback);
 	}
 
@@ -159,7 +159,7 @@ interface BasesRegistration {
 interface CommandRegistration {
 	id: string;
 	name: string;
-	callback?: () => any;
+	callback?: () => unknown;
 }
 
 export class Plugin extends Component {
@@ -173,7 +173,7 @@ export class Plugin extends Component {
 		this.manifest = manifest;
 	}
 
-	addRibbonIcon(icon: string, title: string, callback: (event: MouseEvent) => any): HTMLElement {
+	addRibbonIcon(icon: string, title: string, callback: (event: MouseEvent) => void): HTMLElement {
 		const element = this.app.__runtime.document.createElement("button");
 		element.dataset.icon = icon;
 		element.title = title;
@@ -636,11 +636,11 @@ export class ControlledObsidianRuntime {
 		return file;
 	}
 
-	emitVault(name: string, ...args: any[]): void {
+	emitVault(name: string, ...args: unknown[]): void {
 		this.vault.emit(name, ...args);
 	}
 
-	emitMetadata(name: string, ...args: any[]): void {
+	emitMetadata(name: string, ...args: unknown[]): void {
 		this.metadataCache.emit(name, ...args);
 	}
 

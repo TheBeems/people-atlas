@@ -5,7 +5,7 @@ import { PeopleAtlasView } from "../../src/view/people-atlas-view";
 import { PeopleAtlasBasesView } from "../../src/bases/people-atlas-bases-view";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "../../src/constants";
 import type { AtlasSnapshot } from "../../src/domain/types";
-import { Component, ControlledObsidianRuntime, TFile, type ControlledBasesEntry } from "../obsidian-stub";
+import { type Component, ControlledObsidianRuntime, TFile, type ControlledBasesEntry } from "../obsidian-stub";
 import "../../styles.css";
 
 const manifest = {
@@ -114,6 +114,12 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(runtime.basesRegistrations.has(BASES_VIEW_TYPE_PEOPLE_ATLAS)).toBe(true);
 		expect(runtime.basesRegistrations.get(BASES_VIEW_TYPE_PEOPLE_ATLAS)?.options()).toHaveLength(12);
 		expect(runtime.commands.size).toBe(3);
+		expect([...runtime.commands.values()].map((command) => command.name)).toEqual([
+			"Open atlas",
+			"Create relationship",
+			"Edit current relationship",
+		]);
+		expect([...runtime.commands.values()].every((command) => !command.name.includes("People Atlas"))).toBe(true);
 		expect(runtime.ribbonItems.size).toBe(1);
 		expect(runtime.settingTabs.size).toBe(1);
 		expect(runtime.editorSuggests.size).toBe(1);

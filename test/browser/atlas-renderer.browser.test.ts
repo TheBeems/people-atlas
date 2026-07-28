@@ -885,7 +885,9 @@ describe("accessible atlas renderer", () => {
 		let disconnected = false;
 		let observed: Element | undefined;
 		class FrameResizeObserver {
-			constructor(_callback: ResizeObserverCallback) {}
+			constructor(callback: ResizeObserverCallback) {
+				void callback;
+			}
 			observe(target: Element): void {
 				observed = target;
 			}

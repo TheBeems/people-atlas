@@ -1,81 +1,70 @@
 # People Atlas
 
-People Atlas is an Obsidian 1.13+ plugin scaffold for mapping people, explicit relationships and unresolved contacts in a vault. It is designed as a clean v2 foundation rather than as a backwards-compatible rewrite of an existing plugin.
+[Nederlands](README.nl.md)
+
+People Atlas maps people, explicit relationships, and unresolved contacts stored as Markdown in your vault. It provides a standalone interactive atlas and a custom Bases view backed by the same indexed graph.
 
 > [!IMPORTANT]
-> **People Atlas 0.1.0 only supports Obsidian 1.13.0 or newer. Obsidian 1.12.x and older are not supported.**
->
-> As of 28 July 2026, Obsidian 1.13 is a [Catalyst early-access (beta) release](https://obsidian.md/help/catalyst). Catalyst access and **Receive early access versions** are therefore currently required to use People Atlas.
+> People Atlas requires Obsidian 1.13.0 or newer. Obsidian 1.12.x and older are not supported.
 
-## Included in this scaffold
+## Features
 
-- A standalone People Atlas view.
-- A custom Obsidian Bases view using the same graph model and renderer.
-- Declarative Obsidian 1.13 settings.
-- Stable person identities through `person_id`, with a path-based fallback.
-- Explicit relationship notes with stable IDs, direction, `from`, `to`, types, closeness, dates and status metadata.
-- Wikilink-based contact resolution instead of display-name matching.
-- An incremental vault index: changed files are reparsed without rescanning the whole vault.
-- `@` person suggestions that insert stable wikilinks and explicitly create new notes in the configured People folder.
-- A validated relationship editor available from commands and selected people in both atlas views.
-- A deterministic canvas layout, pan, zoom, node dragging and keyboard-accessible node list.
-- Diagnostics for duplicate IDs and broken relationship endpoints.
-- Unit tests for identity, wikilinks, graph building and graph projection.
-- CI and release-ready project structure.
+- Stable person identities through an explicit `person_id`, with a normalized file-path fallback.
+- Dedicated relationship notes with stable IDs, direction, types, closeness, dates, and status metadata.
+- Wikilink-based contact resolution without matching people by display name.
+- An incremental vault index that reparses changed files without rescanning the whole vault.
+- A standalone graph view and custom Bases view using the same graph snapshot.
+- Deterministic layout, pan, zoom, node dragging, touch gestures, and a keyboard-accessible list view.
+- Explicit relationship creation and editing with validation before any vault write.
+- `@` suggestions that insert stable wikilinks and create person notes only after an explicit choice.
+- Diagnostics for duplicate IDs, unresolved wikilinks, and broken relationship endpoints.
 
-## Requirements
+## Compatibility
 
-- Obsidian 1.13.0 or newer (currently a Catalyst early-access release).
-- Node.js 22 or newer for development.
+- Requires Obsidian 1.13.0 or newer.
+- Declares desktop and mobile compatibility with `isDesktopOnly: false`.
+- Production code does not depend on Node.js or Electron APIs.
+- Uses the declarative settings and custom Bases APIs introduced in Obsidian 1.13.
 
-## Development
+The initial Community Plugins submission will be made only after Obsidian 1.13 reaches public availability.
 
-```bash
-npm ci
-npm run dev
-```
+## Installation
 
-Copy or symlink this repository into:
+### Community Plugins
 
-```text
-<Vault>/.obsidian/plugins/people-atlas
-```
+After People Atlas is listed:
 
-Reload Obsidian and enable **People Atlas** under Community plugins.
+1. Open **Settings → Community plugins**.
+2. Select **Browse** and search for **People Atlas**.
+3. Select **Install**, then **Enable**.
 
-The default People folder is `People/`. New people created from the editor mention menu receive a generated `person_id`; typing alone never creates a note.
+### Manual installation
 
-Use **People Atlas: Create relationship** from the Command Palette or select a
-person in either atlas and choose **Create relationship**. New relationship
-notes default to `People/Relationships/<Person A> - <Person B>.md`; the path is
-reviewable and existing notes are never overwritten. Use **People Atlas: Edit
-current relationship** while a relationship note is active to edit its
-supported metadata.
+1. Download `main.js`, `manifest.json`, and `styles.css` from the matching [GitHub Release](https://github.com/TheBeems/people-atlas/releases).
+2. Create this folder inside your vault:
 
-Before committing:
+   ```text
+   <Vault>/.obsidian/plugins/people-atlas/
+   ```
 
-```bash
-npm run check
-```
+3. Place the three downloaded files in that folder.
+4. Reload Obsidian and enable **People Atlas** under Community plugins.
 
-## Release readiness
+## Usage
 
-`npm run check` runs the offline formatting, lint, type, test, production-build,
-metadata and bundle-size gates. `npm run dependency:audit` is a separate
-network-backed check that fails for high or critical npm audit findings.
-`npm run verify:reproducible` creates two clean production bundles and requires
-their SHA-256 digests to match.
+1. Open **Settings → People Atlas** and review the People folder and property names. The default People folder is `People/`.
+2. Add `type: person` and a stable `person_id` to person notes, or adapt the configured property names to your existing schema.
+3. Run **People Atlas: Open atlas** from the Command Palette.
+4. Create a relationship through **People Atlas: Create relationship**, or select a person in either atlas and choose **Create relationship**.
+5. Run **People Atlas: Edit current relationship** while a relationship note is active to update supported metadata.
 
-The release contract requires the unprefixed Git tag to exactly equal
-`manifest.json.version` (for example, `0.1.0`, not `v0.1.0`). After every gate
-passes, the tag workflow is configured to attest and attach only `main.js`,
-`manifest.json` and `styles.css`.
+Relationship notes default to `People/Relationships/<Person A> - <Person B>.md`. The proposed path is reviewable, and existing notes are never overwritten.
 
-These checks establish local and CI readiness only. They do not create or push
-a tag, publish a GitHub release, submit People Atlas to the Obsidian Community
-directory or constitute approval by Obsidian.
+Typing `@` opens person suggestions. Choosing an existing person inserts a stable wikilink. Choosing the explicit create option makes a new person note; typing alone never creates one.
 
-## Example person
+## Data model
+
+Example person:
 
 ```yaml
 ---
@@ -92,7 +81,7 @@ photo: "[[Attachments/alice.jpg]]"
 ---
 ```
 
-## Example relationship
+Example relationship:
 
 ```yaml
 ---
@@ -111,4 +100,48 @@ status: active
 ---
 ```
 
-See `ARCHITECTURE.md`, `ROADMAP.md` and `AGENTS.md` before making larger changes.
+Additional examples are available under [`examples/`](examples/).
+
+## Privacy and data access
+
+- People Atlas does not use network access.
+- People Atlas does not collect telemetry or analytics.
+- People Atlas does not require an account or payment.
+- People Atlas does not access files outside your vault.
+- It reads Markdown files and cached metadata inside the vault to build its index.
+- It creates or updates person and relationship notes only after an explicit user action and validation.
+- It stores plugin settings and view state through Obsidian's plugin data API.
+
+## Development
+
+Requirements:
+
+- Node.js 22.
+- Obsidian 1.13.0 or newer for integration testing.
+
+Install dependencies and start the development build:
+
+```bash
+npm ci
+npm run dev
+```
+
+Copy or symlink the repository into `<Vault>/.obsidian/plugins/people-atlas`, reload Obsidian, and enable the plugin.
+
+Before committing:
+
+```bash
+npm run dependency:audit
+npm run check
+npm run verify:reproducible
+```
+
+`npm run check` covers formatting, lint, types, tests, the production build, release metadata, bundle size, and the Community Plugins readiness contract. `npm run community:check` can run the directory-specific contract separately.
+
+The release tag must exactly match `manifest.json.version` without a `v` prefix. The release workflow verifies the remote tag revision, repeats the build gates, attests the artifacts, and attaches only `main.js`, `manifest.json`, and `styles.css`.
+
+## Support
+
+Report reproducible bugs and feature requests through [GitHub Issues](https://github.com/TheBeems/people-atlas/issues). Include the People Atlas version, Obsidian version, platform, and minimal reproduction steps. Do not include private vault content.
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md), [`ROADMAP.md`](ROADMAP.md), and [`AGENTS.md`](AGENTS.md) before making larger changes.

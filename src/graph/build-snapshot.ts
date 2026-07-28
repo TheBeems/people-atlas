@@ -14,9 +14,7 @@ import type {
 import { stableHash } from "../utils/hash";
 import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-elements";
 
-export interface LinkResolver {
-	(referenceTarget: string, sourcePath: string): string | undefined;
-}
+export type LinkResolver = (referenceTarget: string, sourcePath: string) => string | undefined;
 
 export interface BuildAtlasSnapshotOptions {
 	resolutionPeople?: PersonRecord[] | undefined;

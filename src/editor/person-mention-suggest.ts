@@ -9,7 +9,7 @@ import {
 	type TFile,
 } from "obsidian";
 import type { PersonIndex } from "../index/person-index";
-import { AtlasMutationService, MutationError } from "../mutations/atlas-mutation-service";
+import { type AtlasMutationService, MutationError } from "../mutations/atlas-mutation-service";
 import type { PeopleAtlasSettings } from "../settings/types";
 import { findMentionTrigger, formatMentionLink } from "./mention";
 

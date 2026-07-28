@@ -346,6 +346,7 @@ export class AtlasRenderer {
 		this.ratio = this.win.devicePixelRatio || 1;
 		this.canvas.width = Math.round(this.width * this.ratio);
 		this.canvas.height = Math.round(this.height * this.ratio);
+		// Keep the CSS-pixel surface and high-DPI backing store synchronized, including at fractional DPR.
 		this.canvas.style.width = `${this.width}px`;
 		this.canvas.style.height = `${this.height}px`;
 		if (!this.cameraInitialized) {
@@ -365,12 +366,12 @@ export class AtlasRenderer {
 
 	private draw(): void {
 		const style = this.win.getComputedStyle(this.container);
-		const background = style.getPropertyValue("--background-primary").trim() || "#1e1e1e";
-		const foreground = style.getPropertyValue("--text-normal").trim() || "#dddddd";
-		const muted = style.getPropertyValue("--text-muted").trim() || "#999999";
-		const border = style.getPropertyValue("--background-modifier-border").trim() || "#666666";
-		const accent = style.getPropertyValue("--interactive-accent").trim() || "#7b6cd9";
-		const secondary = style.getPropertyValue("--background-secondary").trim() || "#2a2a2a";
+		const background = style.getPropertyValue("--background-primary").trim() || "Canvas";
+		const foreground = style.getPropertyValue("--text-normal").trim() || "CanvasText";
+		const muted = style.getPropertyValue("--text-muted").trim() || "GrayText";
+		const border = style.getPropertyValue("--background-modifier-border").trim() || "GrayText";
+		const accent = style.getPropertyValue("--interactive-accent").trim() || "Highlight";
+		const secondary = style.getPropertyValue("--background-secondary").trim() || "Canvas";
 
 		const ctx = this.context;
 		ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);

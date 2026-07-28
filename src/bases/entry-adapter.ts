@@ -14,7 +14,7 @@ export interface BasesFieldMapping {
 function readString(entry: BasesEntry, property: BasesPropertyId | null): string | undefined {
 	if (!property) return undefined;
 	const value = entry.getValue(property);
-	if (!value || !value.isTruthy()) return undefined;
+	if (!value?.isTruthy()) return undefined;
 	const stringValue = value.toString().trim();
 	return stringValue || undefined;
 }
@@ -22,7 +22,7 @@ function readString(entry: BasesEntry, property: BasesPropertyId | null): string
 function readList(entry: BasesEntry, property: BasesPropertyId | null): string[] {
 	if (!property) return [];
 	const value = entry.getValue(property);
-	if (!value || !value.isTruthy()) return [];
+	if (!value?.isTruthy()) return [];
 	if (value instanceof ListValue) {
 		const result: string[] = [];
 		for (let index = 0; index < value.length(); index++) {

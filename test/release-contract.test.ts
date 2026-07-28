@@ -185,9 +185,9 @@ describe("release workflow tag guard", () => {
 		expect(publishIndex).toBeGreaterThan(remoteGuardIndex);
 		expect(workflow).toContain('if [[ "$remote_commit" != "$EXPECTED_SHA" ]]');
 		expect(workflow).toContain("--verify-tag");
-		expect(workflow).toContain('release_notes_file=".github/release-notes/${TAG}.md"');
+		expect(workflow).toContain(`release_notes_file=".github/release-notes/\${TAG}.md"`);
 		expect(workflow).toContain('release_args+=(--notes "$(cat "$release_notes_file")")');
-		expect(workflow).toContain('gh release create "${release_args[@]}" main.js manifest.json styles.css');
+		expect(workflow).toContain(`gh release create "\${release_args[@]}" main.js manifest.json styles.css`);
 	});
 
 	test("0.1.0 release notes state the exact Obsidian compatibility boundary", async () => {
@@ -196,5 +196,13 @@ describe("release workflow tag guard", () => {
 		expect(notes).toContain("only supports Obsidian 1.13.0 or newer");
 		expect(notes).toContain("Obsidian 1.12.x and older are not supported");
 		expect(notes).toContain("Catalyst early-access (beta) release");
+	});
+
+	test("the candidate release notes keep the permanent Obsidian compatibility boundary", async () => {
+		const notes = await readFile(path.join(process.cwd(), ".github", "release-notes", "0.1.1.md"), "utf8");
+
+		expect(notes).toContain("only supports Obsidian 1.13.0 or newer");
+		expect(notes).toContain("Obsidian 1.12.x and older are not supported");
+		expect(notes).not.toContain("currently");
 	});
 });

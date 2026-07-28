@@ -41,7 +41,7 @@ export function findMentionTrigger(lines: string[], cursor: EditorPositionLike):
 }
 
 export function formatMentionLink(targetPath: string, displayName: string): string {
-	const alias = `@${displayName.replace(/[\[\]]/g, "")}`;
+	const alias = `@${displayName.replaceAll("[", "").replaceAll("]", "")}`;
 	const linkPath = targetPath.replace(/\.md$/i, "");
 	return `[[${linkPath}|${alias}]]`;
 }

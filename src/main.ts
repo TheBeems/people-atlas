@@ -59,7 +59,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		this.addRibbonIcon("map", "Open People Atlas", () => void this.activateView());
 		this.addCommand({
 			id: "open-people-atlas",
-			name: "Open People Atlas",
+			name: "Open atlas",
 			callback: () => void this.activateView(),
 		});
 		this.addCommand({

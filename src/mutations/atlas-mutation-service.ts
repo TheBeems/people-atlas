@@ -242,39 +242,33 @@ export class AtlasMutationService {
 	}
 
 	private personFrontmatter(input: PersonMutationInput, personId: string, settings: PeopleAtlasSettings): string {
-		return (
-			[
-				`${settings.typeProperty}: ${yamlValue(settings.personTypeValue)}`,
-				`${settings.personIdProperty}: ${yamlValue(personId)}`,
-				`${settings.nameProperty}: ${yamlValue(input.name.trim())}`,
-				...(input.aliases?.length ? [`${settings.aliasesProperty}: ${yamlValue(input.aliases)}`] : []),
-				...(input.organisations?.length
-					? [`${settings.organisationsProperty}: ${yamlValue(input.organisations)}`]
-					: []),
-				...(input.photo ? [`${settings.photoProperty}: ${yamlValue(input.photo)}`] : []),
-				...(input.contacts?.length ? [`${settings.contactsProperty}: ${yamlValue(input.contacts)}`] : []),
-			].join("\n") + "\n"
-		);
+		return `${[
+			`${settings.typeProperty}: ${yamlValue(settings.personTypeValue)}`,
+			`${settings.personIdProperty}: ${yamlValue(personId)}`,
+			`${settings.nameProperty}: ${yamlValue(input.name.trim())}`,
+			...(input.aliases?.length ? [`${settings.aliasesProperty}: ${yamlValue(input.aliases)}`] : []),
+			...(input.organisations?.length ? [`${settings.organisationsProperty}: ${yamlValue(input.organisations)}`] : []),
+			...(input.photo ? [`${settings.photoProperty}: ${yamlValue(input.photo)}`] : []),
+			...(input.contacts?.length ? [`${settings.contactsProperty}: ${yamlValue(input.contacts)}`] : []),
+		].join("\n")}\n`;
 	}
 
 	private relationshipFrontmatter(
 		input: RelationshipMutationInput & { relationshipId: string },
 		settings: PeopleAtlasSettings,
 	): string {
-		return (
-			[
-				`${settings.typeProperty}: ${yamlValue(settings.relationshipTypeValue)}`,
-				`${settings.relationshipIdProperty}: ${yamlValue(input.relationshipId)}`,
-				`${settings.relationshipFromProperty}: ${yamlValue(input.from.trim())}`,
-				`${settings.relationshipToProperty}: ${yamlValue(input.to.trim())}`,
-				...(input.types?.length ? [`${settings.relationshipTypesProperty}: ${yamlValue(input.types)}`] : []),
-				...(input.direction ? [`${settings.directionProperty}: ${yamlValue(input.direction)}`] : []),
-				...(input.closeness !== undefined ? [`${settings.closenessProperty}: ${input.closeness}`] : []),
-				...(input.since ? [`${settings.sinceProperty}: ${yamlValue(input.since)}`] : []),
-				...(input.lastContact ? [`${settings.lastContactProperty}: ${yamlValue(input.lastContact)}`] : []),
-				...(input.status ? [`${settings.statusProperty}: ${yamlValue(input.status)}`] : []),
-			].join("\n") + "\n"
-		);
+		return `${[
+			`${settings.typeProperty}: ${yamlValue(settings.relationshipTypeValue)}`,
+			`${settings.relationshipIdProperty}: ${yamlValue(input.relationshipId)}`,
+			`${settings.relationshipFromProperty}: ${yamlValue(input.from.trim())}`,
+			`${settings.relationshipToProperty}: ${yamlValue(input.to.trim())}`,
+			...(input.types?.length ? [`${settings.relationshipTypesProperty}: ${yamlValue(input.types)}`] : []),
+			...(input.direction ? [`${settings.directionProperty}: ${yamlValue(input.direction)}`] : []),
+			...(input.closeness !== undefined ? [`${settings.closenessProperty}: ${input.closeness}`] : []),
+			...(input.since ? [`${settings.sinceProperty}: ${yamlValue(input.since)}`] : []),
+			...(input.lastContact ? [`${settings.lastContactProperty}: ${yamlValue(input.lastContact)}`] : []),
+			...(input.status ? [`${settings.statusProperty}: ${yamlValue(input.status)}`] : []),
+		].join("\n")}\n`;
 	}
 
 	private apply(frontmatter: Record<string, unknown>, key: string, value: unknown): void {

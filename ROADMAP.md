@@ -27,8 +27,9 @@
 
 ## Milestone 4 — Quality and release
 
-- Obsidian integration test harness.
-- Mobile and pop-out-window test matrix.
-- Performance fixtures for 100, 1,000 and 5,000 nodes.
-- Accessibility review.
-- Community plugin submission metadata.
+- [x] Controlled Obsidian integration test harness.
+- [x] Browser, touch, pop-out ownership, and multi-DPR renderer coverage.
+- [x] Performance fixtures for 100, 1,000 and 5,000 nodes.
+- [x] Accessibility-focused renderer behavior and reduced-motion support.
+- [x] Community Plugins metadata, disclosures, release contract, and automated readiness gate.
+- [ ] Submit the first Community Plugins release after Obsidian 1.13 becomes publicly available.

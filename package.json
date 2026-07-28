@@ -1,6 +1,6 @@
 {
   "name": "obsidian-people-atlas",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "A Bases-native people and relationship atlas for Obsidian.",
   "main": "main.js",
@@ -14,6 +14,7 @@
     "dependency:audit": "npm audit --audit-level=high",
     "format:check": "biome format .",
     "lint": "biome lint .",
+    "community:check": "node scripts/community-readiness.mjs",
     "perf:characterize": "node scripts/performance-characterize.mjs",
     "perf:graph-delta": "node scripts/graph-delta-characterize.mjs",
     "release:contract": "node scripts/release-contract.mjs",
@@ -26,7 +27,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "verify:reproducible": "node scripts/verify-reproducible-build.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build:production && npm run release:contract"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build:production && npm run release:contract && npm run community:check"
   },
   "keywords": [
     "obsidian",

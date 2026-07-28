@@ -5,9 +5,9 @@ import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import { TFile } from "obsidian";
 
 class EventBus {
-	private readonly handlers = new Map<string, Array<(...args: any[]) => void>>();
+	private readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 
-	on(name: string, callback: (...args: any[]) => void): { unload: () => void } {
+	on(name: string, callback: (...args: unknown[]) => void): { unload: () => void } {
 		const callbacks = this.handlers.get(name) ?? [];
 		callbacks.push(callback);
 		this.handlers.set(name, callbacks);
@@ -20,7 +20,7 @@ class EventBus {
 		};
 	}
 
-	emit(name: string, ...args: any[]): void {
+	emit(name: string, ...args: unknown[]): void {
 		for (const callback of this.handlers.get(name) ?? []) callback(...args);
 	}
 }

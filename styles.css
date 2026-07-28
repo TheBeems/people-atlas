@@ -342,8 +342,11 @@
 	.people-atlas-renderer *,
 	.people-atlas-renderer *::before,
 	.people-atlas-renderer *::after {
+		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component motion. */
 		scroll-behavior: auto !important;
+		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component motion. */
 		transition-duration: 0.01ms !important;
+		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component motion. */
 		animation-duration: 0.01ms !important;
 	}
 }

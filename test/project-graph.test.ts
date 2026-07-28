@@ -21,6 +21,12 @@ const snapshot: AtlasSnapshot = {
 	],
 };
 
+function requiredAt<T>(values: readonly T[], index: number): T {
+	const value = values[index];
+	if (value === undefined) throw new Error(`Fixture value ${index} is missing.`);
+	return value;
+}
+
 describe("projectGraph", () => {
 	it("projects the requested number of hops", () => {
 		const projected = projectGraph(snapshot, { centerId: "a", hops: 1, maxNodes: 100 });
@@ -49,9 +55,9 @@ describe("projectGraph", () => {
 			{
 				...snapshot,
 				edges: [
-					{ ...snapshot.edges[0]!, id: "new", lastContact: "2026-02-01", status: "active" },
-					{ ...snapshot.edges[1]!, id: "old", lastContact: "2024-02-01", status: "ended" },
-					{ ...snapshot.edges[2]!, id: "unknown", lastContact: undefined, status: "dormant" },
+					{ ...requiredAt(snapshot.edges, 0), id: "new", lastContact: "2026-02-01", status: "active" },
+					{ ...requiredAt(snapshot.edges, 1), id: "old", lastContact: "2024-02-01", status: "ended" },
+					{ ...requiredAt(snapshot.edges, 2), id: "unknown", lastContact: undefined, status: "dormant" },
 				],
 			},
 			{ centerMode: "none", projectionMode: "contact-health" },
@@ -66,8 +72,8 @@ describe("projectGraph", () => {
 			{
 				...snapshot,
 				nodes: [
-					{ ...snapshot.nodes[0]!, id: "ambiguous:a", personId: "duplicate" },
-					{ ...snapshot.nodes[1]!, id: "ambiguous:b", personId: "duplicate" },
+					{ ...requiredAt(snapshot.nodes, 0), id: "ambiguous:a", personId: "duplicate" },
+					{ ...requiredAt(snapshot.nodes, 1), id: "ambiguous:b", personId: "duplicate" },
 				],
 				edges: [],
 			},

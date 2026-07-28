@@ -7,7 +7,7 @@ De basis bevat al een zelfstandige view, een Bases-view, declaratieve instelling
 ## Starten
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -23,4 +23,10 @@ De voorbeeldnotities staan onder `examples/`.
 
 Nieuwe personen kunnen via de expliciete `@`-optie worden aangemaakt in de ingestelde standaardmap, standaard `People/`. Alleen typen maakt geen note aan.
 
-Een direct kopieerbare pluginmap staat onder `release/people-atlas/`.
+## Releasegereedheid
+
+`npm run check` voert de offline formatterings-, lint-, type-, test-, productiebuild-, metadata- en bundelgroottecontroles uit. `npm run dependency:audit` is een aparte netwerkcontrole die faalt bij npm-bevindingen met niveau high of critical. `npm run verify:reproducible` bouwt twee schone productiebundels en vereist gelijke SHA-256-digests.
+
+De releasetag moet zonder `v`-prefix exact gelijk zijn aan `manifest.json.version`, bijvoorbeeld `0.1.0`. Na alle geslaagde controles is de tagworkflow ingesteld om uitsluitend `main.js`, `manifest.json` en `styles.css` te attesteren en als releasebestanden toe te voegen.
+
+Dit bewijst alleen lokale en CI-gereedheid. De opdrachten maken of pushen geen tag, publiceren geen GitHub-release, dienen People Atlas niet in bij de Obsidian Community-directory en vormen geen goedkeuring door Obsidian.

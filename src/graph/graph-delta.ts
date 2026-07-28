@@ -81,7 +81,11 @@ function findNodeForPerson(context: ResolutionContext, person: PersonRecord): At
 	return context.nodeByPersonPath.get(person.filePath);
 }
 
-function diagnosticForAmbiguous(reference: PersonReference, sourcePath: string, matches: PersonRecord[]): AtlasDiagnostic {
+function diagnosticForAmbiguous(
+	reference: PersonReference,
+	sourcePath: string,
+	matches: PersonRecord[],
+): AtlasDiagnostic {
 	return {
 		id: `ambiguous-reference:${sourcePath}:${referenceKey(reference)}`,
 		severity: "error",
@@ -147,11 +151,7 @@ function addContactEdge(
 	if (!source || !target) {
 		addDiagnostic(
 			diagnostics,
-			filteredEndpointDiagnostic(
-				person.filePath,
-				"contact",
-				`${referenceKey(reference)}:${contactIndex}`,
-			),
+			filteredEndpointDiagnostic(person.filePath, "contact", `${referenceKey(reference)}:${contactIndex}`),
 		);
 		return;
 	}
@@ -178,8 +178,10 @@ function addRelationshipEdge(
 	const source = resolveReference(relationship.from, relationship.filePath, context);
 	const target = resolveReference(relationship.to, relationship.filePath, context);
 	if (source.ambiguous.length > 1 || target.ambiguous.length > 1) {
-		if (source.ambiguous.length > 1) addDiagnostic(diagnostics, diagnosticForAmbiguous(relationship.from, relationship.filePath, source.ambiguous));
-		if (target.ambiguous.length > 1) addDiagnostic(diagnostics, diagnosticForAmbiguous(relationship.to, relationship.filePath, target.ambiguous));
+		if (source.ambiguous.length > 1)
+			addDiagnostic(diagnostics, diagnosticForAmbiguous(relationship.from, relationship.filePath, source.ambiguous));
+		if (target.ambiguous.length > 1)
+			addDiagnostic(diagnostics, diagnosticForAmbiguous(relationship.to, relationship.filePath, target.ambiguous));
 		return;
 	}
 	if (!source.person || !target.person) {
@@ -214,7 +216,9 @@ function addRelationshipEdge(
 		});
 		return;
 	}
-	const id = duplicateRelationshipIds.has(relationship.id) ? `${relationship.id}:${stableHash(relationship.filePath)}` : relationship.id;
+	const id = duplicateRelationshipIds.has(relationship.id)
+		? `${relationship.id}:${stableHash(relationship.filePath)}`
+		: relationship.id;
 	edges.set(id, {
 		id,
 		sourceId: sourceNode.id,
@@ -268,9 +272,20 @@ export function applyGraphDelta(
 	const remappedNodes = new Map<NodeId, AtlasNode>();
 	const idRemap = new Map<NodeId, NodeId>();
 	for (const [oldId, node] of nodes) {
-		const desired = node.kind === "person" && node.personId && node.filePath
-			? nodeIdForPerson({ id: node.personId, filePath: node.filePath, name: node.label, aliases: [], organisations: node.organisations, contacts: [] }, duplicatePersonIds)
-			: oldId;
+		const desired =
+			node.kind === "person" && node.personId && node.filePath
+				? nodeIdForPerson(
+						{
+							id: node.personId,
+							filePath: node.filePath,
+							name: node.label,
+							aliases: [],
+							organisations: node.organisations,
+							contacts: [],
+						},
+						duplicatePersonIds,
+					)
+				: oldId;
 		idRemap.set(oldId, desired);
 		remappedNodes.set(desired, { ...node, id: desired });
 	}
@@ -281,19 +296,24 @@ export function applyGraphDelta(
 	for (const edge of previous.edges) {
 		const sourcePath = previousNodeById.get(edge.sourceId)?.filePath;
 		const targetPath = previousNodeById.get(edge.targetId)?.filePath;
-		const affected = Boolean(edge.filePath && changedPaths.has(edge.filePath)) || Boolean(sourcePath && changedPersonPaths.has(sourcePath)) || Boolean(targetPath && changedPersonPaths.has(targetPath));
+		const affected =
+			Boolean(edge.filePath && changedPaths.has(edge.filePath)) ||
+			Boolean(sourcePath && changedPersonPaths.has(sourcePath)) ||
+			Boolean(targetPath && changedPersonPaths.has(targetPath));
 		if (affected) continue;
 		const sourceId = idRemap.get(edge.sourceId) ?? edge.sourceId;
 		const targetId = idRemap.get(edge.targetId) ?? edge.targetId;
-		const edgeId = edge.inferred && edge.types.includes("contact")
-			? inferredContactEdgeId(sourceId, targetId)
-			: edge.id;
+		const edgeId =
+			edge.inferred && edge.types.includes("contact") ? inferredContactEdgeId(sourceId, targetId) : edge.id;
 		edges.set(edgeId, { ...edge, id: edgeId, sourceId, targetId });
 	}
 
 	const diagnostics = new Map<string, AtlasDiagnostic>();
 	for (const diagnostic of previous.diagnostics) {
-		const changed = diagnostic.filePaths.some((path) => changedPaths.has(path)) || diagnostic.code.startsWith("duplicate-") || diagnostic.code === "node-limit";
+		const changed =
+			diagnostic.filePaths.some((path) => changedPaths.has(path)) ||
+			diagnostic.code.startsWith("duplicate-") ||
+			diagnostic.code === "node-limit";
 		if (!changed) diagnostics.set(diagnostic.id, diagnostic);
 	}
 	for (const diagnostic of delta.diagnostics) addDiagnostic(diagnostics, diagnostic);
@@ -308,11 +328,13 @@ export function applyGraphDelta(
 	}
 
 	for (const [id, node] of [...remappedNodes.entries()]) {
-		if (node.kind === "ghost" && ![...edges.values()].some((edge) => edge.sourceId === id || edge.targetId === id)) remappedNodes.delete(id);
+		if (node.kind === "ghost" && ![...edges.values()].some((edge) => edge.sourceId === id || edge.targetId === id))
+			remappedNodes.delete(id);
 	}
-	const hiddenNodeCount = visiblePaths && options.resolutionPeople
-		? options.resolutionPeople.filter((person) => !visiblePaths.has(person.filePath)).length
-		: previous.hiddenNodeCount;
+	const hiddenNodeCount =
+		visiblePaths && options.resolutionPeople
+			? options.resolutionPeople.filter((person) => !visiblePaths.has(person.filePath)).length
+			: previous.hiddenNodeCount;
 	const hiddenEdgeCount = visiblePaths
 		? [...diagnostics.values()].filter((diagnostic) => diagnostic.code === "filtered-endpoint").length
 		: 0;

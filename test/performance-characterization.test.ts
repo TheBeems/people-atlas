@@ -105,42 +105,42 @@ function validPartialResults(): { node: Record<string, unknown>; browser: Record
 		"incremental-canvas-paint",
 		"lifecycle-cleanup",
 	];
-	const cases = (surface: "node" | "browser"): Array<Record<string, unknown>> => (
-		PERFORMANCE_PROFILES.flatMap((profile, profileIndex) => PERFORMANCE_SIZES.map((size, sizeIndex) => {
-			const sampleCount = surface === "node" ? NODE_SAMPLE_COUNT : BROWSER_SAMPLE_COUNT;
-			const sampleValue = (profileIndex + 1) * (sizeIndex + 1);
-			const stages = surface === "node" ? nodeStages : browserStages;
-			const result: Record<string, unknown> = {
-				size,
-				profile,
-				counts: {
-					people: size,
-					relationships: size * (profile === "sparse" ? 2 : 8),
-					nodes: size,
-					edges: size * (profile === "sparse" ? 2 : 8),
-				},
-				warmups: surface === "node" ? NODE_WARMUP_COUNT : BROWSER_WARMUP_COUNT,
-				recordedSamples: sampleCount,
-				timings: Object.fromEntries(stages.map((stage) => [
-					stage,
-					timingSamples(Array.from({ length: sampleCount }, () => sampleValue)),
-				])),
-				memory: [],
-			};
-			if (surface === "browser") {
-				result.interaction = {
-					recordedFrames: INTERACTION_FRAME_COUNT,
-					timing: timingSamples(Array.from({ length: INTERACTION_FRAME_COUNT }, () => sampleValue)),
-					redrawTriggers: INTERACTION_FRAME_COUNT * 2,
-					requestedAnimationFrames: INTERACTION_FRAME_COUNT,
-					executedAnimationFrames: INTERACTION_FRAME_COUNT,
-					coalescedTriggers: INTERACTION_FRAME_COUNT,
+	const cases = (surface: "node" | "browser"): Array<Record<string, unknown>> =>
+		PERFORMANCE_PROFILES.flatMap((profile, profileIndex) =>
+			PERFORMANCE_SIZES.map((size, sizeIndex) => {
+				const sampleCount = surface === "node" ? NODE_SAMPLE_COUNT : BROWSER_SAMPLE_COUNT;
+				const sampleValue = (profileIndex + 1) * (sizeIndex + 1);
+				const stages = surface === "node" ? nodeStages : browserStages;
+				const result: Record<string, unknown> = {
+					size,
+					profile,
+					counts: {
+						people: size,
+						relationships: size * (profile === "sparse" ? 2 : 8),
+						nodes: size,
+						edges: size * (profile === "sparse" ? 2 : 8),
+					},
+					warmups: surface === "node" ? NODE_WARMUP_COUNT : BROWSER_WARMUP_COUNT,
+					recordedSamples: sampleCount,
+					timings: Object.fromEntries(
+						stages.map((stage) => [stage, timingSamples(Array.from({ length: sampleCount }, () => sampleValue))]),
+					),
+					memory: [],
 				};
-				result.cleanupVerified = true;
-			}
-			return result;
-		}))
-	);
+				if (surface === "browser") {
+					result.interaction = {
+						recordedFrames: INTERACTION_FRAME_COUNT,
+						timing: timingSamples(Array.from({ length: INTERACTION_FRAME_COUNT }, () => sampleValue)),
+						redrawTriggers: INTERACTION_FRAME_COUNT * 2,
+						requestedAnimationFrames: INTERACTION_FRAME_COUNT,
+						executedAnimationFrames: INTERACTION_FRAME_COUNT,
+						coalescedTriggers: INTERACTION_FRAME_COUNT,
+					};
+					result.cleanupVerified = true;
+				}
+				return result;
+			}),
+		);
 	return {
 		node: {
 			runnerVersion: PERFORMANCE_RUNNER_VERSION,
@@ -167,24 +167,26 @@ function validGraphDeltaResult(): Record<string, unknown> {
 		runnerVersion: "p6b-graph-delta-v1",
 		fixtureContractVersion: FIXTURE_CONTRACT_VERSION,
 		runtime: { node: process.version },
-		cases: PERFORMANCE_PROFILES.flatMap((profile) => PERFORMANCE_SIZES.map((size) => ({
-			size,
-			profile,
-			counts: {
-				people: size,
-				relationships: size * (profile === "sparse" ? 2 : 8),
-				nodes: size,
-				edges: size * (profile === "sparse" ? 2 : 8),
-			},
-			warmups: NODE_WARMUP_COUNT,
-			recordedSamples: NODE_SAMPLE_COUNT,
-			timings: {
-				"graph-delta": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 8)),
-				"incremental-projection": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 1)),
-				"incremental-layout": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 1)),
-				"incremental-recomputation": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 10)),
-			},
-		}))),
+		cases: PERFORMANCE_PROFILES.flatMap((profile) =>
+			PERFORMANCE_SIZES.map((size) => ({
+				size,
+				profile,
+				counts: {
+					people: size,
+					relationships: size * (profile === "sparse" ? 2 : 8),
+					nodes: size,
+					edges: size * (profile === "sparse" ? 2 : 8),
+				},
+				warmups: NODE_WARMUP_COUNT,
+				recordedSamples: NODE_SAMPLE_COUNT,
+				timings: {
+					"graph-delta": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 8)),
+					"incremental-projection": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 1)),
+					"incremental-layout": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 1)),
+					"incremental-recomputation": timingSamples(Array.from({ length: NODE_SAMPLE_COUNT }, () => 10)),
+				},
+			})),
+		),
 	};
 }
 
@@ -230,9 +232,7 @@ describe("combined performance result validation", () => {
 
 		const wrongSamples = validPartialResults();
 		const firstBrowserCase = (wrongSamples.browser.cases as Array<Record<string, unknown>>)[0];
-		const timing = (firstBrowserCase?.timings as Record<string, { samples: number[] }>)[
-			"snapshot-and-semantic-dom"
-		];
+		const timing = (firstBrowserCase?.timings as Record<string, { samples: number[] }>)["snapshot-and-semantic-dom"];
 		timing?.samples.pop();
 		expect(() => validateCombinedPerformanceResults(wrongSamples.node, wrongSamples.browser)).toThrow(
 			/exactly 10 raw samples/i,
@@ -244,15 +244,11 @@ describe("combined performance result validation", () => {
 		const firstNodeCase = (wrongCounts.node.cases as Array<Record<string, unknown>>)[0];
 		const counts = firstNodeCase?.counts as Record<string, number>;
 		counts.edges = (counts.edges ?? 0) + 1;
-		expect(() => validateCombinedPerformanceResults(wrongCounts.node, wrongCounts.browser)).toThrow(
-			/counts.edges/i,
-		);
+		expect(() => validateCombinedPerformanceResults(wrongCounts.node, wrongCounts.browser)).toThrow(/counts.edges/i);
 
 		const wrongSummary = validPartialResults();
 		const firstBrowserCase = (wrongSummary.browser.cases as Array<Record<string, unknown>>)[0];
-		const timing = (firstBrowserCase?.timings as Record<string, { summary: { p95: number } }>)[
-			"canvas-first-paint"
-		];
+		const timing = (firstBrowserCase?.timings as Record<string, { summary: { p95: number } }>)["canvas-first-paint"];
 		if (timing) timing.summary.p95 += 1;
 		expect(() => validateCombinedPerformanceResults(wrongSummary.node, wrongSummary.browser)).toThrow(
 			/does not match its raw samples/i,
@@ -273,10 +269,15 @@ describe("graph-delta performance result validation", () => {
 
 		const invalidAggregate = validGraphDeltaResult();
 		const invalidFirstCase = (invalidAggregate.cases as Array<Record<string, unknown>>)[0];
-		const aggregate = (invalidFirstCase?.timings as Record<string, {
-			samples: number[];
-			summary: { min: number; median: number; p95: number; max: number };
-		}>)["incremental-recomputation"];
+		const aggregate = (
+			invalidFirstCase?.timings as Record<
+				string,
+				{
+					samples: number[];
+					summary: { min: number; median: number; p95: number; max: number };
+				}
+			>
+		)["incremental-recomputation"];
 		if (aggregate) {
 			aggregate.samples = Array.from({ length: NODE_SAMPLE_COUNT }, () => 9);
 			aggregate.summary = { min: 9, median: 9, p95: 9, max: 9 };

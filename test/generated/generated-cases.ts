@@ -63,9 +63,7 @@ export class SeededGenerator {
 }
 
 export function reference(target: string, label?: string): PersonReference {
-	return label
-		? { raw: `[[${target}|${label}]]`, target, label }
-		: { raw: `[[${target}]]`, target };
+	return label ? { raw: `[[${target}|${label}]]`, target, label } : { raw: `[[${target}]]`, target };
 }
 
 export function person(
@@ -199,16 +197,7 @@ export function generatedSnapshotCase(seed: number): GeneratedSnapshotCase {
 		relationship(`missing-${suffix}`, `Relationships/${suffix}/Missing.md`, alphaId, unresolved),
 		relationship(`filtered-${suffix}`, `Relationships/${suffix}/Filtered.md`, alphaId, hiddenId),
 	];
-	const people = random.shuffle([
-		alpha,
-		beta,
-		duplicateA,
-		duplicateB,
-		decoyA,
-		decoyB,
-		hidden,
-		pathOwned,
-	]);
+	const people = random.shuffle([alpha, beta, duplicateA, duplicateB, decoyA, decoyB, hidden, pathOwned]);
 	const visiblePeople = people.filter((entry) => entry.filePath !== paths.hidden);
 	const canonical: RawIndexSnapshot = { people, relationships: random.shuffle(relationships), diagnostics: [] };
 	const visible: RawIndexSnapshot = { people: visiblePeople, relationships: [], diagnostics: [] };
@@ -273,13 +262,30 @@ export function generatedIndexOperations(seed: number): GeneratedIndexOperation[
 	const rel = relationship(`rel-${suffix}`, relationshipPath, alice.id, bob.id);
 
 	return [
-		{ kind: "upsert", parsed: { filePath: diagnosticPath, diagnostics: [generatedDiagnostic(seed, diagnosticPath, 1)] } },
+		{
+			kind: "upsert",
+			parsed: { filePath: diagnosticPath, diagnostics: [generatedDiagnostic(seed, diagnosticPath, 1)] },
+		},
 		{ kind: "upsert", parsed: { filePath: alicePath, person: alice, diagnostics: [] } },
 		{ kind: "upsert", parsed: { filePath: bobPath, person: bob, diagnostics: [] } },
 		{ kind: "upsert", parsed: { filePath: carolPath, person: carol, diagnostics: [] } },
 		{ kind: "upsert", parsed: { filePath: relationshipPath, relationship: rel, diagnostics: [] } },
-		{ kind: "upsert", parsed: { filePath: duplicatePath, person: person(alice.id, duplicatePath, `Duplicate ${suffix}`), diagnostics: [] } },
-		{ kind: "upsert", parsed: { filePath: duplicateRelationshipPath, relationship: relationship(rel.id, duplicateRelationshipPath, alice.id, bob.id), diagnostics: [] } },
+		{
+			kind: "upsert",
+			parsed: {
+				filePath: duplicatePath,
+				person: person(alice.id, duplicatePath, `Duplicate ${suffix}`),
+				diagnostics: [],
+			},
+		},
+		{
+			kind: "upsert",
+			parsed: {
+				filePath: duplicateRelationshipPath,
+				relationship: relationship(rel.id, duplicateRelationshipPath, alice.id, bob.id),
+				diagnostics: [],
+			},
+		},
 		{
 			kind: "upsert",
 			parsed: {
@@ -295,10 +301,7 @@ export function generatedIndexOperations(seed: number): GeneratedIndexOperation[
 			kind: "upsert",
 			parsed: {
 				filePath: carolPath,
-				person: person(carol.id, carolPath, carol.name, [
-					reference(`alice-new-${suffix}`),
-					reference(bobPath),
-				]),
+				person: person(carol.id, carolPath, carol.name, [reference(`alice-new-${suffix}`), reference(bobPath)]),
 				diagnostics: [generatedDiagnostic(seed, carolPath, 2)],
 			},
 		},
@@ -319,6 +322,9 @@ export function generatedIndexOperations(seed: number): GeneratedIndexOperation[
 		{ kind: "remove", path: alicePath, additionalAffectedPaths: [`Manual/${suffix}/dependent.md`] },
 		{ kind: "remove", path: diagnosticPath },
 		{ kind: "remove", path: `Missing/${suffix}/${random.int(10)}.md` },
-		{ kind: "upsert", parsed: { filePath: diagnosticPath, diagnostics: [generatedDiagnostic(seed, diagnosticPath, 3)] } },
+		{
+			kind: "upsert",
+			parsed: { filePath: diagnosticPath, diagnostics: [generatedDiagnostic(seed, diagnosticPath, 3)] },
+		},
 	];
 }

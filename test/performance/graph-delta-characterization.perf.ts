@@ -28,13 +28,9 @@ import {
 	type TimingSamples,
 } from "./performance-model";
 
-export const GRAPH_DELTA_RUNNER_VERSION = "p6b-graph-delta-v1";
+const GRAPH_DELTA_RUNNER_VERSION = "p6b-graph-delta-v1";
 
-type GraphDeltaStage =
-	| "graph-delta"
-	| "incremental-projection"
-	| "incremental-layout"
-	| "incremental-recomputation";
+type GraphDeltaStage = "graph-delta" | "incremental-projection" | "incremental-layout" | "incremental-recomputation";
 
 interface GraphDeltaCaseResult {
 	size: PerformanceSize;
@@ -62,12 +58,9 @@ function runIncrementalPipeline(
 	const aggregateStartedAt = performance.now();
 
 	let startedAt = performance.now();
-	const incremental = applyGraphDelta(
-		baseline,
-		scenario.delta,
-		() => undefined,
-		{ resolutionPeople: scenario.raw.people },
-	);
+	const incremental = applyGraphDelta(baseline, scenario.delta, () => undefined, {
+		resolutionPeople: scenario.raw.people,
+	});
 	const graphDeltaDuration = performance.now() - startedAt;
 
 	startedAt = performance.now();
@@ -95,21 +88,15 @@ function runIncrementalPipeline(
 	};
 }
 
-function characterizeCase(
-	size: PerformanceSize,
-	profile: PerformanceProfile,
-): GraphDeltaCaseResult {
+function characterizeCase(size: PerformanceSize, profile: PerformanceProfile): GraphDeltaCaseResult {
 	const fixture = generatePerformanceFixture(size, profile);
 	validatePerformanceFixture(fixture);
 	const baseline = buildPerformanceSnapshot(fixture.raw);
 	const counts = validateSnapshotCounts(fixture, baseline);
 	const scenario = createIncrementalFixtureScenario(fixture);
-	const incremental = applyGraphDelta(
-		baseline,
-		scenario.delta,
-		() => undefined,
-		{ resolutionPeople: scenario.raw.people },
-	);
+	const incremental = applyGraphDelta(baseline, scenario.delta, () => undefined, {
+		resolutionPeople: scenario.raw.people,
+	});
 	assertStableIncrementalIdentities(baseline, incremental, scenario);
 	assertEquivalentSnapshots(incremental, buildPerformanceSnapshot(scenario.raw));
 

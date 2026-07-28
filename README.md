@@ -26,7 +26,7 @@ People Atlas is an Obsidian 1.13+ plugin scaffold for mapping people, explicit r
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -47,13 +47,28 @@ reviewable and existing notes are never overwritten. Use **People Atlas: Edit
 current relationship** while a relationship note is active to edit its
 supported metadata.
 
-A ready-to-copy plugin folder is also generated at `release/people-atlas/`.
-
 Before committing:
 
 ```bash
 npm run check
 ```
+
+## Release readiness
+
+`npm run check` runs the offline formatting, lint, type, test, production-build,
+metadata and bundle-size gates. `npm run dependency:audit` is a separate
+network-backed check that fails for high or critical npm audit findings.
+`npm run verify:reproducible` creates two clean production bundles and requires
+their SHA-256 digests to match.
+
+The release contract requires the unprefixed Git tag to exactly equal
+`manifest.json.version` (for example, `0.1.0`, not `v0.1.0`). After every gate
+passes, the tag workflow is configured to attest and attach only `main.js`,
+`manifest.json` and `styles.css`.
+
+These checks establish local and CI readiness only. They do not create or push
+a tag, publish a GitHub release, submit People Atlas to the Obsidian Community
+directory or constitute approval by Obsidian.
 
 ## Example person
 

@@ -82,7 +82,11 @@ export class AtlasMutationService {
 		const errors = validateRelationshipInput({ ...input, path }, settings);
 
 		const relationshipId = input.relationshipId?.trim() || resolveRelationshipId(undefined, path);
-		if (this.identityInUse(relationshipId, path, this.reservedRelationshipIds, (id) => this.index.getRelationshipPathsById(id))) {
+		if (
+			this.identityInUse(relationshipId, path, this.reservedRelationshipIds, (id) =>
+				this.index.getRelationshipPathsById(id),
+			)
+		) {
 			errors.push(`relationship_id “${relationshipId}” is already in use.`);
 		}
 		if (this.app.vault.getAbstractFileByPath(path)) errors.push(`A note already exists at “${path}”.`);
@@ -98,14 +102,19 @@ export class AtlasMutationService {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-		const name = updates.name === null ? "" : updates.name ?? String(current[settings.nameProperty] ?? file.basename);
-		const cachedPersonId = typeof current[settings.personIdProperty] === "string"
-			? current[settings.personIdProperty]
-			: this.reservedIdentityForPath(this.reservedPersonIds, file.path);
-		const personId = updates.personId === null ? undefined : updates.personId ?? cachedPersonId;
+		const name = updates.name === null ? "" : (updates.name ?? String(current[settings.nameProperty] ?? file.basename));
+		const cachedPersonId =
+			typeof current[settings.personIdProperty] === "string"
+				? current[settings.personIdProperty]
+				: this.reservedIdentityForPath(this.reservedPersonIds, file.path);
+		const personId = updates.personId === null ? undefined : (updates.personId ?? cachedPersonId);
 		const errors = validatePersonInput({ name, personId }, settings);
 		const resultingPersonId = resolvePersonId(personId, file.path);
-		if (this.identityInUse(resultingPersonId, file.path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
+		if (
+			this.identityInUse(resultingPersonId, file.path, this.reservedPersonIds, (id) =>
+				this.index.getPeoplePathsById(id),
+			)
+		) {
 			errors.push(`person_id “${resultingPersonId}” is already in use.`);
 		}
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
@@ -124,12 +133,15 @@ export class AtlasMutationService {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-		const value = <T>(key: string, update: T | null | undefined): T | undefined => update === null ? undefined : update ?? current[key] as T | undefined;
+		const value = <T>(key: string, update: T | null | undefined): T | undefined =>
+			update === null ? undefined : (update ?? (current[key] as T | undefined));
 		const path = file.path;
-		const cachedRelationshipId = typeof current[settings.relationshipIdProperty] === "string"
-			? current[settings.relationshipIdProperty]
-			: this.reservedIdentityForPath(this.reservedRelationshipIds, file.path);
-		const relationshipId = updates.relationshipId === null ? undefined : updates.relationshipId ?? cachedRelationshipId;
+		const cachedRelationshipId =
+			typeof current[settings.relationshipIdProperty] === "string"
+				? current[settings.relationshipIdProperty]
+				: this.reservedIdentityForPath(this.reservedRelationshipIds, file.path);
+		const relationshipId =
+			updates.relationshipId === null ? undefined : (updates.relationshipId ?? cachedRelationshipId);
 		const input: RelationshipMutationInput = {
 			path,
 			from: value<string>(settings.relationshipFromProperty, updates.from) ?? "",
@@ -150,7 +162,11 @@ export class AtlasMutationService {
 		if (status !== undefined) input.status = status;
 		const errors = validateRelationshipInput(input, settings);
 		const resultingRelationshipId = resolveRelationshipId(relationshipId, file.path);
-		if (this.identityInUse(resultingRelationshipId, file.path, this.reservedRelationshipIds, (id) => this.index.getRelationshipPathsById(id))) {
+		if (
+			this.identityInUse(resultingRelationshipId, file.path, this.reservedRelationshipIds, (id) =>
+				this.index.getRelationshipPathsById(id),
+			)
+		) {
 			errors.push(`relationship_id “${resultingRelationshipId}” is already in use.`);
 		}
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
@@ -170,7 +186,10 @@ export class AtlasMutationService {
 
 	private runExclusive<T>(operation: () => Promise<T>): Promise<T> {
 		const result = this.mutationQueue.then(operation, operation);
-		this.mutationQueue = result.then(() => undefined, () => undefined);
+		this.mutationQueue = result.then(
+			() => undefined,
+			() => undefined,
+		);
 		return result;
 	}
 
@@ -186,8 +205,10 @@ export class AtlasMutationService {
 			reservations.delete(id);
 		}
 		const activeReservation = reservations.get(id);
-		return indexedPaths.some((path) => path !== currentPath)
-			|| (activeReservation !== undefined && activeReservation !== currentPath);
+		return (
+			indexedPaths.some((path) => path !== currentPath) ||
+			(activeReservation !== undefined && activeReservation !== currentPath)
+		);
 	}
 
 	private rememberIdentity(reservations: Map<string, string>, id: string, path: string): void {
@@ -214,36 +235,46 @@ export class AtlasMutationService {
 		for (const part of folder.split("/")) {
 			current = current ? `${current}/${part}` : part;
 			const existing = this.app.vault.getAbstractFileByPath(current);
-			if (existing && !Array.isArray((existing as { children?: unknown }).children)) throw new MutationError(`The destination “${current}” is not a folder.`);
+			if (existing && !Array.isArray((existing as { children?: unknown }).children))
+				throw new MutationError(`The destination “${current}” is not a folder.`);
 			if (!existing) await this.app.vault.createFolder(current);
 		}
 	}
 
 	private personFrontmatter(input: PersonMutationInput, personId: string, settings: PeopleAtlasSettings): string {
-		return [
-			`${settings.typeProperty}: ${yamlValue(settings.personTypeValue)}`,
-			`${settings.personIdProperty}: ${yamlValue(personId)}`,
-			`${settings.nameProperty}: ${yamlValue(input.name.trim())}`,
-			...(input.aliases?.length ? [`${settings.aliasesProperty}: ${yamlValue(input.aliases)}`] : []),
-			...(input.organisations?.length ? [`${settings.organisationsProperty}: ${yamlValue(input.organisations)}`] : []),
-			...(input.photo ? [`${settings.photoProperty}: ${yamlValue(input.photo)}`] : []),
-			...(input.contacts?.length ? [`${settings.contactsProperty}: ${yamlValue(input.contacts)}`] : []),
-		].join("\n") + "\n";
+		return (
+			[
+				`${settings.typeProperty}: ${yamlValue(settings.personTypeValue)}`,
+				`${settings.personIdProperty}: ${yamlValue(personId)}`,
+				`${settings.nameProperty}: ${yamlValue(input.name.trim())}`,
+				...(input.aliases?.length ? [`${settings.aliasesProperty}: ${yamlValue(input.aliases)}`] : []),
+				...(input.organisations?.length
+					? [`${settings.organisationsProperty}: ${yamlValue(input.organisations)}`]
+					: []),
+				...(input.photo ? [`${settings.photoProperty}: ${yamlValue(input.photo)}`] : []),
+				...(input.contacts?.length ? [`${settings.contactsProperty}: ${yamlValue(input.contacts)}`] : []),
+			].join("\n") + "\n"
+		);
 	}
 
-	private relationshipFrontmatter(input: RelationshipMutationInput & { relationshipId: string }, settings: PeopleAtlasSettings): string {
-		return [
-			`${settings.typeProperty}: ${yamlValue(settings.relationshipTypeValue)}`,
-			`${settings.relationshipIdProperty}: ${yamlValue(input.relationshipId)}`,
-			`${settings.relationshipFromProperty}: ${yamlValue(input.from.trim())}`,
-			`${settings.relationshipToProperty}: ${yamlValue(input.to.trim())}`,
-			...(input.types?.length ? [`${settings.relationshipTypesProperty}: ${yamlValue(input.types)}`] : []),
-			...(input.direction ? [`${settings.directionProperty}: ${yamlValue(input.direction)}`] : []),
-			...(input.closeness !== undefined ? [`${settings.closenessProperty}: ${input.closeness}`] : []),
-			...(input.since ? [`${settings.sinceProperty}: ${yamlValue(input.since)}`] : []),
-			...(input.lastContact ? [`${settings.lastContactProperty}: ${yamlValue(input.lastContact)}`] : []),
-			...(input.status ? [`${settings.statusProperty}: ${yamlValue(input.status)}`] : []),
-		].join("\n") + "\n";
+	private relationshipFrontmatter(
+		input: RelationshipMutationInput & { relationshipId: string },
+		settings: PeopleAtlasSettings,
+	): string {
+		return (
+			[
+				`${settings.typeProperty}: ${yamlValue(settings.relationshipTypeValue)}`,
+				`${settings.relationshipIdProperty}: ${yamlValue(input.relationshipId)}`,
+				`${settings.relationshipFromProperty}: ${yamlValue(input.from.trim())}`,
+				`${settings.relationshipToProperty}: ${yamlValue(input.to.trim())}`,
+				...(input.types?.length ? [`${settings.relationshipTypesProperty}: ${yamlValue(input.types)}`] : []),
+				...(input.direction ? [`${settings.directionProperty}: ${yamlValue(input.direction)}`] : []),
+				...(input.closeness !== undefined ? [`${settings.closenessProperty}: ${input.closeness}`] : []),
+				...(input.since ? [`${settings.sinceProperty}: ${yamlValue(input.since)}`] : []),
+				...(input.lastContact ? [`${settings.lastContactProperty}: ${yamlValue(input.lastContact)}`] : []),
+				...(input.status ? [`${settings.statusProperty}: ${yamlValue(input.status)}`] : []),
+			].join("\n") + "\n"
+		);
 	}
 
 	private apply(frontmatter: Record<string, unknown>, key: string, value: unknown): void {

@@ -90,11 +90,8 @@ describe("relationship form contract", () => {
 	});
 
 	it("resolves edit endpoints by canonical path or unique stable ID", () => {
-		const values = editRelationshipFormValues(
-			relationship,
-			"explicit-relationship-id",
-			people,
-			(target) => target === "People/Alice" ? "People/Alice.md" : undefined,
+		const values = editRelationshipFormValues(relationship, "explicit-relationship-id", people, (target) =>
+			target === "People/Alice" ? "People/Alice.md" : undefined,
 		);
 
 		expect(values).toMatchObject({
@@ -168,7 +165,8 @@ describe("relationship form contract", () => {
 		const port = mutations();
 		const file = { path: relationship.filePath } as TFile;
 		const original = editRelationshipFormValues(relationship, undefined, people, (target) =>
-			target === "People/Alice" ? "People/Alice.md" : undefined);
+			target === "People/Alice" ? "People/Alice.md" : undefined,
+		);
 		original.toPath = "People/Bob.md";
 		const session = new RelationshipFormSession({ kind: "edit", file, original }, people, port);
 
@@ -183,7 +181,8 @@ describe("relationship form contract", () => {
 		const port = mutations();
 		const file = { path: relationship.filePath } as TFile;
 		const original = editRelationshipFormValues(relationship, undefined, people, (target) =>
-			target === "People/Alice" ? "People/Alice.md" : undefined);
+			target === "People/Alice" ? "People/Alice.md" : undefined,
+		);
 		original.toPath = "People/Bob.md";
 		const session = new RelationshipFormSession({ kind: "edit", file, original }, people, port);
 
@@ -218,9 +217,12 @@ describe("relationship form contract", () => {
 	it("coalesces duplicate Save attempts while a mutation is pending", async () => {
 		let finish: ((file: TFile) => void) | undefined;
 		const port = mutations({
-			createRelationship: vi.fn(async () => new Promise<TFile>((resolve) => {
-				finish = resolve;
-			})),
+			createRelationship: vi.fn(
+				async () =>
+					new Promise<TFile>((resolve) => {
+						finish = resolve;
+					}),
+			),
 		});
 		const session = new RelationshipFormSession({ kind: "create" }, people, port);
 		const values = {

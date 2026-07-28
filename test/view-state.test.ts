@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildLayoutKey, DEFAULT_VIEW_STATE, MAX_CENTER_HISTORY, rememberCenter, normalizeViewStates } from "../src/settings/view-state";
+import {
+	buildLayoutKey,
+	DEFAULT_VIEW_STATE,
+	MAX_CENTER_HISTORY,
+	rememberCenter,
+	normalizeViewStates,
+} from "../src/settings/view-state";
 
 describe("view state", () => {
 	it("keeps center history recent-first and bounded", () => {

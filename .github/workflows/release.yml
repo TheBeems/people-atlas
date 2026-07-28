@@ -19,19 +19,52 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - run: npm install
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run dependency:audit
       - run: npm run check
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run release:contract -- --tag "$RELEASE_TAG"
+      - run: npm run verify:reproducible
+      - name: Validate verified release candidate
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run release:contract -- --tag "$RELEASE_TAG"
       - name: Attest release files
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@v4
         with:
           subject-path: |
             main.js
             manifest.json
             styles.css
+      - name: Verify remote release tag revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! remote_refs="$(git ls-remote --exit-code --tags origin "refs/tags/${TAG}" "refs/tags/${TAG}^{}")"; then
+            echo "Remote release tag refs/tags/${TAG} does not exist." >&2
+            exit 1
+          fi
+          remote_commit="$(awk '$2 ~ /\^\{\}$/ { print $1 }' <<<"$remote_refs")"
+          if [[ -z "$remote_commit" ]]; then
+            remote_commit="$(awk -v expected_ref="refs/tags/${TAG}" '$2 == expected_ref { print $1 }' <<<"$remote_refs")"
+          fi
+          if [[ -z "$remote_commit" ]]; then
+            echo "Remote release tag refs/tags/${TAG} could not be resolved to a commit." >&2
+            exit 1
+          fi
+          if [[ "$remote_commit" != "$EXPECTED_SHA" ]]; then
+            echo "Remote release tag refs/tags/${TAG} resolves to ${remote_commit}; expected original workflow SHA ${EXPECTED_SHA}." >&2
+            exit 1
+          fi
+          echo "Remote release tag refs/tags/${TAG} resolves to original workflow SHA ${EXPECTED_SHA}."
       - name: Publish GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" --title "$TAG" --generate-notes \
-            main.js manifest.json styles.css
+          gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes main.js manifest.json styles.css

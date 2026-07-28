@@ -49,9 +49,7 @@ export function summarizeSamples(samples: number[]): SampleSummary {
 	const middle = Math.floor(ordered.length / 2);
 	const lower = ordered[middle - 1];
 	const upper = ordered[middle];
-	const median = ordered.length % 2 === 0
-		? ((lower ?? 0) + (upper ?? 0)) / 2
-		: (upper ?? 0);
+	const median = ordered.length % 2 === 0 ? ((lower ?? 0) + (upper ?? 0)) / 2 : (upper ?? 0);
 	const p95Index = Math.max(0, Math.ceil(ordered.length * 0.95) - 1);
 	return {
 		min: ordered[0] ?? 0,

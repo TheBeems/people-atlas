@@ -27,30 +27,40 @@ describe("generated graph snapshot invariants", () => {
 					`family=snapshot seed=${seed} path=${person.filePath}`,
 				).toHaveLength(1);
 			}
-			const ambiguousNodes = snapshot.nodes.filter((node) =>
-				node.kind === "person" && node.personId === generated.ids.duplicate
+			const ambiguousNodes = snapshot.nodes.filter(
+				(node) => node.kind === "person" && node.personId === generated.ids.duplicate,
 			);
 			expect(ambiguousNodes).toHaveLength(2);
 			expect(ambiguousNodes.every((node) => String(node.id).startsWith("ambiguous:"))).toBe(true);
 			expect(snapshot.diagnostics.some((item) => item.code === "duplicate-person-id")).toBe(true);
-			expect(snapshot.diagnostics.some((item) =>
-				item.code === "ambiguous-person-reference" && item.filePaths.includes(generated.paths.beta)
-			)).toBe(true);
-			expect(snapshot.edges.some((edge) => edge.sourceId === generated.ids.beta && ambiguousNodes.some((node) => node.id === edge.targetId))).toBe(false);
+			expect(
+				snapshot.diagnostics.some(
+					(item) => item.code === "ambiguous-person-reference" && item.filePaths.includes(generated.paths.beta),
+				),
+			).toBe(true);
+			expect(
+				snapshot.edges.some(
+					(edge) => edge.sourceId === generated.ids.beta && ambiguousNodes.some((node) => node.id === edge.targetId),
+				),
+			).toBe(false);
 
-			const sameLabelGhost = snapshot.nodes.find((node) =>
-				node.kind === "ghost" && node.label === generated.ids.sharedLabel
+			const sameLabelGhost = snapshot.nodes.find(
+				(node) => node.kind === "ghost" && node.label === generated.ids.sharedLabel,
 			);
 			expect(sameLabelGhost, `family=snapshot seed=${seed} display labels do not resolve`).toBeDefined();
-			expect(snapshot.diagnostics.some((item) =>
-				item.code === "unresolved-contact" && item.filePaths.includes(generated.paths.alpha)
-			)).toBe(true);
-			expect(snapshot.edges).toContainEqual(expect.objectContaining({
-				sourceId: generated.ids.alpha,
-				targetId: generated.ids.pathOwned,
-				filePath: generated.paths.alpha,
-				inferred: true,
-			}));
+			expect(
+				snapshot.diagnostics.some(
+					(item) => item.code === "unresolved-contact" && item.filePaths.includes(generated.paths.alpha),
+				),
+			).toBe(true);
+			expect(snapshot.edges).toContainEqual(
+				expect.objectContaining({
+					sourceId: generated.ids.alpha,
+					targetId: generated.ids.pathOwned,
+					filePath: generated.paths.alpha,
+					inferred: true,
+				}),
+			);
 
 			const rich = snapshot.edges.find((edge) => edge.id === generated.ids.richRelationship);
 			const richRecord = generated.canonical.relationships.find((item) => item.id === generated.ids.richRelationship);
@@ -66,17 +76,17 @@ describe("generated graph snapshot invariants", () => {
 				filePath: richRecord?.filePath,
 				inferred: false,
 			});
-			expect(snapshot.edges.filter((edge) =>
-				!edge.inferred
-				&& edge.sourceId === generated.ids.alpha
-				&& edge.targetId === generated.ids.beta
-			).length).toBeGreaterThanOrEqual(3);
+			expect(
+				snapshot.edges.filter(
+					(edge) => !edge.inferred && edge.sourceId === generated.ids.alpha && edge.targetId === generated.ids.beta,
+				).length,
+			).toBeGreaterThanOrEqual(3);
 
-			const duplicateRelationships = generated.canonical.relationships.filter((item) =>
-				item.id === generated.ids.duplicateRelationship
+			const duplicateRelationships = generated.canonical.relationships.filter(
+				(item) => item.id === generated.ids.duplicateRelationship,
 			);
 			const duplicateEdges = snapshot.edges.filter((edge) =>
-				duplicateRelationships.some((item) => item.filePath === edge.filePath)
+				duplicateRelationships.some((item) => item.filePath === edge.filePath),
 			);
 			expect(snapshot.diagnostics.some((item) => item.code === "duplicate-relationship-id")).toBe(true);
 			expect(duplicateEdges).toHaveLength(2);
@@ -92,30 +102,34 @@ describe("generated graph snapshot invariants", () => {
 			}
 			expect(snapshot.diagnostics.some((item) => item.code === "self-relationship")).toBe(true);
 			expect(snapshot.diagnostics.some((item) => item.code === "unresolved-relationship-endpoint")).toBe(true);
-			const selfRelationship = generated.canonical.relationships.find((item) =>
-				item.id === generated.ids.selfRelationship
+			const selfRelationship = generated.canonical.relationships.find(
+				(item) => item.id === generated.ids.selfRelationship,
 			);
-			const unresolvedRelationship = generated.canonical.relationships.find((item) =>
-				item.id === generated.ids.unresolvedRelationship
+			const unresolvedRelationship = generated.canonical.relationships.find(
+				(item) => item.id === generated.ids.unresolvedRelationship,
 			);
 			expect(selfRelationship, `family=snapshot seed=${seed} self relationship fixture`).toBeDefined();
 			expect(unresolvedRelationship, `family=snapshot seed=${seed} unresolved relationship fixture`).toBeDefined();
 			expect(snapshot.edges.some((edge) => edge.filePath === selfRelationship?.filePath)).toBe(false);
 			expect(snapshot.edges.some((edge) => edge.filePath === unresolvedRelationship?.filePath)).toBe(false);
 
-			expect(snapshot.hiddenNodeCount).toBe(
-				generated.canonical.people.length - generated.visible.people.length,
-			);
+			expect(snapshot.hiddenNodeCount).toBe(generated.canonical.people.length - generated.visible.people.length);
 			expect(snapshot.hiddenEdgeCount).toBe(3);
 			expect(snapshot.diagnostics.filter((item) => item.code === "filtered-endpoint")).toHaveLength(3);
-			expect(snapshot.diagnostics.filter((item) =>
-				item.code === "unresolved-contact" && item.filePaths.includes(generated.paths.hidden)
-			)).toHaveLength(0);
-			expect(snapshot.diagnostics.some((item) =>
-				item.code === "unresolved-contact"
-				&& item.filePaths.includes(generated.paths.alpha)
-				&& item.message.includes(generated.ids.hidden)
-			), `family=snapshot seed=${seed} visible-to-hidden stays filtered`).toBe(false);
+			expect(
+				snapshot.diagnostics.filter(
+					(item) => item.code === "unresolved-contact" && item.filePaths.includes(generated.paths.hidden),
+				),
+			).toHaveLength(0);
+			expect(
+				snapshot.diagnostics.some(
+					(item) =>
+						item.code === "unresolved-contact" &&
+						item.filePaths.includes(generated.paths.alpha) &&
+						item.message.includes(generated.ids.hidden),
+				),
+				`family=snapshot seed=${seed} visible-to-hidden stays filtered`,
+			).toBe(false);
 		});
 	}
 });

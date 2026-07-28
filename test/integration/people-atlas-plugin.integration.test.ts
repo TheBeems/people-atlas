@@ -5,12 +5,7 @@ import { PeopleAtlasView } from "../../src/view/people-atlas-view";
 import { PeopleAtlasBasesView } from "../../src/bases/people-atlas-bases-view";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "../../src/constants";
 import type { AtlasSnapshot } from "../../src/domain/types";
-import {
-	Component,
-	ControlledObsidianRuntime,
-	TFile,
-	type ControlledBasesEntry,
-} from "../obsidian-stub";
+import { Component, ControlledObsidianRuntime, TFile, type ControlledBasesEntry } from "../obsidian-stub";
 import "../../styles.css";
 
 const manifest = {
@@ -81,8 +76,9 @@ function stableNodeIds(container: ParentNode): string[] {
 }
 
 function openStableNode(container: ParentNode, id: string): void {
-	const node = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button"))
-		.find((button) => button.dataset.nodeId === id);
+	const node = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button")).find(
+		(button) => button.dataset.nodeId === id,
+	);
 	if (!node) throw new Error(`The production semantic surface has no node ${id}.`);
 	node.click();
 	const open = container.querySelector<HTMLButtonElement>(".people-atlas-semantic-details button[data-action='open']");
@@ -90,11 +86,7 @@ function openStableNode(container: ParentNode, id: string): void {
 	open.click();
 }
 
-async function waitForObservation(
-	observation: () => boolean,
-	message: string,
-	timeoutMs = 1_000,
-): Promise<void> {
+async function waitForObservation(observation: () => boolean, message: string, timeoutMs = 1_000): Promise<void> {
 	const deadline = performance.now() + timeoutMs;
 	while (!observation()) {
 		if (performance.now() >= deadline) throw new Error(message);
@@ -112,10 +104,7 @@ describe("controlled People Atlas Obsidian integration", () => {
 		const unresolvedCarol = "[[People/Carol|Shared person]]";
 		const aliceFile = runtime.seedFile("People/Alice.md", person("alice", "Shared person", [unresolvedCarol]));
 		const bobFile = runtime.seedFile("People/Bob.md", person("bob", "Different person"));
-		runtime.seedFile(
-			"Relationships/Alice-Bob.md",
-			relationship("rel-alice-bob", "alice", "bob"),
-		);
+		runtime.seedFile("Relationships/Alice-Bob.md", relationship("rel-alice-bob", "alice", "bob"));
 		const plugin = new PeopleAtlasPlugin(runtime.app as unknown as App, manifest);
 		const pluginComponent = plugin as unknown as Component;
 
@@ -196,11 +185,18 @@ describe("controlled People Atlas Obsidian integration", () => {
 		for (const snapshot of [fullSnapshot(standalone.view), fullSnapshot(bases.view)]) {
 			expect(snapshot.edges.some((edge) => edge.id === "rel-alice-carol")).toBe(false);
 			expect(snapshot.nodes.some((node) => node.kind === "ghost" && node.label === "Shared person")).toBe(true);
-			expect(snapshot.diagnostics.some((diagnostic) => diagnostic.code === "unresolved-relationship-endpoint")).toBe(true);
+			expect(snapshot.diagnostics.some((diagnostic) => diagnostic.code === "unresolved-relationship-endpoint")).toBe(
+				true,
+			);
 		}
 
 		runtime.createFile("People/Shared-name-decoy.md", person("decoy", "Shared person"));
-		expect(plugin.index.getSnapshot().people.map((record) => record.id).sort()).toEqual(["alice", "bob", "decoy"]);
+		expect(
+			plugin.index
+				.getSnapshot()
+				.people.map((record) => record.id)
+				.sort(),
+		).toEqual(["alice", "bob", "decoy"]);
 		expect(fullSnapshot(standalone.view).nodes.filter((node) => node.label === "Shared person")).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ id: "alice", kind: "person" }),
@@ -209,14 +205,26 @@ describe("controlled People Atlas Obsidian integration", () => {
 			]),
 		);
 		expect(fullSnapshot(standalone.view).edges.some((edge) => edge.id === "rel-alice-carol")).toBe(false);
-		expect(fullSnapshot(standalone.view).diagnostics.some((diagnostic) => diagnostic.code === "unresolved-relationship-endpoint")).toBe(true);
+		expect(
+			fullSnapshot(standalone.view).diagnostics.some(
+				(diagnostic) => diagnostic.code === "unresolved-relationship-endpoint",
+			),
+		).toBe(true);
 
 		const carolFile = runtime.createFile("People/Carol.md", person("carol", "Shared person"));
-		expect(stableNodeIds(standalone.leaf.contentEl)).toEqual(expect.arrayContaining(["alice", "bob", "carol", "decoy"]));
+		expect(stableNodeIds(standalone.leaf.contentEl)).toEqual(
+			expect.arrayContaining(["alice", "bob", "carol", "decoy"]),
+		);
 		expect(stableNodeIds(bases.parent)).toEqual(expect.arrayContaining(["alice", "bob"]));
-		expect(fullSnapshot(standalone.view).nodes.some((node) => node.kind === "ghost" && node.label === "Shared person")).toBe(true);
+		expect(
+			fullSnapshot(standalone.view).nodes.some((node) => node.kind === "ghost" && node.label === "Shared person"),
+		).toBe(true);
 		expect(fullSnapshot(standalone.view).edges.some((edge) => edge.id === "rel-alice-carol")).toBe(false);
-		expect(fullSnapshot(standalone.view).diagnostics.some((diagnostic) => diagnostic.code === "unresolved-relationship-endpoint")).toBe(true);
+		expect(
+			fullSnapshot(standalone.view).diagnostics.some(
+				(diagnostic) => diagnostic.code === "unresolved-relationship-endpoint",
+			),
+		).toBe(true);
 		expect(runtime.vault.markdownScanCount).toBe(1);
 
 		runtime.changeMetadata(
@@ -243,20 +251,30 @@ describe("controlled People Atlas Obsidian integration", () => {
 		runtime.resolveLink("Relationships/Alice-Carol.md", "People/Carol", carolFile.path);
 		const standaloneResolved = fullSnapshot(standalone.view);
 		const resolvedRelationship = standaloneResolved.edges.find((edge) => edge.id === "rel-alice-carol");
-		expect(resolvedRelationship).toEqual(expect.objectContaining({
-			sourceId: "alice",
-			targetId: "carol",
-			inferred: false,
-		}));
+		expect(resolvedRelationship).toEqual(
+			expect.objectContaining({
+				sourceId: "alice",
+				targetId: "carol",
+				inferred: false,
+			}),
+		);
 		expect(resolvedRelationship?.targetId).not.toBe("decoy");
-		expect(standaloneResolved.edges.some((edge) => edge.inferred && edge.sourceId === "alice" && edge.targetId === "carol")).toBe(true);
+		expect(
+			standaloneResolved.edges.some((edge) => edge.inferred && edge.sourceId === "alice" && edge.targetId === "carol"),
+		).toBe(true);
 		expect(standaloneResolved.nodes.some((node) => node.kind === "ghost")).toBe(false);
-		expect(fullSnapshot(standalone.view).diagnostics.some((diagnostic) => diagnostic.code === "unresolved-relationship-endpoint")).toBe(false);
+		expect(
+			fullSnapshot(standalone.view).diagnostics.some(
+				(diagnostic) => diagnostic.code === "unresolved-relationship-endpoint",
+			),
+		).toBe(false);
 		expect(fullSnapshot(bases.view).edges.map((edge) => edge.id)).toEqual(["rel-alice-bob"]);
 		expect(fullSnapshot(bases.view).nodes.some((node) => node.kind === "ghost")).toBe(false);
 		expect(fullSnapshot(bases.view).hiddenNodeCount).toBe(2);
 		expect(fullSnapshot(bases.view).hiddenEdgeCount).toBe(2);
-		expect(fullSnapshot(bases.view).diagnostics.some((diagnostic) => diagnostic.code === "filtered-endpoint")).toBe(true);
+		expect(fullSnapshot(bases.view).diagnostics.some((diagnostic) => diagnostic.code === "filtered-endpoint")).toBe(
+			true,
+		);
 
 		runtime.renameFile("People/Bob.md", "People/Robert.md");
 		expect(plugin.index.getPeoplePathsById("bob")).toEqual(["People/Robert.md"]);
@@ -270,11 +288,20 @@ describe("controlled People Atlas Obsidian integration", () => {
 
 		runtime.deleteFile("Relationships/Alice-Carol.md");
 		expect(plugin.index.getSnapshot().relationships.map((record) => record.id)).toEqual(["rel-alice-bob"]);
-		expect(fullSnapshot(standalone.view).edges.filter((edge) => !edge.inferred).map((edge) => edge.id)).toEqual(["rel-alice-bob"]);
+		expect(
+			fullSnapshot(standalone.view)
+				.edges.filter((edge) => !edge.inferred)
+				.map((edge) => edge.id),
+		).toEqual(["rel-alice-bob"]);
 		expect(fullSnapshot(bases.view).edges.map((edge) => edge.id)).toEqual(["rel-alice-bob"]);
 
 		runtime.createFile("People/Non-Markdown-decoy.png", person("ignored", "Shared person"));
-		expect(plugin.index.getSnapshot().people.map((record) => record.id).sort()).toEqual(["alice", "bob", "carol", "decoy"]);
+		expect(
+			plugin.index
+				.getSnapshot()
+				.people.map((record) => record.id)
+				.sort(),
+		).toEqual(["alice", "bob", "carol", "decoy"]);
 		expect(runtime.vault.markdownScanCount).toBe(1);
 
 		bases.controller.setEntries([aliceEntry]);
@@ -285,7 +312,9 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(fullSnapshot(bases.view).edges).toEqual([]);
 		expect(fullSnapshot(bases.view).hiddenNodeCount).toBe(3);
 		expect(fullSnapshot(bases.view).hiddenEdgeCount).toBe(2);
-		expect(fullSnapshot(bases.view).diagnostics.some((diagnostic) => diagnostic.code === "filtered-endpoint")).toBe(true);
+		expect(fullSnapshot(bases.view).diagnostics.some((diagnostic) => diagnostic.code === "filtered-endpoint")).toBe(
+			true,
+		);
 
 		const savesBeforeClose = runtime.savedPluginData.length;
 		const standaloneSnapshotAtClose = fullSnapshot(standalone.view);
@@ -302,7 +331,9 @@ describe("controlled People Atlas Obsidian integration", () => {
 		);
 		expect(fullSnapshot(standalone.view)).toBe(standaloneSnapshotAtClose);
 		expect(fullSnapshot(bases.view)).not.toBe(basesBeforeStandalonePostCloseEvent);
-		expect(plugin.index.getSnapshot().relationships.some((record) => record.id === "rel-after-standalone-close")).toBe(true);
+		expect(plugin.index.getSnapshot().relationships.some((record) => record.id === "rel-after-standalone-close")).toBe(
+			true,
+		);
 
 		const basesSnapshotAtClose = fullSnapshot(bases.view);
 		const savesBeforeBasesClose = runtime.savedPluginData.length;
@@ -314,14 +345,17 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(bases.parent.childElementCount).toBe(0);
 		expect(bases.view.registeredEventCount).toBe(0);
 		expect(runtime.listenerCount("workspace", "active-leaf-change")).toBe(0);
-		expect((runtime.savedPluginData.at(-1) as { viewStates?: Record<string, unknown> })?.viewStates)
-			.toHaveProperty("bases:People integration");
+		expect((runtime.savedPluginData.at(-1) as { viewStates?: Record<string, unknown> })?.viewStates).toHaveProperty(
+			"bases:People integration",
+		);
 
 		runtime.changeMetadata(
 			"Relationships/After-Standalone-Close.md",
 			relationship("rel-after-standalone-close", "alice", "bob", { status: "ended" }),
 		);
-		expect(plugin.index.getSnapshot().relationships.find((record) => record.id === "rel-after-standalone-close")?.status).toBe("ended");
+		expect(
+			plugin.index.getSnapshot().relationships.find((record) => record.id === "rel-after-standalone-close")?.status,
+		).toBe("ended");
 		expect(fullSnapshot(bases.view)).toBe(basesSnapshotAtClose);
 
 		await pluginComponent.unload();

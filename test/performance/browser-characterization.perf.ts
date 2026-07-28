@@ -158,15 +158,17 @@ function projectComplete(snapshot: AtlasSnapshot, size: PerformanceSize): AtlasS
 }
 
 function modeButton(container: HTMLElement, label: "Graph" | "List"): HTMLButtonElement {
-	const button = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-view-modes button"))
-		.find((candidate) => candidate.textContent === label);
+	const button = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-view-modes button")).find(
+		(candidate) => candidate.textContent === label,
+	);
 	if (!button) throw new Error(`Unable to find ${label} mode button.`);
 	return button;
 }
 
 function graphAction(container: HTMLElement, label: "Zoom out" | "Zoom in"): HTMLButtonElement {
-	const button = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-graph-actions button"))
-		.find((candidate) => candidate.textContent === label);
+	const button = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-graph-actions button")).find(
+		(candidate) => candidate.textContent === label,
+	);
 	if (!button) throw new Error(`Unable to find ${label} graph action.`);
 	return button;
 }
@@ -177,10 +179,7 @@ async function settleConstruction(probe: AnimationFrameProbe): Promise<void> {
 	await probe.settleWindow();
 }
 
-async function runRendererIteration(
-	initial: AtlasSnapshot,
-	incremental: AtlasSnapshot,
-): Promise<BrowserIteration> {
+async function runRendererIteration(initial: AtlasSnapshot, incremental: AtlasSnapshot): Promise<BrowserIteration> {
 	const container = createContainer();
 	const win = window as Window & typeof globalThis;
 	const probe = new AnimationFrameProbe(win);
@@ -287,10 +286,7 @@ async function collectInteractionAndMemory(
 	}
 }
 
-async function characterizeCase(
-	size: PerformanceSize,
-	profile: PerformanceProfile,
-): Promise<BrowserCaseResult> {
+async function characterizeCase(size: PerformanceSize, profile: PerformanceProfile): Promise<BrowserCaseResult> {
 	const fixture = generatePerformanceFixture(size, profile);
 	validatePerformanceFixture(fixture);
 	const initial = projectComplete(buildPerformanceSnapshot(fixture.raw), size);
@@ -367,15 +363,19 @@ describe("P6a Chromium performance characterization", () => {
 				cases.push(await characterizeCase(size, profile));
 			}
 		}
-		const missingData = cases.flatMap((result) => result.memory.flatMap((observation) => {
-			if (observation.kind === "missing") {
-				return [`${result.profile}/${result.size}/${observation.stage}: ${observation.missingReason ?? "unknown reason"}`];
-			}
-			if (!observation.explicitGcAvailable && observation.missingReason) {
-				return [`${result.profile}/${result.size}/${observation.stage}: ${observation.missingReason}`];
-			}
-			return [];
-		}));
+		const missingData = cases.flatMap((result) =>
+			result.memory.flatMap((observation) => {
+				if (observation.kind === "missing") {
+					return [
+						`${result.profile}/${result.size}/${observation.stage}: ${observation.missingReason ?? "unknown reason"}`,
+					];
+				}
+				if (!observation.explicitGcAvailable && observation.missingReason) {
+					return [`${result.profile}/${result.size}/${observation.stage}: ${observation.missingReason}`];
+				}
+				return [];
+			}),
+		);
 		const result: BrowserCharacterizationResult = {
 			runnerVersion: PERFORMANCE_RUNNER_VERSION,
 			fixtureContractVersion: FIXTURE_CONTRACT_VERSION,

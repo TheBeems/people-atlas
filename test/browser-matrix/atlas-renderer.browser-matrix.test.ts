@@ -62,11 +62,7 @@ function canvasDimensions(canvas: HTMLCanvasElement): {
 	};
 }
 
-async function waitFor(
-	boundary: string,
-	predicate: () => boolean,
-	timeoutMs = 2_000,
-): Promise<void> {
+async function waitFor(boundary: string, predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
 	const started = performance.now();
 	while (!predicate()) {
 		if (performance.now() - started >= timeoutMs) {
@@ -84,14 +80,17 @@ async function waitForCanvas(
 ): Promise<void> {
 	const expectedBackingWidth = Math.round(expectedCssWidth * expectedFactor);
 	const expectedBackingHeight = Math.round(expectedCssHeight * expectedFactor);
-	const diagnostic = `${boundary}: expected CSS ${expectedCssWidth}x${expectedCssHeight}px`
-		+ ` and backing ${expectedBackingWidth}x${expectedBackingHeight}px`;
+	const diagnostic =
+		`${boundary}: expected CSS ${expectedCssWidth}x${expectedCssHeight}px` +
+		` and backing ${expectedBackingWidth}x${expectedBackingHeight}px`;
 	await waitFor(diagnostic, () => {
 		const dimensions = canvasDimensions(canvas);
-		return dimensions.cssWidth === expectedCssWidth
-			&& dimensions.cssHeight === expectedCssHeight
-			&& dimensions.backingWidth === expectedBackingWidth
-			&& dimensions.backingHeight === expectedBackingHeight;
+		return (
+			dimensions.cssWidth === expectedCssWidth &&
+			dimensions.cssHeight === expectedCssHeight &&
+			dimensions.backingWidth === expectedBackingWidth &&
+			dimensions.backingHeight === expectedBackingHeight
+		);
 	});
 }
 
@@ -133,12 +132,7 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 		const primarySurface = (surface as HTMLElement).getBoundingClientRect();
 		expect(primarySurface.width).toBe(primarySize.width);
 		expect(primarySurface.height).toBeGreaterThan(0);
-		await waitForCanvas(
-			"main-document scale",
-			canvasElement,
-			primarySurface.width,
-			primarySurface.height,
-		);
+		await waitForCanvas("main-document scale", canvasElement, primarySurface.width, primarySurface.height);
 		expect(canvasElement.style.width).toBe(`${primarySurface.width}px`);
 		expect(canvasElement.style.height).toBe(`${primarySurface.height}px`);
 
@@ -160,12 +154,7 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			return rect.width === resizedSize.width && rect.height !== primarySurface.height;
 		});
 		const resizedSurface = (surface as HTMLElement).getBoundingClientRect();
-		await waitForCanvas(
-			"main-document resize",
-			canvasElement,
-			resizedSurface.width,
-			resizedSurface.height,
-		);
+		await waitForCanvas("main-document resize", canvasElement, resizedSurface.width, resizedSurface.height);
 		const newDimensions = canvasDimensions(canvasElement);
 		expect(newDimensions.cssWidth).toBe(resizedSize.width);
 		expect(newDimensions.backingWidth).not.toBe(oldDimensions.backingWidth);
@@ -185,9 +174,13 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 		openPopup.textContent = `Open matrix popup at DPR ${expectedFactor}`;
 		document.body.append(openPopup);
 		const popupState: { current: Window | null } = { current: null };
-		openPopup.addEventListener("click", () => {
-			popupState.current = window.open("", `people-atlas-p7c-${expectedFactor}`, "popup,width=700,height=520");
-		}, { once: true });
+		openPopup.addEventListener(
+			"click",
+			() => {
+				popupState.current = window.open("", `people-atlas-p7c-${expectedFactor}`, "popup,width=700,height=520");
+			},
+			{ once: true },
+		);
 
 		await userEvent.click(openPopup);
 		const popup = popupState.current;
@@ -275,7 +268,9 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			const canvas = popupDocument.querySelector<HTMLCanvasElement>(".people-atlas-canvas");
 			const listMode = popupDocument.querySelector<HTMLButtonElement>(".people-atlas-list-mode");
 			const graphMode = popupDocument.querySelector<HTMLButtonElement>(".people-atlas-graph-mode");
-			const details = popupDocument.querySelector<HTMLButtonElement>(".people-atlas-graph-actions button[aria-label='Details']");
+			const details = popupDocument.querySelector<HTMLButtonElement>(
+				".people-atlas-graph-actions button[aria-label='Details']",
+			);
 			const dialog = popupDocument.querySelector<HTMLDialogElement>(".people-atlas-details-sheet");
 			expect(root?.ownerDocument).toBe(popupDocument);
 			expect(canvas?.ownerDocument).toBe(popupDocument);
@@ -340,10 +335,7 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			).not.toHaveBeenCalled();
 		} finally {
 			popup.close();
-			expect(
-				popup.closed,
-				`[DPR ${expectedFactor}] popup teardown must close the browsing context`,
-			).toBe(true);
+			expect(popup.closed, `[DPR ${expectedFactor}] popup teardown must close the browsing context`).toBe(true);
 		}
 	});
 });

@@ -53,10 +53,15 @@ function isGeneratedEvidencePath(value) {
 async function collectSourceProvenance() {
 	const head = git(["rev-parse", "HEAD"]);
 	const statusRaw = run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-	const statusEntries = statusRaw.split("\0").filter(Boolean).filter((entry) => !isGeneratedEvidencePath(entry.slice(3)));
+	const statusEntries = statusRaw
+		.split("\0")
+		.filter(Boolean)
+		.filter((entry) => !isGeneratedEvidencePath(entry.slice(3)));
 	const trackedDiff = run("git", ["diff", "--binary", "HEAD", "--", "."]);
 	const untrackedRaw = run("git", ["ls-files", "--others", "--exclude-standard", "-z"]);
-	const untracked = untrackedRaw.split("\0").filter(Boolean)
+	const untracked = untrackedRaw
+		.split("\0")
+		.filter(Boolean)
 		.map(normalizePath)
 		.filter((entry) => !isGeneratedEvidencePath(entry))
 		.sort();
@@ -148,20 +153,22 @@ function dominantRecommendation(nodeResult, browserResult, scalingTrend) {
 	const dominant = entries[0];
 	if (!dominant) throw new Error("No measured stage is available for an architecture recommendation.");
 
-	const owner = dominant.stage === "index-populate-and-snapshot"
-		? "src/index/index-state.ts"
-		: dominant.stage === "snapshot-and-semantic-dom" || dominant.stage.includes("mode-transition")
-			? "src/render/atlas-renderer.ts semantic DOM"
-			: dominant.stage.includes("canvas") || dominant.stage === "interaction-frame"
-				? "src/render/atlas-renderer.ts canvas draw"
-				: dominant.stage === "lifecycle-cleanup"
-					? "src/render/atlas-renderer.ts lifecycle"
-					: "src/graph graph/projection/layout pipeline";
+	const owner =
+		dominant.stage === "index-populate-and-snapshot"
+			? "src/index/index-state.ts"
+			: dominant.stage === "snapshot-and-semantic-dom" || dominant.stage.includes("mode-transition")
+				? "src/render/atlas-renderer.ts semantic DOM"
+				: dominant.stage.includes("canvas") || dominant.stage === "interaction-frame"
+					? "src/render/atlas-renderer.ts canvas draw"
+					: dominant.stage === "lifecycle-cleanup"
+						? "src/render/atlas-renderer.ts lifecycle"
+						: "src/graph graph/projection/layout pipeline";
 
 	const indexP95 = nodeStress.timings["index-populate-and-snapshot"].summary.p95;
 	const incrementalP95 = nodeStress.timings["incremental-recomputation"].summary.p95;
-	const firstRenderP95 = browserStress.timings["snapshot-and-semantic-dom"].summary.p95
-		+ browserStress.timings["canvas-first-paint"].summary.p95;
+	const firstRenderP95 =
+		browserStress.timings["snapshot-and-semantic-dom"].summary.p95 +
+		browserStress.timings["canvas-first-paint"].summary.p95;
 	const interactionP95 = browserStress.interaction.timing.summary.p95;
 	const nodeMemoryGrowth = memoryGrowth(nodeStress.memory, "before-fixture", "after-incremental-recomputation");
 	const browserMemoryGrowth = memoryGrowth(browserStress.memory, "before-renderer", "after-incremental-replacement");
@@ -179,13 +186,17 @@ function dominantRecommendation(nodeResult, browserResult, scalingTrend) {
 
 	let nextStep;
 	if (dominant.stage === "incremental-recomputation") {
-		nextStep = "Shape a bounded P6b ticket to split graph-delta, projection and layout timings, then simplify the main-thread graph-delta lookup path if the split confirms it; do not add a Worker before that evidence.";
+		nextStep =
+			"Shape a bounded P6b ticket to split graph-delta, projection and layout timings, then simplify the main-thread graph-delta lookup path if the split confirms it; do not add a Worker before that evidence.";
 	} else if (dominant.stage === "snapshot-and-semantic-dom") {
-		nextStep = "Shape a bounded P6b semantic-list workload/specification and evaluate main-thread semantic-list bounding before any Worker; DOM work is not transferable.";
+		nextStep =
+			"Shape a bounded P6b semantic-list workload/specification and evaluate main-thread semantic-list bounding before any Worker; DOM work is not transferable.";
 	} else if (dominant.stage.includes("canvas") || dominant.stage === "interaction-frame") {
-		nextStep = "Shape a bounded P6b canvas workload and evaluate main-thread culling/draw simplification before any Worker; owning-window canvas work remains on the main thread.";
+		nextStep =
+			"Shape a bounded P6b canvas workload and evaluate main-thread culling/draw simplification before any Worker; owning-window canvas work remains on the main thread.";
 	} else {
-		nextStep = "Ratify the candidate budgets first; retain the current main-thread architecture unless a bounded follow-up proves a specific transferable computation exceeds them.";
+		nextStep =
+			"Ratify the candidate budgets first; retain the current main-thread architecture unless a bounded follow-up proves a specific transferable computation exceeds them.";
 	}
 	return {
 		dominant: {
@@ -217,11 +228,15 @@ function timingTable(cases, includeInteraction) {
 	];
 	for (const resultCase of cases) {
 		for (const [stage, timing] of Object.entries(resultCase.timings)) {
-			rows.push(`| ${resultCase.profile} | ${resultCase.size} | ${stage} | ${milliseconds(timing.summary.min)} | ${milliseconds(timing.summary.median)} | ${milliseconds(timing.summary.p95)} | ${milliseconds(timing.summary.max)} |`);
+			rows.push(
+				`| ${resultCase.profile} | ${resultCase.size} | ${stage} | ${milliseconds(timing.summary.min)} | ${milliseconds(timing.summary.median)} | ${milliseconds(timing.summary.p95)} | ${milliseconds(timing.summary.max)} |`,
+			);
 		}
 		if (includeInteraction) {
 			const timing = resultCase.interaction.timing;
-			rows.push(`| ${resultCase.profile} | ${resultCase.size} | interaction-frame | ${milliseconds(timing.summary.min)} | ${milliseconds(timing.summary.median)} | ${milliseconds(timing.summary.p95)} | ${milliseconds(timing.summary.max)} |`);
+			rows.push(
+				`| ${resultCase.profile} | ${resultCase.size} | interaction-frame | ${milliseconds(timing.summary.min)} | ${milliseconds(timing.summary.median)} | ${milliseconds(timing.summary.p95)} | ${milliseconds(timing.summary.max)} |`,
+			);
 		}
 	}
 	return rows.join("\n");
@@ -232,10 +247,15 @@ function memoryTable(nodeCases, browserCases) {
 		"| Surface | Profile | Nodes | Stage | Heap used MiB | Heap total MiB | GC label |",
 		"| --- | --- | ---: | --- | ---: | ---: | --- |",
 	];
-	for (const [surface, cases] of [["Node", nodeCases], ["Chromium", browserCases]]) {
+	for (const [surface, cases] of [
+		["Node", nodeCases],
+		["Chromium", browserCases],
+	]) {
 		for (const resultCase of cases) {
 			for (const observation of resultCase.memory) {
-				rows.push(`| ${surface} | ${resultCase.profile} | ${resultCase.size} | ${observation.stage} | ${typeof observation.heapUsedBytes === "number" ? mebibytes(observation.heapUsedBytes) : "missing"} | ${typeof observation.totalHeapBytes === "number" ? mebibytes(observation.totalHeapBytes) : "missing"} | ${observation.kind}${observation.missingReason ? `: ${observation.missingReason.replaceAll("|", "/")}` : ""} |`);
+				rows.push(
+					`| ${surface} | ${resultCase.profile} | ${resultCase.size} | ${observation.stage} | ${typeof observation.heapUsedBytes === "number" ? mebibytes(observation.heapUsedBytes) : "missing"} | ${typeof observation.totalHeapBytes === "number" ? mebibytes(observation.totalHeapBytes) : "missing"} | ${observation.kind}${observation.missingReason ? `: ${observation.missingReason.replaceAll("|", "/")}` : ""} |`,
+				);
 			}
 		}
 	}
@@ -247,17 +267,24 @@ function evidenceMarkdown(report) {
 	const budgets = recommendation.candidateBudgets;
 	const scaling = recommendation.scalingTrend;
 	const gc = garbageCollectionStatements(report.node, report.browser);
-	const missing = report.missingData.length > 0
-		? report.missingData.map((entry) => `- ${entry}`).join("\n")
-		: "- None. No required timing or provenance value is missing.";
-	const scalingPoints = scaling.points.map((point) => (
-		`${point.size.toLocaleString("en-US")} nodes: ${milliseconds(point.medianMs)} ms median / ${milliseconds(point.p95Ms)} ms p95`
-	)).join("; ");
-	const scalingGrowth = scaling.growth.map((step) => (
-		`${step.fromSize.toLocaleString("en-US")}→${step.toSize.toLocaleString("en-US")}: ${
-			step.medianRatio === null ? "undefined from zero" : `${round(step.medianRatio, 3)}× median`
-		}`
-	)).join("; ");
+	const missing =
+		report.missingData.length > 0
+			? report.missingData.map((entry) => `- ${entry}`).join("\n")
+			: "- None. No required timing or provenance value is missing.";
+	const scalingPoints = scaling.points
+		.map(
+			(point) =>
+				`${point.size.toLocaleString("en-US")} nodes: ${milliseconds(point.medianMs)} ms median / ${milliseconds(point.p95Ms)} ms p95`,
+		)
+		.join("; ");
+	const scalingGrowth = scaling.growth
+		.map(
+			(step) =>
+				`${step.fromSize.toLocaleString("en-US")}→${step.toSize.toLocaleString("en-US")}: ${
+					step.medianRatio === null ? "undefined from zero" : `${round(step.medianRatio, 3)}× median`
+				}`,
+		)
+		.join("; ");
 	return `Status: recorded
 Created: ${dateStamp}
 Updated: ${dateStamp}
@@ -401,29 +428,22 @@ async function main() {
 	const nodePartial = path.join(temporaryDirectory, "node.json");
 	const browserPartial = path.join(temporaryDirectory, "browser.json");
 	try {
-		run(process.execPath, [
-			"--expose-gc",
-			vitestCli,
-			"run",
-			"--config",
-			"vitest.performance.config.ts",
-			"--project",
-			"performance-node",
-		], {
-			inherit: true,
-			env: { ...process.env, PEOPLE_ATLAS_PERF_NODE_OUTPUT: nodePartial },
-		});
-		run(process.execPath, [
-			vitestCli,
-			"run",
-			"--config",
-			"vitest.performance.config.ts",
-			"--project",
-			"performance-browser",
-		], {
-			inherit: true,
-			env: { ...process.env, PEOPLE_ATLAS_PERF_BROWSER_OUTPUT: browserPartial },
-		});
+		run(
+			process.execPath,
+			["--expose-gc", vitestCli, "run", "--config", "vitest.performance.config.ts", "--project", "performance-node"],
+			{
+				inherit: true,
+				env: { ...process.env, PEOPLE_ATLAS_PERF_NODE_OUTPUT: nodePartial },
+			},
+		);
+		run(
+			process.execPath,
+			[vitestCli, "run", "--config", "vitest.performance.config.ts", "--project", "performance-browser"],
+			{
+				inherit: true,
+				env: { ...process.env, PEOPLE_ATLAS_PERF_BROWSER_OUTPUT: browserPartial },
+			},
+		);
 
 		const nodeResult = JSON.parse(await readFile(nodePartial, "utf8"));
 		const browserResult = JSON.parse(await readFile(browserPartial, "utf8"));
@@ -457,7 +477,8 @@ async function main() {
 					playwright: packageVersion("playwright"),
 					chromium: browserResult.browser.product,
 				},
-				node22LinuxSupport: "runner uses ES2022 and repository CI remains Node 22/ubuntu-latest; execution is manual and informative",
+				node22LinuxSupport:
+					"runner uses ES2022 and repository CI remains Node 22/ubuntu-latest; execution is manual and informative",
 			},
 			node: nodeResult,
 			browser: browserResult,

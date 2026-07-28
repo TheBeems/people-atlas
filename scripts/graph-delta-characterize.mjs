@@ -8,7 +8,7 @@ import { validateGraphDeltaPerformanceResult } from "./performance-result.mjs";
 
 const RUNNER_VERSION = "p6b-graph-delta-v1";
 const FIXTURE_CONTRACT_VERSION = "p6a-ring-lattice-v1";
-const TRIGGER_RATIO = 0.80;
+const TRIGGER_RATIO = 0.8;
 const FINAL_MEDIAN_CEILING_MS = 750;
 const FINAL_P95_CEILING_MS = 1_000;
 const repositoryRoot = process.cwd();
@@ -54,11 +54,15 @@ function isCurrentGeneratedEvidencePath(value) {
 async function collectSourceProvenance() {
 	const head = run("git", ["rev-parse", "HEAD"]);
 	const statusRaw = run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-	const statusEntries = statusRaw.split("\0").filter(Boolean)
+	const statusEntries = statusRaw
+		.split("\0")
+		.filter(Boolean)
 		.filter((entry) => !isCurrentGeneratedEvidencePath(entry.slice(3)));
 	const trackedDiff = run("git", ["diff", "--binary", "HEAD", "--", "."]);
 	const untrackedRaw = run("git", ["ls-files", "--others", "--exclude-standard", "-z"]);
-	const untracked = untrackedRaw.split("\0").filter(Boolean)
+	const untracked = untrackedRaw
+		.split("\0")
+		.filter(Boolean)
 		.map(normalizePath)
 		.filter((entry) => !isCurrentGeneratedEvidencePath(entry))
 		.sort();
@@ -99,9 +103,7 @@ function environmentClassification() {
 }
 
 function findStressCase(result) {
-	const resultCase = result.cases.find((candidate) => (
-		candidate.size === 5_000 && candidate.profile === "stress"
-	));
+	const resultCase = result.cases.find((candidate) => candidate.size === 5_000 && candidate.profile === "stress");
 	if (!resultCase) throw new Error("Missing stress/5000 graph-delta performance case.");
 	return resultCase;
 }
@@ -151,7 +153,9 @@ function timingTable(cases) {
 	];
 	for (const resultCase of cases) {
 		for (const [stage, timing] of Object.entries(resultCase.timings)) {
-			rows.push(`| ${resultCase.profile} | ${resultCase.size} | ${stage} | ${milliseconds(timing.summary.min)} | ${milliseconds(timing.summary.median)} | ${milliseconds(timing.summary.p95)} | ${milliseconds(timing.summary.max)} |`);
+			rows.push(
+				`| ${resultCase.profile} | ${resultCase.size} | ${stage} | ${milliseconds(timing.summary.min)} | ${milliseconds(timing.summary.median)} | ${milliseconds(timing.summary.p95)} | ${milliseconds(timing.summary.max)} |`,
+			);
 		}
 	}
 	return rows.join("\n");
@@ -160,19 +164,21 @@ function timingTable(cases) {
 function evidenceMarkdown(report) {
 	const trigger = report.preChangeTrigger;
 	const ratio = trigger.ratio === null ? "undefined" : trigger.ratio.toFixed(6);
-	const phaseObservation = report.phase === "baseline"
-		? `The direct graph-delta median is ${milliseconds(trigger.graphDeltaMedianMs)} ms
+	const phaseObservation =
+		report.phase === "baseline"
+			? `The direct graph-delta median is ${milliseconds(trigger.graphDeltaMedianMs)} ms
 and the aggregate incremental median is ${milliseconds(trigger.aggregateMedianMs)} ms.
 Their ratio is \`${ratio}\` against the ratified \`${TRIGGER_RATIO.toFixed(2)}\`
 trigger. Product-source optimization is therefore
 \`${trigger.optimizationAuthorized ? "authorized" : "not-authorized"}\` under P6b.`
-		: `The final 5,000-node/40,000-edge stress aggregate measures
+			: `The final 5,000-node/40,000-edge stress aggregate measures
 ${milliseconds(report.finalGate.medianMs)} ms median and
 ${milliseconds(report.finalGate.p95Ms)} ms nearest-rank p95. The ratified
 \`${FINAL_MEDIAN_CEILING_MS}/${FINAL_P95_CEILING_MS} ms\` gate is
 \`${report.finalGate.passed ? "passed" : "not-passed"}\`.`;
-	const finalSection = report.phase === "final"
-		? `
+	const finalSection =
+		report.phase === "final"
+			? `
 ## Final calibrated gate
 
 | Metric | Observed | Ceiling | Result |
@@ -182,7 +188,7 @@ ${milliseconds(report.finalGate.p95Ms)} ms nearest-rank p95. The ratified
 
 This is a manual ticket-closure gate, not a default-test or CI threshold.
 `
-		: "";
+			: "";
 	return `Status: recorded
 Created: ${dateStamp}
 Updated: ${dateStamp}
@@ -262,17 +268,14 @@ async function main() {
 	const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "people-atlas-p6b-"));
 	const partialPath = path.join(temporaryDirectory, "graph-delta.json");
 	try {
-		run(process.execPath, [
-			vitestCli,
-			"run",
-			"--config",
-			"vitest.performance.config.ts",
-			"--project",
-			"performance-graph-delta",
-		], {
-			inherit: true,
-			env: { ...process.env, PEOPLE_ATLAS_GRAPH_DELTA_PERF_OUTPUT: partialPath },
-		});
+		run(
+			process.execPath,
+			[vitestCli, "run", "--config", "vitest.performance.config.ts", "--project", "performance-graph-delta"],
+			{
+				inherit: true,
+				env: { ...process.env, PEOPLE_ATLAS_GRAPH_DELTA_PERF_OUTPUT: partialPath },
+			},
+		);
 		const partial = JSON.parse(await readFile(partialPath, "utf8"));
 		validateGraphDeltaPerformanceResult(partial);
 
@@ -315,10 +318,12 @@ async function main() {
 			runtime: partial.runtime,
 			cases: partial.cases,
 			preChangeTrigger: preChangeTrigger(baseline ?? partial),
-			...(phase === "final" ? {
-				baselineEvidence: baselineStorageRelative,
-				finalGate: finalGate(partial),
-			} : {}),
+			...(phase === "final"
+				? {
+						baselineEvidence: baselineStorageRelative,
+						finalGate: finalGate(partial),
+					}
+				: {}),
 		};
 		await mkdir(path.dirname(storagePath), { recursive: true });
 		await mkdir(path.dirname(evidencePath), { recursive: true });

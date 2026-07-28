@@ -97,7 +97,11 @@ function resolveReference(
 	return context.peopleByPath.get(reference.target);
 }
 
-function ambiguousReferenceDiagnostic(reference: PersonReference, sourcePath: string, matches: PersonRecord[]): AtlasDiagnostic {
+function ambiguousReferenceDiagnostic(
+	reference: PersonReference,
+	sourcePath: string,
+	matches: PersonRecord[],
+): AtlasDiagnostic {
 	return {
 		id: `ambiguous-reference:${sourcePath}:${referenceKey(reference)}`,
 		severity: "error",
@@ -147,7 +151,8 @@ export function buildAtlasSnapshot(
 		[...outputIdCounts.entries()].filter(([, count]) => count > 1).map(([id]) => id),
 	);
 	const outputNodeIdByPath = new Map<string, NodeId>();
-	for (const person of outputPeople) outputNodeIdByPath.set(person.filePath, nodeIdForOutputPerson(person, duplicateOutputIds));
+	for (const person of outputPeople)
+		outputNodeIdByPath.set(person.filePath, nodeIdForOutputPerson(person, duplicateOutputIds));
 
 	const context = buildResolutionContext(resolutionPeople, outputPeople, resolveLink, outputNodeIdByPath);
 	const diagnostics = [
@@ -229,11 +234,9 @@ export function buildAtlasSnapshot(
 			const targetId = context.outputNodeIdByPath.get(target.filePath);
 			if (!sourceId || !targetId) {
 				hiddenEdgeCount += 1;
-				diagnostics.push(filteredEndpointDiagnostic(
-					person.filePath,
-					"contact",
-					`${referenceKey(reference)}:${contactIndex}`,
-				));
+				diagnostics.push(
+					filteredEndpointDiagnostic(person.filePath, "contact", `${referenceKey(reference)}:${contactIndex}`),
+				);
 				continue;
 			}
 			if (targetId === sourceId) continue;
@@ -260,8 +263,10 @@ export function buildAtlasSnapshot(
 			const ambiguousSource = context.peopleById.get(relationship.from.target);
 			const ambiguousTarget = context.peopleById.get(relationship.to.target);
 			if ((ambiguousSource && ambiguousSource.length > 1) || (ambiguousTarget && ambiguousTarget.length > 1)) {
-				if (ambiguousSource && ambiguousSource.length > 1) diagnostics.push(ambiguousReferenceDiagnostic(relationship.from, relationship.filePath, ambiguousSource));
-				if (ambiguousTarget && ambiguousTarget.length > 1) diagnostics.push(ambiguousReferenceDiagnostic(relationship.to, relationship.filePath, ambiguousTarget));
+				if (ambiguousSource && ambiguousSource.length > 1)
+					diagnostics.push(ambiguousReferenceDiagnostic(relationship.from, relationship.filePath, ambiguousSource));
+				if (ambiguousTarget && ambiguousTarget.length > 1)
+					diagnostics.push(ambiguousReferenceDiagnostic(relationship.to, relationship.filePath, ambiguousTarget));
 				continue;
 			}
 			diagnostics.push({
@@ -292,9 +297,10 @@ export function buildAtlasSnapshot(
 			continue;
 		}
 
-		const edgeId = relationshipIdCounts.get(relationship.id) === 1
-			? relationship.id
-			: `${relationship.id}:${stableHash(relationship.filePath)}`;
+		const edgeId =
+			relationshipIdCounts.get(relationship.id) === 1
+				? relationship.id
+				: `${relationship.id}:${stableHash(relationship.filePath)}`;
 		const types = relationship.types.length > 0 ? relationship.types : ["relationship"];
 		edges.push({
 			id: edgeId,

@@ -50,12 +50,12 @@ function finiteNumber(value, label) {
 
 function summarize(samples) {
 	if (!Array.isArray(samples) || samples.length === 0) fail("timing samples must be a non-empty array.");
-	const ordered = samples.map((sample, index) => finiteNumber(sample, `sample ${index}`))
+	const ordered = samples
+		.map((sample, index) => finiteNumber(sample, `sample ${index}`))
 		.sort((left, right) => left - right);
 	const middle = Math.floor(ordered.length / 2);
-	const median = ordered.length % 2 === 0
-		? ((ordered[middle - 1] ?? 0) + (ordered[middle] ?? 0)) / 2
-		: (ordered[middle] ?? 0);
+	const median =
+		ordered.length % 2 === 0 ? ((ordered[middle - 1] ?? 0) + (ordered[middle] ?? 0)) / 2 : (ordered[middle] ?? 0);
 	return {
 		min: ordered[0] ?? 0,
 		median,
@@ -115,12 +115,7 @@ function validateInteraction(value, label) {
 		fail(`${label}.interaction.recordedFrames must equal ${INTERACTION_SAMPLES}.`);
 	}
 	validateTiming(interaction.timing, INTERACTION_SAMPLES, `${label}.interaction.timing`);
-	for (const field of [
-		"redrawTriggers",
-		"requestedAnimationFrames",
-		"executedAnimationFrames",
-		"coalescedTriggers",
-	]) {
+	for (const field of ["redrawTriggers", "requestedAnimationFrames", "executedAnimationFrames", "coalescedTriggers"]) {
 		finiteNumber(interaction[field], `${label}.interaction.${field}`);
 	}
 	if (interaction.requestedAnimationFrames !== INTERACTION_SAMPLES) {
@@ -176,7 +171,10 @@ function validateCases(partial, surface) {
 export function validateCombinedPerformanceResults(nodeResultValue, browserResultValue) {
 	const nodeResult = objectValue(nodeResultValue, "node result");
 	const browserResult = objectValue(browserResultValue, "browser result");
-	for (const [surface, partial] of [["node", nodeResult], ["browser", browserResult]]) {
+	for (const [surface, partial] of [
+		["node", nodeResult],
+		["browser", browserResult],
+	]) {
 		if (partial.runnerVersion !== EXPECTED_RUNNER_VERSION) {
 			fail(`${surface}.runnerVersion is incompatible.`);
 		}
@@ -223,19 +221,13 @@ export function validateGraphDeltaPerformanceResult(resultValue) {
 		if (resultCase.recordedSamples !== NODE_SAMPLES) {
 			fail(`graph-delta.${key}.recordedSamples must equal ${NODE_SAMPLES}.`);
 		}
-		validateStages(
-			resultCase.timings,
-			EXPECTED_GRAPH_DELTA_STAGES,
-			NODE_SAMPLES,
-			`graph-delta.${key}`,
-		);
+		validateStages(resultCase.timings, EXPECTED_GRAPH_DELTA_STAGES, NODE_SAMPLES, `graph-delta.${key}`);
 		const aggregateSamples = resultCase.timings["incremental-recomputation"].samples;
 		for (let sampleIndex = 0; sampleIndex < NODE_SAMPLES; sampleIndex += 1) {
-			const substageTotal = (
-				resultCase.timings["graph-delta"].samples[sampleIndex]
-				+ resultCase.timings["incremental-projection"].samples[sampleIndex]
-				+ resultCase.timings["incremental-layout"].samples[sampleIndex]
-			);
+			const substageTotal =
+				resultCase.timings["graph-delta"].samples[sampleIndex] +
+				resultCase.timings["incremental-projection"].samples[sampleIndex] +
+				resultCase.timings["incremental-layout"].samples[sampleIndex];
 			if (aggregateSamples[sampleIndex] + 1e-9 < substageTotal) {
 				fail(`graph-delta.${key} aggregate sample ${sampleIndex} is smaller than its substages.`);
 			}
@@ -251,9 +243,7 @@ export function validateGraphDeltaPerformanceResult(resultValue) {
 
 export function buildScalingTrend(nodeResult, stage = "incremental-recomputation", profile = "stress") {
 	const points = EXPECTED_PERFORMANCE_SIZES.map((size) => {
-		const resultCase = nodeResult.cases.find((candidate) => (
-			candidate.size === size && candidate.profile === profile
-		));
+		const resultCase = nodeResult.cases.find((candidate) => candidate.size === size && candidate.profile === profile);
 		if (!resultCase) fail(`cannot build scaling trend without node case ${profile}/${size}.`);
 		const timing = resultCase.timings?.[stage];
 		if (!timing) fail(`cannot build scaling trend without node stage "${stage}".`);
@@ -284,17 +274,18 @@ export function buildScalingTrend(nodeResult, stage = "incremental-recomputation
 
 export function garbageCollectionStatements(nodeResult, browserResult) {
 	const nodeAvailable = nodeResult.runtime?.explicitGcAvailable === true;
-	const browserObservations = browserResult.cases.flatMap((resultCase) => (
-		Array.isArray(resultCase.memory) ? resultCase.memory : []
-	));
-	const browserAvailableCount = browserObservations.filter((observation) => (
-		observation.explicitGcAvailable === true
-	)).length;
-	const browserStatement = browserObservations.length === 0
-		? "Chromium explicit-GC availability is unknown because no browser heap observation was recorded."
-		: browserAvailableCount === browserObservations.length
-			? `Chromium explicit GC was available for all ${browserObservations.length} heap observations.`
-			: `Chromium explicit GC was available for ${browserAvailableCount} of ${browserObservations.length} heap observations; every other observation retains its non-GC or missing label.`;
+	const browserObservations = browserResult.cases.flatMap((resultCase) =>
+		Array.isArray(resultCase.memory) ? resultCase.memory : [],
+	);
+	const browserAvailableCount = browserObservations.filter(
+		(observation) => observation.explicitGcAvailable === true,
+	).length;
+	const browserStatement =
+		browserObservations.length === 0
+			? "Chromium explicit-GC availability is unknown because no browser heap observation was recorded."
+			: browserAvailableCount === browserObservations.length
+				? `Chromium explicit GC was available for all ${browserObservations.length} heap observations.`
+				: `Chromium explicit GC was available for ${browserAvailableCount} of ${browserObservations.length} heap observations; every other observation retains its non-GC or missing label.`;
 	return {
 		node: nodeAvailable
 			? "Node explicit GC was available; Node heap rows retain their per-observation collection labels."

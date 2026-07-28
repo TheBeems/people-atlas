@@ -4,18 +4,29 @@
   "private": true,
   "description": "A Bases-native people and relationship atlas for Obsidian.",
   "main": "main.js",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "build": "npm run typecheck && npm run build:production",
+    "build:production": "node esbuild.config.mjs production",
+    "dependency:audit": "npm audit --audit-level=high",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
     "perf:characterize": "node scripts/performance-characterize.mjs",
     "perf:graph-delta": "node scripts/graph-delta-characterize.mjs",
+    "release:contract": "node scripts/release-contract.mjs",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
     "test:browser-matrix": "vitest run --project browser-matrix",
     "test:generated": "vitest run --project node test/generated",
     "test:integration": "vitest run --project integration",
+    "test:release-contract": "vitest run --project node test/release-contract.test.ts",
     "test:watch": "vitest",
-    "check": "npm run test && npm run build"
+    "typecheck": "tsc --noEmit",
+    "verify:reproducible": "node scripts/verify-reproducible-build.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build:production && npm run release:contract"
   },
   "keywords": [
     "obsidian",
@@ -27,6 +38,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@biomejs/biome": "2.4.15",
     "@types/node": "^26.1.1",
     "@vitest/browser-playwright": "^4.1.10",
     "esbuild": "^0.28.1",

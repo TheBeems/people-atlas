@@ -26,13 +26,13 @@ const capturePerformanceHeap = defineBrowserCommand<[stage: string]>(async (cont
 		gcReason = error instanceof Error ? error.message : String(error);
 	}
 	try {
-		const heap = await cdp.send("Runtime.getHeapUsage") as CdpHeapResult;
+		const heap = (await cdp.send("Runtime.getHeapUsage")) as CdpHeapResult;
 		return {
 			stage,
 			heapUsedBytes: heap.usedSize,
 			totalHeapBytes: heap.totalSize,
 			explicitGcAvailable,
-			kind: explicitGcAvailable ? "collected-heap" as const : "retained-heap-observation" as const,
+			kind: explicitGcAvailable ? ("collected-heap" as const) : ("retained-heap-observation" as const),
 			...(gcReason ? { missingReason: `Explicit collection unavailable: ${gcReason}` } : {}),
 		};
 	} catch (error) {

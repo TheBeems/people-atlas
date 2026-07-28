@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
-import { sanitizeNoteName, validateNotePath, validatePersonInput, validateRelationshipInput } from "../src/mutations/validation";
+import {
+	sanitizeNoteName,
+	validateNotePath,
+	validatePersonInput,
+	validateRelationshipInput,
+} from "../src/mutations/validation";
 
 describe("mutation validation", () => {
 	it("accepts a valid person and sanitizes only the filename", () => {
@@ -9,20 +14,25 @@ describe("mutation validation", () => {
 	});
 
 	it("rejects invalid relationship values before a write", () => {
-		const errors = validateRelationshipInput({
-			path: "Relationships/Jan.md",
-			from: "[[Jan]]",
-			to: "[[Sam]]",
-			direction: "invalid" as never,
-			since: "2024-02-30",
-			closeness: 6,
-		}, DEFAULT_SETTINGS);
+		const errors = validateRelationshipInput(
+			{
+				path: "Relationships/Jan.md",
+				from: "[[Jan]]",
+				to: "[[Sam]]",
+				direction: "invalid" as never,
+				since: "2024-02-30",
+				closeness: 6,
+			},
+			DEFAULT_SETTINGS,
+		);
 
-		expect(errors).toEqual(expect.arrayContaining([
-			"Relationship direction is invalid.",
-			"Relationship dates must use valid YYYY-MM-DD values.",
-			"Closeness must be between 1 and 5.",
-		]));
+		expect(errors).toEqual(
+			expect.arrayContaining([
+				"Relationship direction is invalid.",
+				"Relationship dates must use valid YYYY-MM-DD values.",
+				"Closeness must be between 1 and 5.",
+			]),
+		);
 	});
 
 	it("rejects unsafe relationship paths", () => {

@@ -57,7 +57,10 @@ export class ViewStateWriteCoordinator {
 
 	serialize<T>(operation: () => Promise<T>): Promise<T> {
 		const result = this.writeQueue.then(operation, operation);
-		this.writeQueue = result.then(() => undefined, () => undefined);
+		this.writeQueue = result.then(
+			() => undefined,
+			() => undefined,
+		);
 		return result;
 	}
 
@@ -68,8 +71,16 @@ export class ViewStateWriteCoordinator {
 		const operation = () => this.write(viewConfigurationKey, structuredClone(pending.state));
 		const result = this.serialize(operation);
 		result.then(
-			() => pending.waiters.forEach((waiter) => waiter.resolve()),
-			(error) => pending.waiters.forEach((waiter) => waiter.reject(error)),
+			() => {
+				pending.waiters.forEach((waiter) => {
+					waiter.resolve();
+				});
+			},
+			(error) => {
+				pending.waiters.forEach((waiter) => {
+					waiter.reject(error);
+				});
+			},
 		);
 		return result;
 	}

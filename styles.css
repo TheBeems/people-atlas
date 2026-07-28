@@ -329,9 +329,7 @@
 	}
 
 	.people-atlas-details-sheet-content {
-		padding:
-			var(--size-4-4, 16px)
-			max(var(--size-4-4, 16px), env(safe-area-inset-right, 0px))
+		padding: var(--size-4-4, 16px) max(var(--size-4-4, 16px), env(safe-area-inset-right, 0px))
 			max(var(--size-4-4, 16px), env(safe-area-inset-bottom, 0px))
 			max(var(--size-4-4, 16px), env(safe-area-inset-left, 0px));
 	}

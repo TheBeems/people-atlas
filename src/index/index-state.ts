@@ -37,7 +37,10 @@ function referenceKeys(target: string): string[] {
 }
 
 function recordReferenceKeys(reference: { target: string }): string[] {
-	return [`ref:${referenceKey({ raw: reference.target, target: reference.target })}`, `path:${normalizePathIdentity(reference.target)}`];
+	return [
+		`ref:${referenceKey({ raw: reference.target, target: reference.target })}`,
+		`path:${normalizePathIdentity(reference.target)}`,
+	];
 }
 
 export class IndexState {
@@ -134,19 +137,24 @@ export class IndexState {
 	}
 
 	getPeopleForPaths(paths: Iterable<string>): PersonRecord[] {
-		return this.getFiles(paths).flatMap((file) => file.person ? [file.person] : []);
+		return this.getFiles(paths).flatMap((file) => (file.person ? [file.person] : []));
 	}
 
 	getRelationshipsForPaths(paths: Iterable<string>): RelationshipRecord[] {
-		return this.getFiles(paths).flatMap((file) => file.relationship ? [file.relationship] : []);
+		return this.getFiles(paths).flatMap((file) => (file.relationship ? [file.relationship] : []));
 	}
 
 	getFiles(paths: Iterable<string>): StoredFile[] {
-		return [...new Set(paths)].map((path) => this.filesByPath.get(path)).filter((file): file is StoredFile => file !== undefined);
+		return [...new Set(paths)]
+			.map((path) => this.filesByPath.get(path))
+			.filter((file): file is StoredFile => file !== undefined);
 	}
 
 	getDuplicatePersonIds(): string[] {
-		return [...this.peopleById.entries()].filter(([, paths]) => paths.size > 1).map(([id]) => id).sort();
+		return [...this.peopleById.entries()]
+			.filter(([, paths]) => paths.size > 1)
+			.map(([id]) => id)
+			.sort();
 	}
 
 	getPersonPathsForId(id: string): string[] {
@@ -154,7 +162,10 @@ export class IndexState {
 	}
 
 	getDuplicateRelationshipIds(): string[] {
-		return [...this.relationshipsById.entries()].filter(([, paths]) => paths.size > 1).map(([id]) => id).sort();
+		return [...this.relationshipsById.entries()]
+			.filter(([, paths]) => paths.size > 1)
+			.map(([id]) => id)
+			.sort();
 	}
 
 	getRelationshipPathsForId(id: string): string[] {
@@ -172,7 +183,7 @@ export class IndexState {
 
 	getDiagnosticsForPaths(paths: Iterable<string>): AtlasDiagnostic[] {
 		const selected = new Set(paths);
-		return [...this.filesByPath.entries()].flatMap(([path, file]) => selected.has(path) ? file.diagnostics : []);
+		return [...this.filesByPath.entries()].flatMap(([path, file]) => (selected.has(path) ? file.diagnostics : []));
 	}
 
 	private addIndexes(path: string, file: StoredFile): void {
@@ -181,7 +192,8 @@ export class IndexState {
 			for (const contact of file.person.contacts) {
 				for (const key of recordReferenceKeys(contact)) addToSetMap(this.dependentsByReference, key, path);
 			}
-			if (file.person.photoPath) addToSetMap(this.assetDependentsByPath, normalizePathIdentity(file.person.photoPath), path);
+			if (file.person.photoPath)
+				addToSetMap(this.assetDependentsByPath, normalizePathIdentity(file.person.photoPath), path);
 		}
 		if (file.relationship) {
 			addToSetMap(this.relationshipsById, file.relationship.id, path);
@@ -200,7 +212,8 @@ export class IndexState {
 			for (const contact of file.person.contacts) {
 				for (const key of recordReferenceKeys(contact)) removeFromSetMap(this.dependentsByReference, key, path);
 			}
-			if (file.person.photoPath) removeFromSetMap(this.assetDependentsByPath, normalizePathIdentity(file.person.photoPath), path);
+			if (file.person.photoPath)
+				removeFromSetMap(this.assetDependentsByPath, normalizePathIdentity(file.person.photoPath), path);
 		}
 		if (file.relationship) {
 			removeFromSetMap(this.relationshipsById, file.relationship.id, path);
@@ -221,7 +234,12 @@ export class IndexState {
 			if (file.person.photoPath) targets.push(file.person.photoPath);
 		}
 		if (file.relationship) {
-			targets.push(file.relationship.id, file.relationship.filePath, file.relationship.from.target, file.relationship.to.target);
+			targets.push(
+				file.relationship.id,
+				file.relationship.filePath,
+				file.relationship.from.target,
+				file.relationship.to.target,
+			);
 		}
 		return targets;
 	}

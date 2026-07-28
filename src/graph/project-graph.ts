@@ -81,7 +81,7 @@ function resolveCenter(
 			message: ambiguous
 				? `The requested center “${requested}” matches multiple people and was not selected.`
 				: `The requested center “${requested}” could not be resolved and was not selected.`,
-			filePaths: candidates.flatMap((candidate) => candidate.filePath ? [candidate.filePath] : []),
+			filePaths: candidates.flatMap((candidate) => (candidate.filePath ? [candidate.filePath] : [])),
 		},
 	};
 }
@@ -110,7 +110,11 @@ function reachableNodes(edges: AtlasEdge[], centerId: NodeId, hops: number): Set
 	return included;
 }
 
-function limitGraph(nodes: AtlasNode[], edges: AtlasEdge[], maxNodes: number): { nodes: AtlasNode[]; edges: AtlasEdge[]; diagnostics: AtlasDiagnostic[] } {
+function limitGraph(
+	nodes: AtlasNode[],
+	edges: AtlasEdge[],
+	maxNodes: number,
+): { nodes: AtlasNode[]; edges: AtlasEdge[]; diagnostics: AtlasDiagnostic[] } {
 	if (nodes.length <= maxNodes) return { nodes, edges, diagnostics: [] };
 	const ordered = [...nodes].sort((left, right) => {
 		if (left.isCenter !== right.isCenter) return left.isCenter ? -1 : 1;
@@ -121,13 +125,15 @@ function limitGraph(nodes: AtlasNode[], edges: AtlasEdge[], maxNodes: number): {
 	return {
 		nodes: limitedNodes,
 		edges: edges.filter((edge) => ids.has(edge.sourceId) && ids.has(edge.targetId)),
-		diagnostics: [{
-			id: `node-limit:${maxNodes}`,
-			severity: "warning",
-			code: "node-limit",
-			message: `The view is limited to ${maxNodes} nodes. Narrow the Base or choose a center person.`,
-			filePaths: [],
-		}],
+		diagnostics: [
+			{
+				id: `node-limit:${maxNodes}`,
+				severity: "warning",
+				code: "node-limit",
+				message: `The view is limited to ${maxNodes} nodes. Narrow the Base or choose a center person.`,
+				filePaths: [],
+			},
+		],
 	};
 }
 

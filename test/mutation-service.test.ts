@@ -4,11 +4,17 @@ import { AtlasMutationService, MutationError } from "../src/mutations/atlas-muta
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 
 function createHarness() {
-	const files = new Map<string, { path: string; children?: unknown[]; content?: string; frontmatter?: Record<string, unknown> }>();
+	const files = new Map<
+		string,
+		{ path: string; children?: unknown[]; content?: string; frontmatter?: Record<string, unknown> }
+	>();
 	const app = {
 		vault: {
 			getAbstractFileByPath: (path: string) => files.get(path),
-			createFolder: async (path: string) => { files.set(path, { path, children: [] }); return files.get(path); },
+			createFolder: async (path: string) => {
+				files.set(path, { path, children: [] });
+				return files.get(path);
+			},
 			create: async (path: string, content: string) => {
 				const file = { path, content };
 				files.set(path, file);
@@ -31,7 +37,13 @@ function createHarness() {
 		getPeoplePathsById: () => [] as string[],
 		getRelationshipPathsById: () => [] as string[],
 	};
-	const service = new AtlasMutationService(app, () => DEFAULT_SETTINGS, () => true, index, () => "person-fixed");
+	const service = new AtlasMutationService(
+		app,
+		() => DEFAULT_SETTINGS,
+		() => true,
+		index,
+		() => "person-fixed",
+	);
 	return { app, files, service };
 }
 
@@ -57,7 +69,9 @@ describe("AtlasMutationService", () => {
 	it("does not create an invalid relationship", async () => {
 		const { files, service } = createHarness();
 
-		await expect(service.createRelationship({ path: "Relationships/Jan.md", from: "", to: "[[Sam]]" })).rejects.toBeInstanceOf(MutationError);
+		await expect(
+			service.createRelationship({ path: "Relationships/Jan.md", from: "", to: "[[Sam]]" }),
+		).rejects.toBeInstanceOf(MutationError);
 		expect(files.has("Relationships/Jan.md")).toBe(false);
 	});
 
@@ -69,7 +83,9 @@ describe("AtlasMutationService", () => {
 		]);
 
 		expect(personResults.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
-		expect([...people.files.values()].filter((entry) => entry.content?.includes('person_id: "person-fixed"'))).toHaveLength(1);
+		expect(
+			[...people.files.values()].filter((entry) => entry.content?.includes('person_id: "person-fixed"')),
+		).toHaveLength(1);
 
 		const relationships = createHarness();
 		const relationshipResults = await Promise.allSettled([
@@ -88,7 +104,11 @@ describe("AtlasMutationService", () => {
 		]);
 
 		expect(relationshipResults.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
-		expect([...relationships.files.values()].filter((entry) => entry.content?.includes('relationship_id: "relationship-shared"'))).toHaveLength(1);
+		expect(
+			[...relationships.files.values()].filter((entry) =>
+				entry.content?.includes('relationship_id: "relationship-shared"'),
+			),
+		).toHaveLength(1);
 	});
 
 	it("rejects overlapping identity updates and preserves the rejected notes", async () => {
@@ -104,7 +124,9 @@ describe("AtlasMutationService", () => {
 		]);
 
 		expect(personResults.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
-		expect([alice, bob].filter((file) => people.files.get(file.path)?.frontmatter?.person_id === "person-shared")).toHaveLength(1);
+		expect(
+			[alice, bob].filter((file) => people.files.get(file.path)?.frontmatter?.person_id === "person-shared"),
+		).toHaveLength(1);
 		expect(people.files.get(alice.path)?.frontmatter?.custom).toBe("alice");
 		expect(people.files.get(bob.path)?.frontmatter?.custom).toBe("bob");
 
@@ -124,7 +146,11 @@ describe("AtlasMutationService", () => {
 		]);
 
 		expect(relationshipResults.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
-		expect([first, second].filter((file) => relationships.files.get(file.path)?.frontmatter?.relationship_id === "relationship-shared")).toHaveLength(1);
+		expect(
+			[first, second].filter(
+				(file) => relationships.files.get(file.path)?.frontmatter?.relationship_id === "relationship-shared",
+			),
+		).toHaveLength(1);
 		expect(relationships.files.get(first.path)?.frontmatter?.custom).toBe(first.path);
 		expect(relationships.files.get(second.path)?.frontmatter?.custom).toBe(second.path);
 	});

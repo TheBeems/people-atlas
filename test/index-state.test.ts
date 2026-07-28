@@ -29,8 +29,16 @@ describe("IndexState", () => {
 
 	it("updates relationship ID indexes and adjacency without rebuilding the vault", () => {
 		const state = new IndexState();
-		state.upsert({ filePath: "Relationships/A-B.md", relationship: relationship("rel-1", "Relationships/A-B.md", "alice", "bob"), diagnostics: [] });
-		state.upsert({ filePath: "Relationships/A-B-2.md", relationship: relationship("rel-1", "Relationships/A-B-2.md", "alice", "bob"), diagnostics: [] });
+		state.upsert({
+			filePath: "Relationships/A-B.md",
+			relationship: relationship("rel-1", "Relationships/A-B.md", "alice", "bob"),
+			diagnostics: [],
+		});
+		state.upsert({
+			filePath: "Relationships/A-B-2.md",
+			relationship: relationship("rel-1", "Relationships/A-B-2.md", "alice", "bob"),
+			diagnostics: [],
+		});
 
 		expect(state.getRelationshipPathsById("rel-1")).toEqual(["Relationships/A-B-2.md", "Relationships/A-B.md"]);
 		expect(state.getDuplicateRelationshipIds()).toEqual(["rel-1"]);
@@ -50,13 +58,21 @@ describe("IndexState", () => {
 			diagnostics: [],
 		});
 
-		const change = state.upsert({ filePath: "People/Alice.md", person: person("alice-new", "People/Alice.md"), diagnostics: [] });
+		const change = state.upsert({
+			filePath: "People/Alice.md",
+			person: person("alice-new", "People/Alice.md"),
+			diagnostics: [],
+		});
 		expect(change.affectedPaths).toContain("People/Carol.md");
 	});
 
 	it("keeps delta revisions monotonic across rebuilds", () => {
 		const state = new IndexState();
-		const first = state.upsert({ filePath: "People/Alice.md", person: person("alice", "People/Alice.md"), diagnostics: [] });
+		const first = state.upsert({
+			filePath: "People/Alice.md",
+			person: person("alice", "People/Alice.md"),
+			diagnostics: [],
+		});
 		state.clear();
 		const second = state.upsert({ filePath: "People/Bob.md", person: person("bob", "People/Bob.md"), diagnostics: [] });
 		expect(second.revision).toBeGreaterThan(first.revision);

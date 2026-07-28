@@ -28,7 +28,11 @@ function emptyDelta(revision: number): IndexDelta {
 	};
 }
 
-function duplicateDiagnostic(id: string, code: "duplicate-person-id" | "duplicate-relationship-id", filePaths: string[]): AtlasDiagnostic {
+function duplicateDiagnostic(
+	id: string,
+	code: "duplicate-person-id" | "duplicate-relationship-id",
+	filePaths: string[],
+): AtlasDiagnostic {
 	return {
 		id: `${code}:${id}`,
 		severity: "error",
@@ -56,28 +60,38 @@ export class PersonIndex extends Component {
 		this.started = true;
 		this.rebuildAll();
 
-		this.registerEvent(this.app.vault.on("create", (file) => {
-			if (file instanceof TFile) this.updateFile(file);
-		}));
-		this.registerEvent(this.app.metadataCache.on("changed", (file) => {
-			this.updateFile(file);
-		}));
-		this.registerEvent(this.app.metadataCache.on("resolve", (file) => {
-			this.reindexPaths([...this.state.getDependentsForTarget(file.path), ...this.getMetadataDependents(file.path)]);
-		}));
-		this.registerEvent(this.app.vault.on("delete", (file) => {
-			const dependents = [...this.state.getDependentsForTarget(file.path), ...this.getMetadataDependents(file.path)];
-			this.removePath(file.path);
-			this.reindexPaths(dependents);
-		}));
-		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-			const dependents = [...this.state.getDependentsForTarget(oldPath), ...this.getMetadataDependents(oldPath)];
-			const removed = this.removePath(oldPath, false);
-			const added = file instanceof TFile ? this.updateFile(file, false) : undefined;
-			const renameDelta = this.mergeDeltas(removed, added, [oldPath]);
-			if (renameDelta) this.publish(renameDelta);
-			this.reindexPaths(dependents);
-		}));
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				if (file instanceof TFile) this.updateFile(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (file) => {
+				this.updateFile(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.metadataCache.on("resolve", (file) => {
+				this.reindexPaths([...this.state.getDependentsForTarget(file.path), ...this.getMetadataDependents(file.path)]);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				const dependents = [...this.state.getDependentsForTarget(file.path), ...this.getMetadataDependents(file.path)];
+				this.removePath(file.path);
+				this.reindexPaths(dependents);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				const dependents = [...this.state.getDependentsForTarget(oldPath), ...this.getMetadataDependents(oldPath)];
+				const removed = this.removePath(oldPath, false);
+				const added = file instanceof TFile ? this.updateFile(file, false) : undefined;
+				const renameDelta = this.mergeDeltas(removed, added, [oldPath]);
+				if (renameDelta) this.publish(renameDelta);
+				this.reindexPaths(dependents);
+			}),
+		);
 	}
 
 	override onunload(): void {
@@ -133,15 +147,21 @@ export class PersonIndex extends Component {
 		delta.duplicateRelationshipIds = this.getDuplicateRelationshipIds();
 		delta.diagnostics = [
 			...(snapshot.diagnostics ?? []),
-			...delta.duplicatePersonIds.map((id) => duplicateDiagnostic(id, "duplicate-person-id", this.state.getPersonPathsForId(id))),
-			...delta.duplicateRelationshipIds.map((id) => duplicateDiagnostic(id, "duplicate-relationship-id", this.state.getRelationshipPathsForId(id))),
+			...delta.duplicatePersonIds.map((id) =>
+				duplicateDiagnostic(id, "duplicate-person-id", this.state.getPersonPathsForId(id)),
+			),
+			...delta.duplicateRelationshipIds.map((id) =>
+				duplicateDiagnostic(id, "duplicate-relationship-id", this.state.getRelationshipPathsForId(id)),
+			),
 		];
 		this.publish(delta);
 	}
 
 	private updateFile(file: TFile, publish = true): IndexDelta | undefined {
 		if (!this.started || file.extension !== "md") return undefined;
-		const change = this.state.upsert(parseAtlasFile(this.app, file, this.app.metadataCache.getFileCache(file), this.getSettings()));
+		const change = this.state.upsert(
+			parseAtlasFile(this.app, file, this.app.metadataCache.getFileCache(file), this.getSettings()),
+		);
 		const delta = this.createDelta(change);
 		if (publish) this.publish(delta);
 		return delta;
@@ -186,7 +206,9 @@ export class PersonIndex extends Component {
 			changedPaths: [...change.affectedPaths].sort(),
 			removedPaths: change.removed ? [change.path] : [],
 			affectedPersonIds: [...new Set([previousPerson?.id, nextPerson?.id].filter((id): id is string => Boolean(id)))],
-			affectedRelationshipIds: [...new Set([previousRelationship?.id, nextRelationship?.id].filter((id): id is string => Boolean(id)))],
+			affectedRelationshipIds: [
+				...new Set([previousRelationship?.id, nextRelationship?.id].filter((id): id is string => Boolean(id))),
+			],
 			addedPeople: !previousPerson && nextPerson ? [nextPerson] : [],
 			updatedPeople: previousPerson && nextPerson ? [nextPerson] : [],
 			removedPeople: previousPerson && !nextPerson ? [previousPerson] : [],
@@ -197,8 +219,12 @@ export class PersonIndex extends Component {
 			affectedRelationships,
 			diagnostics: [
 				...this.state.getDiagnosticsForPaths(change.affectedPaths),
-				...this.getDuplicatePersonIds().map((id) => duplicateDiagnostic(id, "duplicate-person-id", this.state.getPersonPathsForId(id))),
-				...this.getDuplicateRelationshipIds().map((id) => duplicateDiagnostic(id, "duplicate-relationship-id", this.state.getRelationshipPathsForId(id))),
+				...this.getDuplicatePersonIds().map((id) =>
+					duplicateDiagnostic(id, "duplicate-person-id", this.state.getPersonPathsForId(id)),
+				),
+				...this.getDuplicateRelationshipIds().map((id) =>
+					duplicateDiagnostic(id, "duplicate-relationship-id", this.state.getRelationshipPathsForId(id)),
+				),
 			],
 			duplicatePersonIds: this.getDuplicatePersonIds(),
 			duplicateRelationshipIds: this.getDuplicateRelationshipIds(),
@@ -211,26 +237,49 @@ export class PersonIndex extends Component {
 		for (const listener of this.deltaListeners) listener(delta);
 	}
 
-	private mergeDeltas(first: IndexDelta | undefined, second: IndexDelta | undefined, extraChangedPaths: string[] = []): IndexDelta | undefined {
+	private mergeDeltas(
+		first: IndexDelta | undefined,
+		second: IndexDelta | undefined,
+		extraChangedPaths: string[] = [],
+	): IndexDelta | undefined {
 		if (!first && !second) return undefined;
-		const latest = second ?? first as IndexDelta;
+		const latest = second ?? (first as IndexDelta);
 		const diagnostics = new Map<string, AtlasDiagnostic>();
-		for (const diagnostic of [...(first?.diagnostics ?? []), ...(second?.diagnostics ?? [])]) diagnostics.set(diagnostic.id, diagnostic);
+		for (const diagnostic of [...(first?.diagnostics ?? []), ...(second?.diagnostics ?? [])])
+			diagnostics.set(diagnostic.id, diagnostic);
 		return {
 			...latest,
 			revision: latest.revision,
-			changedPaths: [...new Set([...(first?.changedPaths ?? []), ...(second?.changedPaths ?? []), ...extraChangedPaths])].sort(),
+			changedPaths: [
+				...new Set([...(first?.changedPaths ?? []), ...(second?.changedPaths ?? []), ...extraChangedPaths]),
+			].sort(),
 			removedPaths: [...new Set([...(first?.removedPaths ?? []), ...(second?.removedPaths ?? [])])].sort(),
 			affectedPersonIds: [...new Set([...(first?.affectedPersonIds ?? []), ...(second?.affectedPersonIds ?? [])])],
-			affectedRelationshipIds: [...new Set([...(first?.affectedRelationshipIds ?? []), ...(second?.affectedRelationshipIds ?? [])])],
+			affectedRelationshipIds: [
+				...new Set([...(first?.affectedRelationshipIds ?? []), ...(second?.affectedRelationshipIds ?? [])]),
+			],
 			addedPeople: [...(first?.addedPeople ?? []), ...(second?.addedPeople ?? [])],
 			updatedPeople: [...(first?.updatedPeople ?? []), ...(second?.updatedPeople ?? [])],
 			removedPeople: [...(first?.removedPeople ?? []), ...(second?.removedPeople ?? [])],
 			addedRelationships: [...(first?.addedRelationships ?? []), ...(second?.addedRelationships ?? [])],
 			updatedRelationships: [...(first?.updatedRelationships ?? []), ...(second?.updatedRelationships ?? [])],
 			removedRelationships: [...(first?.removedRelationships ?? []), ...(second?.removedRelationships ?? [])],
-			affectedPeople: [...new Map([...(first?.affectedPeople ?? []), ...(second?.affectedPeople ?? [])].map((person) => [person.filePath, person])).values()],
-			affectedRelationships: [...new Map([...(first?.affectedRelationships ?? []), ...(second?.affectedRelationships ?? [])].map((relationship) => [relationship.filePath, relationship])).values()],
+			affectedPeople: [
+				...new Map(
+					[...(first?.affectedPeople ?? []), ...(second?.affectedPeople ?? [])].map((person) => [
+						person.filePath,
+						person,
+					]),
+				).values(),
+			],
+			affectedRelationships: [
+				...new Map(
+					[...(first?.affectedRelationships ?? []), ...(second?.affectedRelationships ?? [])].map((relationship) => [
+						relationship.filePath,
+						relationship,
+					]),
+				).values(),
+			],
 			diagnostics: [...diagnostics.values()],
 			duplicatePersonIds: latest.duplicatePersonIds,
 			duplicateRelationshipIds: latest.duplicateRelationshipIds,

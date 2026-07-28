@@ -41,7 +41,7 @@ export function adaptBasesEntries(app: App, entries: BasesEntry[], mapping: Base
 		.filter((entry) => entry.file.extension === "md")
 		.map((entry) => {
 			const rawPhoto = readString(entry, mapping.photo);
-			const photoTarget = rawPhoto ? parsePersonReference(rawPhoto)?.target ?? rawPhoto : undefined;
+			const photoTarget = rawPhoto ? (parsePersonReference(rawPhoto)?.target ?? rawPhoto) : undefined;
 			const resolvedPhoto = photoTarget
 				? app.metadataCache.getFirstLinkpathDest(photoTarget, entry.file.path)?.path
 				: undefined;

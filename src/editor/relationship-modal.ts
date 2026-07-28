@@ -12,11 +12,11 @@ import {
 export type RelationshipModalMode =
 	| { kind: "create"; prefillPersonPath?: string }
 	| {
-		kind: "edit";
-		file: TFile;
-		relationship: RelationshipRecord;
-		explicitRelationshipId?: string;
-	};
+			kind: "edit";
+			file: TFile;
+			relationship: RelationshipRecord;
+			explicitRelationshipId?: string;
+	  };
 
 let modalSequence = 0;
 
@@ -96,9 +96,10 @@ export class RelationshipModal extends Modal {
 
 		const pathInput = this.addInput(form, {
 			label: this.mode.kind === "create" ? "Relationship note path" : "Source note path",
-			description: this.mode.kind === "create"
-				? "Review or edit the proposed Markdown path. Existing notes are never overwritten."
-				: "Moving or renaming an existing relationship is outside this editor.",
+			description:
+				this.mode.kind === "create"
+					? "Review or edit the proposed Markdown path. Existing notes are never overwritten."
+					: "Moving or renaming an existing relationship is outside this editor.",
 			value: this.values.path,
 			readOnly: this.mode.kind === "edit",
 			onInput: (value) => {
@@ -223,7 +224,9 @@ export class RelationshipModal extends Modal {
 				try {
 					await this.app.workspace.getLeaf("tab").openFile(result.createdFile);
 				} catch (error) {
-					new Notice(`The relationship was created but could not be opened: ${error instanceof Error ? error.message : String(error)}`);
+					new Notice(
+						`The relationship was created but could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+					);
 				}
 			}
 			return;

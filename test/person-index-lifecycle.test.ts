@@ -11,11 +11,17 @@ class EventBus {
 		const callbacks = this.handlers.get(name) ?? [];
 		callbacks.push(callback);
 		this.handlers.set(name, callbacks);
-		return { unload: () => this.handlers.set(name, callbacks.filter((item) => item !== callback)) };
+		return {
+			unload: () =>
+				this.handlers.set(
+					name,
+					callbacks.filter((item) => item !== callback),
+				),
+		};
 	}
 
 	emit(name: string, ...args: any[]): void {
-	for (const callback of this.handlers.get(name) ?? []) callback(...args);
+		for (const callback of this.handlers.get(name) ?? []) callback(...args);
 	}
 }
 
@@ -41,7 +47,10 @@ describe("PersonIndex lifecycle", () => {
 		let scanCount = 0;
 		const app = {
 			vault: {
-				getMarkdownFiles: () => { scanCount += 1; return [...files.values()]; },
+				getMarkdownFiles: () => {
+					scanCount += 1;
+					return [...files.values()];
+				},
 				getAbstractFileByPath: (path: string) => files.get(path),
 				on: vault.on.bind(vault),
 			},

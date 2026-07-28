@@ -50,10 +50,7 @@ function compareDiagnostic(left: AtlasDiagnostic, right: AtlasDiagnostic): numbe
 	return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 
-export function generatePerformanceFixture(
-	size: PerformanceSize,
-	profile: PerformanceProfile,
-): PerformanceFixture {
+export function generatePerformanceFixture(size: PerformanceSize, profile: PerformanceProfile): PerformanceFixture {
 	const offsets = profile === "sparse" ? 2 : 8;
 	const people = Array.from({ length: size }, (_, index): PersonRecord => {
 		const suffix = ordinal(index);
@@ -83,7 +80,7 @@ export function generatePerformanceFixture(
 				types: ["performance-fixture"],
 				closeness: ((sourceIndex + offset) % 5) + 1,
 				since: `20${(sourceIndex % 20).toString().padStart(2, "0")}-01-01`,
-				lastContact: `2026-${((sourceIndex + offset) % 12 + 1).toString().padStart(2, "0")}-01`,
+				lastContact: `2026-${(((sourceIndex + offset) % 12) + 1).toString().padStart(2, "0")}-01`,
 				status: sourceIndex % 3 === 0 ? "active" : sourceIndex % 3 === 1 ? "dormant" : "ended",
 			});
 		}
@@ -112,10 +109,12 @@ export function normalizePerformanceSnapshot(snapshot: AtlasSnapshot): AtlasSnap
 	return {
 		nodes: [...snapshot.nodes].map((node) => ({ ...node })).sort(compareStableId),
 		edges: [...snapshot.edges].map((edge) => ({ ...edge })).sort(compareStableId),
-		diagnostics: [...snapshot.diagnostics].map((diagnostic) => ({
-			...diagnostic,
-			filePaths: [...diagnostic.filePaths].sort(),
-		})).sort(compareDiagnostic),
+		diagnostics: [...snapshot.diagnostics]
+			.map((diagnostic) => ({
+				...diagnostic,
+				filePaths: [...diagnostic.filePaths].sort(),
+			}))
+			.sort(compareDiagnostic),
 		hiddenNodeCount: snapshot.hiddenNodeCount,
 		hiddenEdgeCount: snapshot.hiddenEdgeCount,
 		generatedAt: FIXED_GENERATED_AT,
@@ -145,8 +144,8 @@ export function validatePerformanceFixture(fixture: PerformanceFixture): void {
 		throw new Error("Fixture people do not have unique stable identities and paths.");
 	}
 	if (
-		relationshipIds.size !== fixture.relationships.length
-		|| relationshipPaths.size !== fixture.relationships.length
+		relationshipIds.size !== fixture.relationships.length ||
+		relationshipPaths.size !== fixture.relationships.length
 	) {
 		throw new Error("Fixture relationships do not have unique stable identities and paths.");
 	}
@@ -160,10 +159,7 @@ export function validatePerformanceFixture(fixture: PerformanceFixture): void {
 	}
 }
 
-export function validateSnapshotCounts(
-	fixture: PerformanceFixture,
-	snapshot: AtlasSnapshot,
-): FixtureCounts {
+export function validateSnapshotCounts(fixture: PerformanceFixture, snapshot: AtlasSnapshot): FixtureCounts {
 	const counts = {
 		people: fixture.people.length,
 		relationships: fixture.relationships.length,
@@ -171,10 +167,10 @@ export function validateSnapshotCounts(
 		edges: snapshot.edges.length,
 	};
 	if (
-		counts.people !== fixture.size
-		|| counts.relationships !== fixture.size * fixture.offsets
-		|| counts.nodes !== fixture.size
-		|| counts.edges !== fixture.size * fixture.offsets
+		counts.people !== fixture.size ||
+		counts.relationships !== fixture.size * fixture.offsets ||
+		counts.nodes !== fixture.size ||
+		counts.edges !== fixture.size * fixture.offsets
 	) {
 		throw new Error(`Invalid fixture/snapshot counts: ${JSON.stringify(counts)}.`);
 	}
@@ -184,9 +180,7 @@ export function validateSnapshotCounts(
 	return counts;
 }
 
-export function createIncrementalFixtureScenario(
-	fixture: PerformanceFixture,
-): IncrementalFixtureScenario {
+export function createIncrementalFixtureScenario(fixture: PerformanceFixture): IncrementalFixtureScenario {
 	const personIndex = Math.floor(fixture.size / 2);
 	const existingPerson = fixture.people[personIndex];
 	const existingRelationship = fixture.relationships[personIndex * fixture.offsets];
@@ -205,13 +199,13 @@ export function createIncrementalFixtureScenario(
 		lastContact: "2026-07-26",
 		status: "active",
 	};
-	const people = fixture.people.map((candidate) => candidate.id === person.id ? person : candidate);
-	const relationships = fixture.relationships.map((candidate) => (
-		candidate.id === relationship.id ? relationship : candidate
-	));
-	const incidentRelationships = relationships.filter((candidate) => (
-		candidate.from.target === person.id || candidate.to.target === person.id
-	));
+	const people = fixture.people.map((candidate) => (candidate.id === person.id ? person : candidate));
+	const relationships = fixture.relationships.map((candidate) =>
+		candidate.id === relationship.id ? relationship : candidate,
+	);
+	const incidentRelationships = relationships.filter(
+		(candidate) => candidate.from.target === person.id || candidate.to.target === person.id,
+	);
 	return {
 		person,
 		relationship,
@@ -241,12 +235,9 @@ export function applyPerformanceIncrementalScenario(
 	previous: AtlasSnapshot,
 	scenario: IncrementalFixtureScenario,
 ): AtlasSnapshot {
-	return normalizePerformanceSnapshot(applyGraphDelta(
-		previous,
-		scenario.delta,
-		() => undefined,
-		{ resolutionPeople: scenario.raw.people },
-	));
+	return normalizePerformanceSnapshot(
+		applyGraphDelta(previous, scenario.delta, () => undefined, { resolutionPeople: scenario.raw.people }),
+	);
 }
 
 export function assertEquivalentSnapshots(left: AtlasSnapshot, right: AtlasSnapshot): void {
@@ -260,9 +251,7 @@ export function assertEquivalentSnapshots(left: AtlasSnapshot, right: AtlasSnaps
 function stableJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
 	if (value && typeof value === "object") {
-		const entries = Object.entries(value).sort(([left], [right]) => (
-			left < right ? -1 : left > right ? 1 : 0
-		));
+		const entries = Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
 		return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(",")}}`;
 	}
 	return JSON.stringify(value) ?? "undefined";
@@ -278,12 +267,12 @@ export function assertStableIncrementalIdentities(
 	const beforeEdges = new Set(before.edges.map((edge) => edge.id));
 	const afterEdges = new Set(after.edges.map((edge) => edge.id));
 	if (
-		before.nodes.length !== after.nodes.length
-		|| before.edges.length !== after.edges.length
-		|| JSON.stringify([...beforeNodes].sort()) !== JSON.stringify([...afterNodes].sort())
-		|| JSON.stringify([...beforeEdges].sort()) !== JSON.stringify([...afterEdges].sort())
-		|| !afterNodes.has(scenario.person.id)
-		|| !afterEdges.has(scenario.relationship.id)
+		before.nodes.length !== after.nodes.length ||
+		before.edges.length !== after.edges.length ||
+		JSON.stringify([...beforeNodes].sort()) !== JSON.stringify([...afterNodes].sort()) ||
+		JSON.stringify([...beforeEdges].sort()) !== JSON.stringify([...afterEdges].sort()) ||
+		!afterNodes.has(scenario.person.id) ||
+		!afterEdges.has(scenario.relationship.id)
 	) {
 		throw new Error("Incremental fixture changed stable graph identities or counts.");
 	}

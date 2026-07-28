@@ -6,10 +6,7 @@ import type {
 	RelationshipRecord,
 	RelationshipStatus,
 } from "../domain/types";
-import type {
-	RelationshipMutationInput,
-	RelationshipUpdates,
-} from "../mutations/validation";
+import type { RelationshipMutationInput, RelationshipUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
 
 export interface RelationshipFormValues {
@@ -44,9 +41,8 @@ export function createRelationshipFormValues(
 	people: PersonRecord[],
 	prefillPersonPath?: string,
 ): RelationshipFormValues {
-	const fromPath = prefillPersonPath && people.some((person) => person.filePath === prefillPersonPath)
-		? prefillPersonPath
-		: "";
+	const fromPath =
+		prefillPersonPath && people.some((person) => person.filePath === prefillPersonPath) ? prefillPersonPath : "";
 	return {
 		path: "",
 		fromPath,
@@ -171,9 +167,7 @@ export class RelationshipFormSession {
 		this.pending = true;
 		try {
 			if (this.mode.kind === "create") {
-				const createdFile = await this.mutations.createRelationship(
-					buildRelationshipCreateInput(values, this.people),
-				);
+				const createdFile = await this.mutations.createRelationship(buildRelationshipCreateInput(values, this.people));
 				this.completed = true;
 				return { status: "success", createdFile };
 			}
@@ -205,9 +199,9 @@ function resolveEndpointPath(
 	if (idMatches.length > 1) return reference.target;
 	const resolvedPath = resolveLink(reference.target, sourcePath);
 	if (resolvedPath && people.some((person) => person.filePath === resolvedPath)) return resolvedPath;
-	const exact = people.find((person) =>
-		person.filePath === reference.target
-		|| person.filePath.replace(/\.md$/i, "") === reference.target);
+	const exact = people.find(
+		(person) => person.filePath === reference.target || person.filePath.replace(/\.md$/i, "") === reference.target,
+	);
 	return exact?.filePath ?? reference.target;
 }
 
@@ -228,7 +222,14 @@ function optionalNumber(value: string): number | undefined {
 }
 
 function parseTypes(value: string): string[] {
-	return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+	return [
+		...new Set(
+			value
+				.split(",")
+				.map((item) => item.trim())
+				.filter(Boolean),
+		),
+	];
 }
 
 function sameStrings(left: string[], right: string[]): boolean {

@@ -59,7 +59,14 @@ export class AtlasRenderer {
 	private readonly resizeObserver: ResizeObserver;
 	private readonly camera = new Camera();
 	private readonly touchGesture = new TouchGestureController(this.camera.minScale, this.camera.maxScale);
-	private snapshot: AtlasSnapshot = { nodes: [], edges: [], diagnostics: [], hiddenNodeCount: 0, hiddenEdgeCount: 0, generatedAt: 0 };
+	private snapshot: AtlasSnapshot = {
+		nodes: [],
+		edges: [],
+		diagnostics: [],
+		hiddenNodeCount: 0,
+		hiddenEdgeCount: 0,
+		generatedAt: 0,
+	};
 	private positions = new Map<NodeId, LayoutPoint>();
 	private selectedId: NodeId | undefined;
 	private focusedId: NodeId | undefined;
@@ -184,7 +191,9 @@ export class AtlasRenderer {
 		const listHeldFocus = Boolean(focusedButton && this.semanticPanel.contains(focusedButton));
 		const focusedAction = this.actionButtonFrom(activeElement)?.dataset.action as SelectedAction | undefined;
 		const actionHeldFocus = Boolean(focusedAction && this.details.contains(activeElement));
-		const focusedSheetAction = this.sheetActionButtonFrom(activeElement)?.dataset.sheetAction as SheetAction | undefined;
+		const focusedSheetAction = this.sheetActionButtonFrom(activeElement)?.dataset.sheetAction as
+			| SheetAction
+			| undefined;
 		const sheetHeldFocus = Boolean(focusedSheetAction && this.sheet.contains(activeElement));
 
 		this.snapshot = snapshot;
@@ -236,7 +245,10 @@ export class AtlasRenderer {
 		}
 		const graphWidth = Math.max(1, maxX - minX);
 		const graphHeight = Math.max(1, maxY - minY);
-		this.camera.scale = Math.min(2, Math.max(0.2, Math.min((this.width - 80) / graphWidth, (this.height - 80) / graphHeight)));
+		this.camera.scale = Math.min(
+			2,
+			Math.max(0.2, Math.min((this.width - 80) / graphWidth, (this.height - 80) / graphHeight)),
+		);
 		this.camera.x = this.width / 2 - ((minX + maxX) / 2) * this.camera.scale;
 		this.camera.y = this.height / 2 - ((minY + maxY) / 2) * this.camera.scale;
 		this.cameraInitialized = true;
@@ -249,7 +261,14 @@ export class AtlasRenderer {
 	}
 
 	restoreLayoutSnapshot(layout: LayoutSnapshot): void {
-		const restored = restoreLayoutSnapshot(layout, this.snapshot.nodes, this.positions, this.camera, this.camera.minScale, this.camera.maxScale);
+		const restored = restoreLayoutSnapshot(
+			layout,
+			this.snapshot.nodes,
+			this.positions,
+			this.camera,
+			this.camera.minScale,
+			this.camera.maxScale,
+		);
 		this.positions = restored.positions;
 		this.camera.x = restored.camera.x;
 		this.camera.y = restored.camera.y;
@@ -416,11 +435,12 @@ export class AtlasRenderer {
 		this.peopleList.hidden = this.snapshot.nodes.length === 0;
 		this.peopleList.replaceChildren();
 
-		const rovingId = this.selectedId && this.nodeById(this.selectedId)
-			? this.selectedId
-			: this.focusedId && this.nodeById(this.focusedId)
-				? this.focusedId
-				: this.snapshot.nodes[0]?.id;
+		const rovingId =
+			this.selectedId && this.nodeById(this.selectedId)
+				? this.selectedId
+				: this.focusedId && this.nodeById(this.focusedId)
+					? this.focusedId
+					: this.snapshot.nodes[0]?.id;
 		this.focusedId = rovingId;
 
 		for (const node of this.snapshot.nodes) {
@@ -521,11 +541,12 @@ export class AtlasRenderer {
 		if (!counterpart) return undefined;
 
 		const counterpartLabel = `${counterpart.label}${counterpart.kind === "ghost" ? " (unresolved)" : ""}`;
-		const direction = edge.direction === "undirected"
-			? `Connected to ${counterpartLabel}`
-			: selectedIsSource
-				? `Outgoing to ${counterpartLabel}`
-				: `Incoming from ${counterpartLabel}`;
+		const direction =
+			edge.direction === "undirected"
+				? `Connected to ${counterpartLabel}`
+				: selectedIsSource
+					? `Outgoing to ${counterpartLabel}`
+					: `Incoming from ${counterpartLabel}`;
 		const parts = [direction];
 		if (edge.types.length > 0) parts.push(`Types: ${edge.types.join(", ")}`);
 		if (edge.inferred) parts.push("Contact-link connection");
@@ -599,10 +620,7 @@ export class AtlasRenderer {
 				this.createSheetActionButton("Open note", "open"),
 				this.createSheetActionButton("Use as center", "center"),
 			);
-			if (
-				this.callbacks.onCreateRelationship
-				&& this.callbacks.canCreateRelationship?.(selected) === true
-			) {
+			if (this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true) {
 				actions.append(this.createSheetActionButton("Create relationship", "create"));
 			}
 			this.sheetContent.append(actions);
@@ -659,7 +677,8 @@ export class AtlasRenderer {
 		this.sheetNodeId = undefined;
 		this.sheetInvoker = undefined;
 		if (!restoreFocus || this.destroyed) return;
-		if (invoker === "details" && !this.detailsButton.disabled && this.detailsButton.isConnected) this.detailsButton.focus();
+		if (invoker === "details" && !this.detailsButton.disabled && this.detailsButton.isConnected)
+			this.detailsButton.focus();
 		else if (invoker === "canvas" && this.canvas.isConnected && this.mode === "graph") this.canvas.focus();
 	}
 
@@ -674,8 +693,9 @@ export class AtlasRenderer {
 	}
 
 	private focusPersonButton(nodeId: NodeId): void {
-		const button = Array.from(this.peopleList.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button"))
-			.find((candidate) => candidate.dataset.nodeId === nodeId);
+		const button = Array.from(this.peopleList.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button")).find(
+			(candidate) => candidate.dataset.nodeId === nodeId,
+		);
 		button?.focus();
 	}
 
@@ -889,9 +909,10 @@ export class AtlasRenderer {
 			this.closeSheet(true);
 			return;
 		}
-		const canCreate = action === "create"
-			&& this.callbacks.onCreateRelationship
-			&& this.callbacks.canCreateRelationship?.(selected) === true;
+		const canCreate =
+			action === "create" &&
+			this.callbacks.onCreateRelationship &&
+			this.callbacks.canCreateRelationship?.(selected) === true;
 		if (action === "create" && !canCreate) {
 			this.renderSheet();
 			this.focusSheetAction("close");
@@ -932,13 +953,16 @@ export class AtlasRenderer {
 		if (event.pointerType === "touch") {
 			event.preventDefault();
 			this.suppressMouseUntil = this.win.performance.now() + 1000;
-			const update = this.touchGesture.begin({
-				pointerId: event.pointerId,
-				x: point.x,
-				y: point.y,
-				time: event.timeStamp,
-				targetId: node?.id,
-			}, { x: this.camera.x, y: this.camera.y, scale: this.camera.scale });
+			const update = this.touchGesture.begin(
+				{
+					pointerId: event.pointerId,
+					x: point.x,
+					y: point.y,
+					time: event.timeStamp,
+					targetId: node?.id,
+				},
+				{ x: this.camera.x, y: this.camera.y, scale: this.camera.scale },
+			);
 			this.applyTouchUpdate(update);
 			if (!update.cancelLongPress && node) this.scheduleLongPress(event.pointerId);
 			return;
@@ -1054,5 +1078,10 @@ function personAccessibleName(node: AtlasNode): string {
 
 function initials(label: string): string {
 	const words = label.trim().split(/\s+/).filter(Boolean);
-	return words.slice(0, 2).map((word) => word[0]?.toUpperCase() ?? "").join("") || "?";
+	return (
+		words
+			.slice(0, 2)
+			.map((word) => word[0]?.toUpperCase() ?? "")
+			.join("") || "?"
+	);
 }

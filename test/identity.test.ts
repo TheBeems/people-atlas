@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizePathIdentity, personIdFromPath, resolvePersonId, resolveRelationshipId } from "../src/domain/identity";
+import {
+	normalizePathIdentity,
+	personIdFromPath,
+	resolvePersonId,
+	resolveRelationshipId,
+} from "../src/domain/identity";
 
 describe("identity", () => {
 	it("normalizes file paths deterministically", () => {
@@ -16,6 +21,8 @@ describe("identity", () => {
 
 	it("prefers an explicit relationship ID and falls back to its path", () => {
 		expect(resolveRelationshipId(" relationship-1 ", "Relationships/Alice-Bob.md")).toBe("relationship-1");
-		expect(resolveRelationshipId(undefined, "Relationships/Alice-Bob.md")).toBe("relationship:relationships/alice-bob.md");
+		expect(resolveRelationshipId(undefined, "Relationships/Alice-Bob.md")).toBe(
+			"relationship:relationships/alice-bob.md",
+		);
 	});
 });

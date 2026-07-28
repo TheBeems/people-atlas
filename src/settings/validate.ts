@@ -53,8 +53,12 @@ export function validatePropertyName(value: string): string | undefined {
 }
 
 export function validatePeopleFolder(value: string): string | undefined {
-	const normalized = value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+	const normalized = value
+		.trim()
+		.replace(/\\/g, "/")
+		.replace(/^\/+|\/+$/g, "");
 	if (!normalized) return "Enter a People folder.";
-	if (normalized.split("/").some((part) => part === ".." || part === ".")) return "The People folder must stay inside the vault.";
+	if (normalized.split("/").some((part) => part === ".." || part === "."))
+		return "The People folder must stay inside the vault.";
 	return undefined;
 }

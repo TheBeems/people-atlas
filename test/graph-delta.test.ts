@@ -64,18 +64,20 @@ describe("applyGraphDelta", () => {
 
 		const incremental = applyGraphDelta(previous, delta, resolve, { resolutionPeople: after.people });
 		const rebuilt = buildAtlasSnapshot(after, resolve);
-		expect(incremental.nodes.sort((left, right) => String(left.id).localeCompare(String(right.id)))).toEqual(rebuilt.nodes.sort((left, right) => String(left.id).localeCompare(String(right.id))));
-		expect(incremental.edges.sort((left, right) => left.id.localeCompare(right.id))).toEqual(rebuilt.edges.sort((left, right) => left.id.localeCompare(right.id)));
-		expect(incremental.diagnostics.sort((left, right) => left.id.localeCompare(right.id))).toEqual(rebuilt.diagnostics.sort((left, right) => left.id.localeCompare(right.id)));
+		expect(incremental.nodes.sort((left, right) => String(left.id).localeCompare(String(right.id)))).toEqual(
+			rebuilt.nodes.sort((left, right) => String(left.id).localeCompare(String(right.id))),
+		);
+		expect(incremental.edges.sort((left, right) => left.id.localeCompare(right.id))).toEqual(
+			rebuilt.edges.sort((left, right) => left.id.localeCompare(right.id)),
+		);
+		expect(incremental.diagnostics.sort((left, right) => left.id.localeCompare(right.id))).toEqual(
+			rebuilt.diagnostics.sort((left, right) => left.id.localeCompare(right.id)),
+		);
 	});
 
 	it("matches filtered-contact counts and diagnostics for multiple contacts from one note", () => {
 		const alice = person("alice", "People/Alice.md", ["Bob", "Carol"]);
-		const allPeople = [
-			alice,
-			person("bob", "People/Bob.md"),
-			person("carol", "People/Carol.md"),
-		];
+		const allPeople = [alice, person("bob", "People/Bob.md"), person("carol", "People/Carol.md")];
 		const visible: RawIndexSnapshot = { people: [alice], relationships: [], diagnostics: [] };
 		const previous = buildAtlasSnapshot(visible, resolve, { resolutionPeople: allPeople });
 		const delta: IndexDelta = {
@@ -138,8 +140,13 @@ describe("applyGraphDelta", () => {
 			duplicateRelationshipIds: [],
 		};
 		const peopleWithDuplicate = [alice, duplicate, bob];
-		const incrementalDuplicate = applyGraphDelta(before, addedDelta, resolve, { resolutionPeople: peopleWithDuplicate });
-		const rebuiltDuplicate = buildAtlasSnapshot({ people: peopleWithDuplicate, relationships: [], diagnostics: [] }, resolve);
+		const incrementalDuplicate = applyGraphDelta(before, addedDelta, resolve, {
+			resolutionPeople: peopleWithDuplicate,
+		});
+		const rebuiltDuplicate = buildAtlasSnapshot(
+			{ people: peopleWithDuplicate, relationships: [], diagnostics: [] },
+			resolve,
+		);
 
 		expect(comparable(incrementalDuplicate)).toEqual(comparable(rebuiltDuplicate));
 
@@ -161,7 +168,9 @@ describe("applyGraphDelta", () => {
 			duplicatePersonIds: [],
 			duplicateRelationshipIds: [],
 		};
-		const incrementalRestored = applyGraphDelta(incrementalDuplicate, removedDelta, resolve, { resolutionPeople: [alice, bob] });
+		const incrementalRestored = applyGraphDelta(incrementalDuplicate, removedDelta, resolve, {
+			resolutionPeople: [alice, bob],
+		});
 		const rebuiltRestored = buildAtlasSnapshot({ people: [alice, bob], relationships: [], diagnostics: [] }, resolve);
 
 		expect(comparable(incrementalRestored)).toEqual(comparable(rebuiltRestored));
@@ -170,10 +179,7 @@ describe("applyGraphDelta", () => {
 	it("matches a full rebuild when resolving a ghost and adding rich relationship metadata", () => {
 		const alice = person("alice", "People/Alice.md", ["missing"]);
 		const bob = person("bob", "People/Bob.md");
-		const previous = buildAtlasSnapshot(
-			{ people: [alice, bob], relationships: [], diagnostics: [] },
-			resolve,
-		);
+		const previous = buildAtlasSnapshot({ people: [alice, bob], relationships: [], diagnostics: [] }, resolve);
 		const changedAlice = person("alice", "People/Alice.md", ["bob"]);
 		const relationship: RelationshipRecord = {
 			id: "relationship-alice-bob",

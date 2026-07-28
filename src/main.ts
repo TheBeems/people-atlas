@@ -19,10 +19,15 @@ export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
 	readonly index = new PersonIndex(this.app, () => this.settings);
 	private settingsWriteEnabled = true;
-	private readonly viewStateWrites = new ViewStateWriteCoordinator(
-		(viewConfigurationKey, state) => this.persistViewState(viewConfigurationKey, state),
+	private readonly viewStateWrites = new ViewStateWriteCoordinator((viewConfigurationKey, state) =>
+		this.persistViewState(viewConfigurationKey, state),
 	);
-	readonly mutations = new AtlasMutationService(this.app, () => this.settings, () => this.settingsWriteEnabled, this.index);
+	readonly mutations = new AtlasMutationService(
+		this.app,
+		() => this.settings,
+		() => this.settingsWriteEnabled,
+		this.index,
+	);
 
 	override async onload(): Promise<void> {
 		const loaded = loadPluginSettings(await this.loadData());
@@ -34,7 +39,9 @@ export default class PeopleAtlasPlugin extends Plugin {
 				await this.saveData(this.settings);
 			} catch (error) {
 				this.settingsWriteEnabled = false;
-				new Notice(`People Atlas settings migration could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+				new Notice(
+					`People Atlas settings migration could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+				);
 			}
 		}
 
@@ -43,7 +50,8 @@ export default class PeopleAtlasPlugin extends Plugin {
 			this.registerBasesView(BASES_VIEW_TYPE_PEOPLE_ATLAS, {
 				name: "People Atlas",
 				icon: "map",
-				factory: (controller: QueryController, containerEl: HTMLElement) => new PeopleAtlasBasesView(controller, containerEl, this),
+				factory: (controller: QueryController, containerEl: HTMLElement) =>
+					new PeopleAtlasBasesView(controller, containerEl, this),
 				options: buildBasesOptions,
 			});
 		}
@@ -88,7 +96,9 @@ export default class PeopleAtlasPlugin extends Plugin {
 				return true;
 			} catch (error) {
 				this.settings = previous;
-				new Notice(`People Atlas settings could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+				new Notice(
+					`People Atlas settings could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				return false;
 			}
 		});
@@ -100,8 +110,10 @@ export default class PeopleAtlasPlugin extends Plugin {
 	}
 
 	getViewState(viewConfigurationKey: string): AtlasViewState {
-		return this.viewStateWrites.getLatest(viewConfigurationKey)
-			?? cloneViewState(this.settings.viewStates[viewConfigurationKey] ?? DEFAULT_VIEW_STATE);
+		return (
+			this.viewStateWrites.getLatest(viewConfigurationKey) ??
+			cloneViewState(this.settings.viewStates[viewConfigurationKey] ?? DEFAULT_VIEW_STATE)
+		);
 	}
 
 	saveViewState(viewConfigurationKey: string, state: AtlasViewState): Promise<void> {
@@ -129,7 +141,9 @@ export default class PeopleAtlasPlugin extends Plugin {
 			await this.saveData(this.settings);
 		} catch (error) {
 			this.settings = previous;
-			new Notice(`People Atlas view state could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+			new Notice(
+				`People Atlas view state could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
 	}
 
@@ -163,10 +177,10 @@ export default class PeopleAtlasPlugin extends Plugin {
 			new Notice("No editable relationship note is active.");
 			return;
 		}
-		const rawRelationshipId = this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.relationshipIdProperty];
-		const explicitRelationshipId = typeof rawRelationshipId === "string" && rawRelationshipId.trim()
-			? rawRelationshipId.trim()
-			: undefined;
+		const rawRelationshipId =
+			this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.relationshipIdProperty];
+		const explicitRelationshipId =
+			typeof rawRelationshipId === "string" && rawRelationshipId.trim() ? rawRelationshipId.trim() : undefined;
 		new RelationshipModal(
 			this.app,
 			explicitRelationshipId

@@ -27,7 +27,7 @@ const raw: RawIndexSnapshot = {
 
 describe("buildAtlasSnapshot", () => {
 	it("resolves contact wikilinks through file paths", () => {
-		const snapshot = buildAtlasSnapshot(raw, (target) => target === "Bob" ? "People/Bob.md" : undefined);
+		const snapshot = buildAtlasSnapshot(raw, (target) => (target === "Bob" ? "People/Bob.md" : undefined));
 		expect(snapshot.nodes).toHaveLength(2);
 		expect(snapshot.edges).toHaveLength(1);
 		expect(snapshot.edges[0]?.targetId).toBe("bob");
@@ -123,7 +123,7 @@ describe("buildAtlasSnapshot", () => {
 				visible: { people: [visibleAlice], relationships: [] },
 				canonical: { people: [alice, bob], relationships: [relationship] },
 			},
-			(target) => target === "Alice" ? "People/Alice.md" : "People/Bob.md",
+			(target) => (target === "Alice" ? "People/Alice.md" : "People/Bob.md"),
 		);
 
 		expect(snapshot.edges).toHaveLength(0);
@@ -142,7 +142,7 @@ describe("buildAtlasSnapshot", () => {
 				visible: { people: [bob], relationships: [] },
 				canonical: raw,
 			},
-			(target) => target === "Bob" ? "People/Bob.md" : undefined,
+			(target) => (target === "Bob" ? "People/Bob.md" : undefined),
 		);
 
 		expect(snapshot.edges).toHaveLength(0);

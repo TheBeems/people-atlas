@@ -385,7 +385,10 @@ export class ListValue extends ControlledValue {
 export class ControlledBasesEntry {
 	readonly values = new Map<string, ControlledValue | ListValue>();
 
-	constructor(readonly file: TFile, values: Record<string, string | string[]>) {
+	constructor(
+		readonly file: TFile,
+		values: Record<string, string | string[]>,
+	) {
 		for (const [key, value] of Object.entries(values)) {
 			this.values.set(key, Array.isArray(value) ? new ListValue(value) : new ControlledValue(value));
 		}
@@ -450,7 +453,7 @@ class ControlledMetadataCache extends ControlledEventSource {
 
 	getFirstLinkpathDest(target: string, sourcePath: string): TFile | null {
 		const path = this.linkDestinations.get(`${sourcePath}\u0000${target}`);
-		return path ? this.vault.files.get(path) ?? null : null;
+		return path ? (this.vault.files.get(path) ?? null) : null;
 	}
 
 	setLinkDestination(sourcePath: string, target: string, targetPath: string): void {

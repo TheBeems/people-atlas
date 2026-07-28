@@ -35,15 +35,19 @@ export function restoreLayoutSnapshot(
 	for (const node of nodes) {
 		const fallback = fallbackPositions.get(node.id) ?? { x: 0, y: 0 };
 		const saved = snapshot?.positions[node.id];
-		positions.set(node.id, saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? { x: saved.x, y: saved.y } : { ...fallback });
+		positions.set(
+			node.id,
+			saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? { x: saved.x, y: saved.y } : { ...fallback },
+		);
 	}
 	const camera = snapshot?.camera;
-	const validCamera = camera
-		&& Number.isFinite(camera.x)
-		&& Number.isFinite(camera.y)
-		&& Number.isFinite(camera.scale)
-		&& camera.scale >= minScale
-		&& camera.scale <= maxScale;
+	const validCamera =
+		camera &&
+		Number.isFinite(camera.x) &&
+		Number.isFinite(camera.y) &&
+		Number.isFinite(camera.scale) &&
+		camera.scale >= minScale &&
+		camera.scale <= maxScale;
 	return {
 		positions,
 		camera: validCamera ? { ...camera } : { ...fallbackCamera },

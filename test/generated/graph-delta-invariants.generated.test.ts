@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-	AtlasDiagnostic,
-	AtlasSnapshot,
-	IndexDelta,
-	RawIndexSnapshot,
-} from "../../src/domain/types";
+import type { AtlasDiagnostic, AtlasSnapshot, IndexDelta, RawIndexSnapshot } from "../../src/domain/types";
 import { buildAtlasSnapshot } from "../../src/graph/build-snapshot";
 import { applyGraphDelta } from "../../src/graph/graph-delta";
 import { buildGraphSnapshot } from "../../src/graph/graph-source";
@@ -51,7 +46,10 @@ function changedRecords<T extends { filePath: string }>(
 function duplicateIds<T extends { id: string }>(records: T[]): string[] {
 	const counts = new Map<string, number>();
 	for (const record of records) counts.set(record.id, (counts.get(record.id) ?? 0) + 1);
-	return [...counts].filter(([, count]) => count > 1).map(([id]) => id).sort();
+	return [...counts]
+		.filter(([, count]) => count > 1)
+		.map(([id]) => id)
+		.sort();
 }
 
 function deltaForChange(
@@ -64,10 +62,9 @@ function deltaForChange(
 	const people = changedRecords(before.people, after.people);
 	const relationships = changedRecords(before.relationships, after.relationships);
 	const rebuilt = buildAtlasSnapshot(after, resolveLink);
-	const changedRelationshipIds = new Set([
-		change.previous?.relationship?.id,
-		change.next?.relationship?.id,
-	].filter((id): id is string => id !== undefined));
+	const changedRelationshipIds = new Set(
+		[change.previous?.relationship?.id, change.next?.relationship?.id].filter((id): id is string => id !== undefined),
+	);
 	const contractCompletePaths = new Set(change.affectedPaths);
 	for (const record of [...before.relationships, ...after.relationships]) {
 		if (changedRelationshipIds.has(record.id)) contractCompletePaths.add(record.filePath);
@@ -83,14 +80,16 @@ function deltaForChange(
 		revision: change.revision,
 		changedPaths: [...contractCompletePaths].sort(),
 		removedPaths: change.removed ? [change.path] : [],
-		affectedPersonIds: [...new Set([
-			change.previous?.person?.id,
-			change.next?.person?.id,
-		].filter((id): id is string => id !== undefined))],
-		affectedRelationshipIds: [...new Set([
-			change.previous?.relationship?.id,
-			change.next?.relationship?.id,
-		].filter((id): id is string => id !== undefined))],
+		affectedPersonIds: [
+			...new Set([change.previous?.person?.id, change.next?.person?.id].filter((id): id is string => id !== undefined)),
+		],
+		affectedRelationshipIds: [
+			...new Set(
+				[change.previous?.relationship?.id, change.next?.relationship?.id].filter(
+					(id): id is string => id !== undefined,
+				),
+			),
+		],
 		addedPeople: people.added,
 		updatedPeople: people.updated,
 		removedPeople: people.removed,
@@ -135,16 +134,14 @@ describe("generated graph delta invariants", () => {
 			];
 			for (const [initialIndex, entry] of initialPeople.entries()) {
 				withGeneratedContext(`family=graph-delta seed=${seed} operation=initial-person-${initialIndex}`, () =>
-					state.upsert({ filePath: entry.filePath, person: entry, diagnostics: [] })
+					state.upsert({ filePath: entry.filePath, person: entry, diagnostics: [] }),
 				);
 			}
-			let raw = withGeneratedContext(
-				`family=graph-delta seed=${seed} operation=initial-snapshot`,
-				() => rawFromState(state),
+			let raw = withGeneratedContext(`family=graph-delta seed=${seed} operation=initial-snapshot`, () =>
+				rawFromState(state),
 			);
-			let incremental = withGeneratedContext(
-				`family=graph-delta seed=${seed} operation=initial-build`,
-				() => buildAtlasSnapshot(raw, () => undefined),
+			let incremental = withGeneratedContext(`family=graph-delta seed=${seed} operation=initial-build`, () =>
+				buildAtlasSnapshot(raw, () => undefined),
 			);
 			const operations: DeltaOperation[] = [
 				{
@@ -177,13 +174,9 @@ describe("generated graph delta invariants", () => {
 					label: "parallel-relationship-add",
 					parsed: {
 						filePath: parallelRelationshipPath,
-						relationship: relationship(
-							parallelRelationshipId,
-							parallelRelationshipPath,
-							betaId,
-							alphaId,
-							{ types: ["colleague"] },
-						),
+						relationship: relationship(parallelRelationshipId, parallelRelationshipPath, betaId, alphaId, {
+							types: ["colleague"],
+						}),
 						diagnostics: [],
 					},
 				},
@@ -192,13 +185,9 @@ describe("generated graph delta invariants", () => {
 					label: "duplicate-relationship-appearance",
 					parsed: {
 						filePath: duplicateRelationshipPath,
-						relationship: relationship(
-							relationshipId,
-							duplicateRelationshipPath,
-							alphaId,
-							betaId,
-							{ types: ["duplicate"] },
-						),
+						relationship: relationship(relationshipId, duplicateRelationshipPath, alphaId, betaId, {
+							types: ["duplicate"],
+						}),
 						diagnostics: [],
 					},
 				},
@@ -207,18 +196,12 @@ describe("generated graph delta invariants", () => {
 					label: "parallel-relationship-update",
 					parsed: {
 						filePath: parallelRelationshipPath,
-						relationship: relationship(
-							parallelRelationshipId,
-							parallelRelationshipPath,
-							alphaId,
-							betaId,
-							{
-								direction: "source-to-target",
-								types: ["peer"],
-								closeness: 4,
-								status: "dormant",
-							},
-						),
+						relationship: relationship(parallelRelationshipId, parallelRelationshipPath, alphaId, betaId, {
+							direction: "source-to-target",
+							types: ["peer"],
+							closeness: 4,
+							status: "dormant",
+						}),
 						diagnostics: [],
 					},
 				},
@@ -274,9 +257,7 @@ describe("generated graph delta invariants", () => {
 				const context = `family=graph-delta seed=${seed} operation=${operationIndex} transition=${operation.label}`;
 				withGeneratedContext(context, () => {
 					const before = raw;
-					const change = operation.kind === "upsert"
-						? state.upsert(operation.parsed)
-						: state.remove(operation.path);
+					const change = operation.kind === "upsert" ? state.upsert(operation.parsed) : state.remove(operation.path);
 					raw = rawFromState(state);
 					const delta = deltaForChange(before, raw, state, change, () => undefined);
 					incremental = applyGraphDelta(incremental, delta, () => undefined, {
@@ -286,14 +267,15 @@ describe("generated graph delta invariants", () => {
 					expect(comparable(incremental), `${context} full rebuild equivalence`).toEqual(comparable(rebuilt));
 
 					if (operation.label === "duplicate-relationship-appearance") {
-						const duplicateEdges = incremental.edges.filter((edge) =>
-							edge.filePath === relationshipPath || edge.filePath === duplicateRelationshipPath
+						const duplicateEdges = incremental.edges.filter(
+							(edge) => edge.filePath === relationshipPath || edge.filePath === duplicateRelationshipPath,
 						);
 						expect(duplicateEdges, `${context} duplicate relationship edges`).toHaveLength(2);
 						expect(new Set(duplicateEdges.map((edge) => edge.id)).size, `${context} unique remapped IDs`).toBe(2);
-						expect(incremental.diagnostics.some((item) =>
-							item.code === "duplicate-relationship-id"
-						), `${context} duplicate diagnostic`).toBe(true);
+						expect(
+							incremental.diagnostics.some((item) => item.code === "duplicate-relationship-id"),
+							`${context} duplicate diagnostic`,
+						).toBe(true);
 					}
 					if (operation.label === "parallel-relationship-update") {
 						expect(
@@ -318,9 +300,10 @@ describe("generated graph delta invariants", () => {
 							incremental.edges.find((edge) => edge.filePath === parallelRelationshipPath),
 							`${context} surviving parallel identity`,
 						).toMatchObject({ id: parallelRelationshipId, filePath: parallelRelationshipPath });
-						expect(incremental.diagnostics.some((item) =>
-							item.code === "duplicate-relationship-id"
-						), `${context} duplicate diagnostic cleared`).toBe(false);
+						expect(
+							incremental.diagnostics.some((item) => item.code === "duplicate-relationship-id"),
+							`${context} duplicate diagnostic cleared`,
+						).toBe(false);
 					}
 					if (operation.label === "primary-relationship-remove") {
 						expect(
@@ -347,37 +330,39 @@ describe("generated graph delta invariants", () => {
 				const filteredBefore = {
 					...filtered.canonical,
 					people: filtered.canonical.people.map((entry) =>
-						entry.filePath === visibleAlpha.filePath
-							? { ...entry, contacts: [reference(filtered.ids.beta)] }
-							: entry
+						entry.filePath === visibleAlpha.filePath ? { ...entry, contacts: [reference(filtered.ids.beta)] } : entry,
 					),
 				};
 				const filteredAfter = {
 					...filteredBefore,
 					people: filteredBefore.people.map((entry) =>
-						entry.filePath === visibleAlpha.filePath
-							? { ...entry, contacts: [reference(filtered.ids.hidden)] }
-							: entry
+						entry.filePath === visibleAlpha.filePath ? { ...entry, contacts: [reference(filtered.ids.hidden)] } : entry,
 					),
 				};
-				const previousFiltered = buildGraphSnapshot({
-					canonical: filteredBefore,
-					visible: {
-						people: filteredBefore.people.filter((entry) => filtered.visiblePaths.has(entry.filePath)),
-						relationships: [],
-						diagnostics: [],
+				const previousFiltered = buildGraphSnapshot(
+					{
+						canonical: filteredBefore,
+						visible: {
+							people: filteredBefore.people.filter((entry) => filtered.visiblePaths.has(entry.filePath)),
+							relationships: [],
+							diagnostics: [],
+						},
 					},
-				}, filtered.resolveLink);
+					filtered.resolveLink,
+				);
 				const changedAlpha = filteredAfter.people.find((entry) => entry.filePath === visibleAlpha.filePath);
 				if (!changedAlpha) throw new Error("missing changed alpha");
-				const rebuiltFiltered = buildGraphSnapshot({
-					canonical: filteredAfter,
-					visible: {
-						people: filteredAfter.people.filter((entry) => filtered.visiblePaths.has(entry.filePath)),
-						relationships: [],
-						diagnostics: [],
+				const rebuiltFiltered = buildGraphSnapshot(
+					{
+						canonical: filteredAfter,
+						visible: {
+							people: filteredAfter.people.filter((entry) => filtered.visiblePaths.has(entry.filePath)),
+							relationships: [],
+							diagnostics: [],
+						},
 					},
-				}, filtered.resolveLink);
+					filtered.resolveLink,
+				);
 				const filteredDelta: IndexDelta = {
 					revision: 1,
 					changedPaths: [changedAlpha.filePath],
@@ -396,12 +381,10 @@ describe("generated graph delta invariants", () => {
 					duplicatePersonIds: duplicateIds(filteredAfter.people),
 					duplicateRelationshipIds: duplicateIds(filteredAfter.relationships),
 				};
-				const incrementalFiltered = applyGraphDelta(
-					previousFiltered,
-					filteredDelta,
-					filtered.resolveLink,
-					{ resolutionPeople: filteredAfter.people, visiblePaths: filtered.visiblePaths },
-				);
+				const incrementalFiltered = applyGraphDelta(previousFiltered, filteredDelta, filtered.resolveLink, {
+					resolutionPeople: filteredAfter.people,
+					visiblePaths: filtered.visiblePaths,
+				});
 				expect(comparable(incrementalFiltered), `${filteredContext} full rebuild equivalence`).toEqual(
 					comparable(rebuiltFiltered),
 				);

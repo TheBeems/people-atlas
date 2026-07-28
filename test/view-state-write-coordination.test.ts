@@ -26,10 +26,15 @@ describe("view-state write coordination", () => {
 		vi.useFakeTimers();
 		const plugin = createPlugin();
 		const saves: Deferred[] = [];
-		plugin.saveData = vi.fn(async () => new Promise<void>((resolve, reject) => saves.push({
-			resolve: () => resolve(),
-			reject: (error) => reject(error),
-		})));
+		plugin.saveData = vi.fn(
+			async () =>
+				new Promise<void>((resolve, reject) =>
+					saves.push({
+						resolve: () => resolve(),
+						reject: (error) => reject(error),
+					}),
+				),
+		);
 
 		const first = plugin.saveViewState("standalone", state("none"));
 		const second = plugin.saveViewState("bases:team", state("active-note"));
@@ -106,11 +111,16 @@ describe("view-state write coordination", () => {
 			value: { workspace: { getLeavesOfType: () => [] } },
 		});
 		const saves: Array<Deferred & { snapshot: unknown }> = [];
-		plugin.saveData = vi.fn(async (snapshot: unknown) => new Promise<void>((resolve, reject) => saves.push({
-			snapshot: structuredClone(snapshot),
-			resolve: () => resolve(),
-			reject: (error) => reject(error),
-		})));
+		plugin.saveData = vi.fn(
+			async (snapshot: unknown) =>
+				new Promise<void>((resolve, reject) =>
+					saves.push({
+						snapshot: structuredClone(snapshot),
+						resolve: () => resolve(),
+						reject: (error) => reject(error),
+					}),
+				),
+		);
 
 		const settingWrite = plugin.updateSetting("showLabels", false);
 		const viewWrite = plugin.saveViewState("standalone", state("none"));

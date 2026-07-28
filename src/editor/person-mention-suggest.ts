@@ -1,4 +1,13 @@
-import { EditorSuggest, Notice, type App, type Editor, type EditorPosition, type EditorSuggestContext, type EditorSuggestTriggerInfo, type TFile } from "obsidian";
+import {
+	EditorSuggest,
+	Notice,
+	type App,
+	type Editor,
+	type EditorPosition,
+	type EditorSuggestContext,
+	type EditorSuggestTriggerInfo,
+	type TFile,
+} from "obsidian";
 import type { PersonIndex } from "../index/person-index";
 import { AtlasMutationService, MutationError } from "../mutations/atlas-mutation-service";
 import type { PeopleAtlasSettings } from "../settings/types";
@@ -18,7 +27,11 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 		private readonly getSettings: () => PeopleAtlasSettings,
 	) {
 		super(app);
-		this.setInstructions([{ command: "↑↓", purpose: "navigate" }, { command: "↵", purpose: "select" }, { command: "esc", purpose: "dismiss" }]);
+		this.setInstructions([
+			{ command: "↑↓", purpose: "navigate" },
+			{ command: "↵", purpose: "select" },
+			{ command: "esc", purpose: "dismiss" },
+		]);
 	}
 
 	override onTrigger(cursor: EditorPosition, editor: Editor, _file: TFile | null): EditorSuggestTriggerInfo | null {
@@ -28,18 +41,28 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 
 	override getSuggestions(context: EditorSuggestContext): PersonMentionSuggestion[] {
 		const query = context.query.trim().toLowerCase();
-		const people: PersonMentionSuggestion[] = this.index.getSnapshot().people
-			.filter((person) => !query || [person.name, ...person.aliases].some((value) => value.toLowerCase().includes(query)))
+		const people: PersonMentionSuggestion[] = this.index
+			.getSnapshot()
+			.people.filter(
+				(person) => !query || [person.name, ...person.aliases].some((value) => value.toLowerCase().includes(query)),
+			)
 			.sort((left, right) => left.name.localeCompare(right.name))
 			.slice(0, this.limit - 1)
-			.map((person) => ({ kind: "person" as const, name: person.name, filePath: person.filePath, personId: person.id }));
+			.map((person) => ({
+				kind: "person" as const,
+				name: person.name,
+				filePath: person.filePath,
+				personId: person.id,
+			}));
 		const exact = people.some((person) => person.name.toLowerCase() === query);
 		if (query && !exact) people.push({ kind: "create", name: context.query.trim() });
 		return people;
 	}
 
 	override renderSuggestion(item: PersonMentionSuggestion, el: HTMLElement): void {
-		el.createDiv({ text: item.kind === "create" ? `Create person “${item.name}” in ${this.getSettings().peopleFolder}/` : item.name });
+		el.createDiv({
+			text: item.kind === "create" ? `Create person “${item.name}” in ${this.getSettings().peopleFolder}/` : item.name,
+		});
 		if (item.kind === "person") el.createDiv({ text: item.filePath, cls: "suggestion-note" });
 	}
 
@@ -51,8 +74,14 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 
 	private async choose(item: PersonMentionSuggestion, context: EditorSuggestContext): Promise<void> {
 		try {
-			const targetPath = item.kind === "person" ? item.filePath : (await this.mutations.createPerson({ name: item.name })).path;
-			context.editor.replaceRange(formatMentionLink(targetPath, item.kind === "person" ? item.name : item.name), context.start, context.end, "people-atlas-mention");
+			const targetPath =
+				item.kind === "person" ? item.filePath : (await this.mutations.createPerson({ name: item.name })).path;
+			context.editor.replaceRange(
+				formatMentionLink(targetPath, item.kind === "person" ? item.name : item.name),
+				context.start,
+				context.end,
+				"people-atlas-mention",
+			);
 		} catch (error) {
 			new Notice(error instanceof MutationError || error instanceof Error ? error.message : String(error));
 		}

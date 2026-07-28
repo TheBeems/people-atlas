@@ -160,12 +160,13 @@ export class TouchGestureController {
 		if (!touch) return { cancelLongPress: true, persistLayout: false };
 		const wasLongPress = this.longPressConsumed;
 		const wasActivePinch = this.pinchBaseline?.pointerIds.includes(pointerId) ?? false;
-		const tapTargetId = this.tapEligible
-			&& !wasLongPress
-			&& this.touches.size === 1
-			&& time - touch.time <= TAP_TIME_LIMIT
-			&& distance({ x: touch.startX, y: touch.startY }, touch) <= MOVEMENT_LIMIT
-				? touch.targetId ?? null
+		const tapTargetId =
+			this.tapEligible &&
+			!wasLongPress &&
+			this.touches.size === 1 &&
+			time - touch.time <= TAP_TIME_LIMIT &&
+			distance({ x: touch.startX, y: touch.startY }, touch) <= MOVEMENT_LIMIT
+				? (touch.targetId ?? null)
 				: undefined;
 
 		this.touches.delete(pointerId);

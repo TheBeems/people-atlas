@@ -29,7 +29,10 @@ function readString(frontmatter: Frontmatter, property: string): string | undefi
 function readStringList(frontmatter: Frontmatter, property: string): string[] {
 	const value = frontmatter[property];
 	if (Array.isArray(value)) {
-		return value.map(String).map((entry) => entry.trim()).filter(Boolean);
+		return value
+			.map(String)
+			.map((entry) => entry.trim())
+			.filter(Boolean);
 	}
 	const single = readString(frontmatter, property);
 	return single ? [single] : [];
@@ -45,12 +48,22 @@ function readNumber(frontmatter: Frontmatter, property: string): number | undefi
 	return undefined;
 }
 
-function readIsoDate(frontmatter: Frontmatter, property: string, filePath: string, diagnostics: AtlasDiagnostic[]): string | undefined {
+function readIsoDate(
+	frontmatter: Frontmatter,
+	property: string,
+	filePath: string,
+	diagnostics: AtlasDiagnostic[],
+): string | undefined {
 	const raw = readString(frontmatter, property);
 	if (!raw) return undefined;
 	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
 	const date = match ? new Date(`${raw}T00:00:00Z`) : undefined;
-	const valid = Boolean(date && date.getUTCFullYear() === Number(match?.[1]) && date.getUTCMonth() + 1 === Number(match?.[2]) && date.getUTCDate() === Number(match?.[3]));
+	const valid = Boolean(
+		date &&
+			date.getUTCFullYear() === Number(match?.[1]) &&
+			date.getUTCMonth() + 1 === Number(match?.[2]) &&
+			date.getUTCDate() === Number(match?.[3]),
+	);
 	if (!valid) {
 		diagnostics.push({
 			id: `invalid-date:${filePath}:${property}`,
@@ -64,7 +77,11 @@ function readIsoDate(frontmatter: Frontmatter, property: string, filePath: strin
 	return raw;
 }
 
-function readDirection(frontmatter: Frontmatter, property: string, filePath: string): {
+function readDirection(
+	frontmatter: Frontmatter,
+	property: string,
+	filePath: string,
+): {
 	direction: RelationshipDirection;
 	diagnostic?: AtlasDiagnostic;
 } {
@@ -84,7 +101,11 @@ function readDirection(frontmatter: Frontmatter, property: string, filePath: str
 	};
 }
 
-function readStatus(frontmatter: Frontmatter, property: string, filePath: string): {
+function readStatus(
+	frontmatter: Frontmatter,
+	property: string,
+	filePath: string,
+): {
 	status: RelationshipStatus | undefined;
 	diagnostic?: AtlasDiagnostic;
 } {
@@ -120,7 +141,12 @@ function isRelationship(frontmatter: Frontmatter, settings: PeopleAtlasSettings)
 	return readString(frontmatter, settings.typeProperty)?.toLowerCase() === settings.relationshipTypeValue.toLowerCase();
 }
 
-function resolvePhotoPath(app: App, raw: string | undefined, sourcePath: string, diagnostics: AtlasDiagnostic[]): string | undefined {
+function resolvePhotoPath(
+	app: App,
+	raw: string | undefined,
+	sourcePath: string,
+	diagnostics: AtlasDiagnostic[],
+): string | undefined {
 	if (!raw) return undefined;
 	const reference = parsePersonReference(raw);
 	const target = reference?.target ?? raw;

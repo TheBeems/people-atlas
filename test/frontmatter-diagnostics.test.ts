@@ -42,7 +42,12 @@ describe("frontmatter diagnostics", () => {
 		expect(relationship.diagnostics.some((item) => item.code === "invalid-relationship-date")).toBe(true);
 		expect(relationship.relationship?.lastContact).toBe("2024-02-29");
 		expect(person.diagnostics).toEqual([
-			expect.objectContaining({ code: "missing-asset", severity: "warning", filePaths: ["People/Alice.md"], targetPath: "Assets/alice.png" }),
+			expect.objectContaining({
+				code: "missing-asset",
+				severity: "warning",
+				filePaths: ["People/Alice.md"],
+				targetPath: "Assets/alice.png",
+			}),
 		]);
 	});
 });

@@ -89,57 +89,65 @@ class ReferenceIndexModel {
 	}
 
 	peoplePathsById(id: string): string[] {
-		return sorted([...this.files].flatMap(([path, file]) => file.person?.id === id ? [path] : []));
+		return sorted([...this.files].flatMap(([path, file]) => (file.person?.id === id ? [path] : [])));
 	}
 
 	relationshipPathsById(id: string): string[] {
-		return sorted([...this.files].flatMap(([path, file]) => file.relationship?.id === id ? [path] : []));
+		return sorted([...this.files].flatMap(([path, file]) => (file.relationship?.id === id ? [path] : [])));
 	}
 
 	duplicatePersonIds(): string[] {
-		return sorted([...this.files.values()]
-			.flatMap((file) => file.person ? [file.person.id] : [])
-			.filter((id, index, values) => values.indexOf(id) !== index));
+		return sorted(
+			[...this.files.values()]
+				.flatMap((file) => (file.person ? [file.person.id] : []))
+				.filter((id, index, values) => values.indexOf(id) !== index),
+		);
 	}
 
 	duplicateRelationshipIds(): string[] {
-		return sorted([...this.files.values()]
-			.flatMap((file) => file.relationship ? [file.relationship.id] : [])
-			.filter((id, index, values) => values.indexOf(id) !== index));
+		return sorted(
+			[...this.files.values()]
+				.flatMap((file) => (file.relationship ? [file.relationship.id] : []))
+				.filter((id, index, values) => values.indexOf(id) !== index),
+		);
 	}
 
 	adjacency(target: string): string[] {
 		const keys = new Set(referenceKeys(target));
-		return sorted([...this.files].flatMap(([path, file]) => {
-			const relationship = file.relationship;
-			if (!relationship) return [];
-			return [relationship.from, relationship.to].some((endpoint) =>
-				recordReferenceKeys(endpoint.target).some((key) => keys.has(key))
-			) ? [path] : [];
-		}));
+		return sorted(
+			[...this.files].flatMap(([path, file]) => {
+				const relationship = file.relationship;
+				if (!relationship) return [];
+				return [relationship.from, relationship.to].some((endpoint) =>
+					recordReferenceKeys(endpoint.target).some((key) => keys.has(key)),
+				)
+					? [path]
+					: [];
+			}),
+		);
 	}
 
 	dependentsFor(target: string): string[] {
 		const keys = new Set(referenceKeys(target));
 		const normalizedTarget = normalized(target);
-		return sorted([...this.files].flatMap(([path, file]) => {
-			const references = [
-				...(file.person?.contacts ?? []),
-				...(file.relationship ? [file.relationship.from, file.relationship.to] : []),
-			];
-			const referenceMatch = references.some((entry) =>
-				recordReferenceKeys(entry.target).some((key) => keys.has(key))
-			);
-			const assetMatch = file.person?.photoPath
-				? normalized(file.person.photoPath) === normalizedTarget
-				: false;
-			return referenceMatch || assetMatch ? [path] : [];
-		}));
+		return sorted(
+			[...this.files].flatMap(([path, file]) => {
+				const references = [
+					...(file.person?.contacts ?? []),
+					...(file.relationship ? [file.relationship.from, file.relationship.to] : []),
+				];
+				const referenceMatch = references.some((entry) =>
+					recordReferenceKeys(entry.target).some((key) => keys.has(key)),
+				);
+				const assetMatch = file.person?.photoPath ? normalized(file.person.photoPath) === normalizedTarget : false;
+				return referenceMatch || assetMatch ? [path] : [];
+			}),
+		);
 	}
 
 	diagnosticsFor(paths: Iterable<string>): AtlasDiagnostic[] {
 		const selected = new Set(paths);
-		return [...this.files].flatMap(([path, file]) => selected.has(path) ? file.diagnostics : []);
+		return [...this.files].flatMap(([path, file]) => (selected.has(path) ? file.diagnostics : []));
 	}
 
 	private recordTargets(file: StoredIndexFile | undefined): string[] {
@@ -201,13 +209,7 @@ function verifyIndexOperation(
 	historicalRelationshipIds: Set<string>,
 	historicalTargets: Set<string>,
 ): void {
-	collectHistoricalKeys(
-		operation,
-		historicalPaths,
-		historicalPersonIds,
-		historicalRelationshipIds,
-		historicalTargets,
-	);
+	collectHistoricalKeys(operation, historicalPaths, historicalPersonIds, historicalRelationshipIds, historicalTargets);
 	const revisionBefore = state.getRevision();
 	let actualAffected = new Set<string>();
 	let expectedAffected = new Set<string>();
@@ -216,24 +218,12 @@ function verifyIndexOperation(
 		model.clear();
 		expect(state.getRevision(), `${context} clear revision`).toBe(revisionBefore);
 	} else if (operation.kind === "upsert") {
-		actualAffected = state.upsert(
-			operation.parsed,
-			operation.additionalAffectedPaths,
-		).affectedPaths;
-		expectedAffected = model.upsert(
-			operation.parsed,
-			operation.additionalAffectedPaths,
-		);
+		actualAffected = state.upsert(operation.parsed, operation.additionalAffectedPaths).affectedPaths;
+		expectedAffected = model.upsert(operation.parsed, operation.additionalAffectedPaths);
 		expect(state.getRevision(), `${context} upsert revision`).toBe(revisionBefore + 1);
 	} else {
-		actualAffected = state.remove(
-			operation.path,
-			operation.additionalAffectedPaths,
-		).affectedPaths;
-		expectedAffected = model.remove(
-			operation.path,
-			operation.additionalAffectedPaths,
-		);
+		actualAffected = state.remove(operation.path, operation.additionalAffectedPaths).affectedPaths;
+		expectedAffected = model.remove(operation.path, operation.additionalAffectedPaths);
 		expect(state.getRevision(), `${context} remove revision`).toBe(revisionBefore + 1);
 	}
 
@@ -248,9 +238,7 @@ function verifyIndexOperation(
 		expect(state.getFile(path), `${context} stored file path=${path}`).toEqual(model.files.get(path));
 	}
 	for (const id of historicalPersonIds) {
-		expect(state.getPeoplePathsById(id), `${context} person id=${id}`).toEqual(
-			model.peoplePathsById(id),
-		);
+		expect(state.getPeoplePathsById(id), `${context} person id=${id}`).toEqual(model.peoplePathsById(id));
 	}
 	for (const id of historicalRelationshipIds) {
 		expect(state.getRelationshipPathsById(id), `${context} relationship id=${id}`).toEqual(
@@ -262,17 +250,14 @@ function verifyIndexOperation(
 		model.duplicateRelationshipIds(),
 	);
 	for (const target of historicalTargets) {
-		expect(state.getAdjacency(target), `${context} adjacency target=${target}`).toEqual(
-			model.adjacency(target),
-		);
+		expect(state.getAdjacency(target), `${context} adjacency target=${target}`).toEqual(model.adjacency(target));
 		expect(sorted(state.getDependentsForTarget(target)), `${context} dependents target=${target}`).toEqual(
 			model.dependentsFor(target),
 		);
 	}
-	expect(
-		state.getDiagnosticsForPaths(historicalPaths),
-		`${context} diagnostics`,
-	).toEqual(model.diagnosticsFor(historicalPaths));
+	expect(state.getDiagnosticsForPaths(historicalPaths), `${context} diagnostics`).toEqual(
+		model.diagnosticsFor(historicalPaths),
+	);
 }
 
 describe("generated index state invariants", () => {
@@ -284,23 +269,24 @@ describe("generated index state invariants", () => {
 			const historicalPersonIds = new Set<string>();
 			const historicalRelationshipIds = new Set<string>();
 			const historicalTargets = new Set<string>();
-			const operations = withGeneratedContext(
-				`family=index-state seed=${seed} operation=case-generation`,
-				() => generatedIndexOperations(seed),
+			const operations = withGeneratedContext(`family=index-state seed=${seed} operation=case-generation`, () =>
+				generatedIndexOperations(seed),
 			);
 
 			for (const [operationIndex, operation] of operations.entries()) {
 				const context = `family=index-state seed=${seed} operation=${operationIndex}`;
-				withGeneratedContext(context, () => verifyIndexOperation(
-					context,
-					operation,
-					state,
-					model,
-					historicalPaths,
-					historicalPersonIds,
-					historicalRelationshipIds,
-					historicalTargets,
-				));
+				withGeneratedContext(context, () =>
+					verifyIndexOperation(
+						context,
+						operation,
+						state,
+						model,
+						historicalPaths,
+						historicalPersonIds,
+						historicalRelationshipIds,
+						historicalTargets,
+					),
+				);
 			}
 		});
 	}

@@ -5,11 +5,7 @@ export function inferredContactEdgeId(sourceId: NodeId, targetId: NodeId): strin
 	return `edge:${stableHash(`${sourceId}:${targetId}:contact`)}`;
 }
 
-export function filteredEndpointDiagnostic(
-	filePath: string,
-	label: string,
-	discriminator?: string,
-): AtlasDiagnostic {
+export function filteredEndpointDiagnostic(filePath: string, label: string, discriminator?: string): AtlasDiagnostic {
 	const suffix = discriminator ? `:${stableHash(discriminator)}` : "";
 	return {
 		id: `filtered-endpoint:${filePath}:${label}${suffix}`,

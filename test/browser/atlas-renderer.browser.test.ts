@@ -185,7 +185,9 @@ describe("accessible atlas renderer", () => {
 		await listMode.click();
 
 		await expect.element(page.getByRole("heading", { name: "Alice" })).toBeInTheDocument();
-		await expect.element(page.getByRole("button", { name: "Alice, Example Org" })).toHaveAttribute("aria-pressed", "true");
+		await expect
+			.element(page.getByRole("button", { name: "Alice, Example Org" }))
+			.toHaveAttribute("aria-pressed", "true");
 		expect(callbacks.onSelectNode).toHaveBeenLastCalledWith(alice, "canvas");
 	});
 
@@ -233,7 +235,9 @@ describe("accessible atlas renderer", () => {
 		await page.getByRole("button", { name: "List" }).click();
 		await page.getByRole("button", { name: "Alice, Example Org" }).click();
 
-		const relationshipItems = Array.from(document.querySelectorAll(".people-atlas-relationship-list > li")).map((item) => item.textContent);
+		const relationshipItems = Array.from(document.querySelectorAll(".people-atlas-relationship-list > li")).map(
+			(item) => item.textContent,
+		);
 		expect(relationshipItems).toEqual([
 			"Connected to Bob. Types: friend, colleague. Status: active. Since: 2020-01-02. Last contact: 2026-07-20.",
 			"Incoming from Charlie. Types: mentor. Status: dormant.",
@@ -281,7 +285,9 @@ describe("accessible atlas renderer", () => {
 		expect(callbacks.onOpenNode).not.toHaveBeenCalled();
 		expect(document.querySelector("button[aria-label='Open note']")).toBeNull();
 		expect(document.querySelector("button[aria-label='Use as center']")).toBeNull();
-		await expect.element(page.getByText("This person record is ambiguous and cannot be opened or centered.")).toBeInTheDocument();
+		await expect
+			.element(page.getByText("This person record is ambiguous and cannot be opened or centered."))
+			.toBeInTheDocument();
 
 		await page.getByRole("button", { name: "Graph" }).click();
 		const canvas = page.getByRole("application", { name: "Interactive people and relationship atlas" });
@@ -327,11 +333,7 @@ describe("accessible atlas renderer", () => {
 		await bobButton.click();
 		await expect.element(bobButton).toHaveFocus();
 
-		renderer.setGraph(snapshot([
-			{ ...alice, label: "Alice renamed" },
-			{ ...bob, label: "Bob renamed" },
-			charlie,
-		]));
+		renderer.setGraph(snapshot([{ ...alice, label: "Alice renamed" }, { ...bob, label: "Bob renamed" }, charlie]));
 		const renamedBob = page.getByRole("button", { name: "Bob renamed" });
 		await expect.element(renamedBob).toHaveFocus();
 		await expect.element(renamedBob).toHaveAttribute("aria-pressed", "true");
@@ -399,8 +401,9 @@ describe("accessible atlas renderer", () => {
 		await expect.element(dialog).toBeInTheDocument();
 		const dialogElement = dialog.element() as HTMLDialogElement;
 		await expect.element(page.getByRole("button", { name: "Close" })).toHaveFocus();
-		const descriptions = Array.from(dialogElement.querySelectorAll(".people-atlas-relationship-list > li"))
-			.map((item) => item.textContent);
+		const descriptions = Array.from(dialogElement.querySelectorAll(".people-atlas-relationship-list > li")).map(
+			(item) => item.textContent,
+		);
 		expect(descriptions).toEqual([
 			"Connected to Bob. Types: friend, colleague. Status: active. Since: 2020-01-02. Last contact: 2026-07-20.",
 			"Connected to Missing (unresolved). Types: contact. Contact-link connection.",
@@ -433,7 +436,9 @@ describe("accessible atlas renderer", () => {
 		await page.getByRole("button", { name: "Create relationship" }).click();
 		expect(dialogElement.open).toBe(false);
 		expect(callbacks.onCreateRelationship).toHaveBeenCalledOnce();
-		expect(callbacks.onCreateRelationship).toHaveBeenCalledWith(expect.objectContaining({ id: alice.id, label: "Alice updated" }));
+		expect(callbacks.onCreateRelationship).toHaveBeenCalledWith(
+			expect.objectContaining({ id: alice.id, label: "Alice updated" }),
+		);
 
 		await details.click();
 		(page.getByRole("button", { name: "List" }).element() as HTMLButtonElement).click();
@@ -441,7 +446,9 @@ describe("accessible atlas renderer", () => {
 		await page.getByRole("button", { name: "Ambiguous Alice, ambiguous person" }).click();
 		await page.getByRole("button", { name: "Graph" }).click();
 		await details.click();
-		await expect.element(page.getByText("This person record is ambiguous. No actions are available.")).toBeInTheDocument();
+		await expect
+			.element(page.getByText("This person record is ambiguous. No actions are available."))
+			.toBeInTheDocument();
 		expect(dialogElement.querySelector("button[aria-label='Open note']")).toBeNull();
 		expect(dialogElement.querySelector("button[aria-label='Use as center']")).toBeNull();
 		expect(dialogElement.querySelector("button[aria-label='Create relationship']")).toBeNull();
@@ -505,7 +512,9 @@ describe("accessible atlas renderer", () => {
 		expect(callbacks.onCreateRelationship).not.toHaveBeenCalled();
 		expect(callbacks.onLayoutChanged).not.toHaveBeenCalled();
 		await page.getByRole("button", { name: "Close" }).click();
-		await expect.element(page.getByRole("application", { name: "Interactive people and relationship atlas" })).toHaveFocus();
+		await expect
+			.element(page.getByRole("application", { name: "Interactive people and relationship atlas" }))
+			.toHaveFocus();
 	});
 
 	it("pinches and pans through protocol-valid Chromium CDP input and persists once", async () => {
@@ -517,21 +526,25 @@ describe("accessible atlas renderer", () => {
 		const before = renderer.getLayoutSnapshot();
 		const pointerEvents: Array<{ type: string; id: number; x: number; y: number; target: string }> = [];
 		for (const type of ["pointerdown", "pointermove", "pointerup"]) {
-			document.addEventListener(type, (event) => {
-				const pointer = event as PointerEvent;
-				pointerEvents.push({
-					type,
-					id: pointer.pointerId,
-					x: pointer.clientX,
-					y: pointer.clientY,
-					target: (pointer.target as Element | null)?.className?.toString() ?? "",
-				});
-			}, true);
+			document.addEventListener(
+				type,
+				(event) => {
+					const pointer = event as PointerEvent;
+					pointerEvents.push({
+						type,
+						id: pointer.pointerId,
+						x: pointer.clientX,
+						y: pointer.clientY,
+						target: (pointer.target as Element | null)?.className?.toString() ?? "",
+					});
+				},
+				true,
+			);
 		}
 
-		await expect(commands.dispatchTouch(".people-atlas-canvas", [
-			{ type: "touchEnd", points: [{ id: 99, ...center }] },
-		])).rejects.toThrow("touchEnd must not contain active touch points.");
+		await expect(
+			commands.dispatchTouch(".people-atlas-canvas", [{ type: "touchEnd", points: [{ id: 99, ...center }] }]),
+		).rejects.toThrow("touchEnd must not contain active touch points.");
 
 		await commands.dispatchTouch(".people-atlas-canvas", [
 			{
@@ -578,7 +591,9 @@ describe("accessible atlas renderer", () => {
 		const box = canvas.getBoundingClientRect();
 		const center = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
 		const dispatch = (type: string, pointerId: number, clientX = center.clientX, clientY = center.clientY): void => {
-			canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId, pointerType: "touch", clientX, clientY }));
+			canvas.dispatchEvent(
+				new PointerEvent(type, { bubbles: true, pointerId, pointerType: "touch", clientX, clientY }),
+			);
 		};
 		const sheet = document.querySelector<HTMLDialogElement>(".people-atlas-details-sheet") as HTMLDialogElement;
 
@@ -654,13 +669,14 @@ describe("accessible atlas renderer", () => {
 		};
 		const box = canvas.getBoundingClientRect();
 		const start = { clientX: box.left + 50, clientY: box.bottom - 50 };
-		const pointer = (type: string, clientX: number, clientY: number): PointerEvent => new PointerEvent(type, {
-			cancelable: true,
-			pointerId: 81,
-			pointerType: "touch",
-			clientX,
-			clientY,
-		});
+		const pointer = (type: string, clientX: number, clientY: number): PointerEvent =>
+			new PointerEvent(type, {
+				cancelable: true,
+				pointerId: 81,
+				pointerType: "touch",
+				clientX,
+				clientY,
+			});
 		const invalidMove = pointer("pointermove", start.clientX, start.clientY);
 		Object.defineProperty(invalidMove, "clientX", { configurable: true, value: Number.NaN });
 		const before = renderer.getLayoutSnapshot();
@@ -715,7 +731,9 @@ describe("accessible atlas renderer", () => {
 		expect(() => internals.openSheet("details")).not.toThrow();
 		expect(dialog.open).toBe(true);
 		await page.getByRole("button", { name: "Close" }).click();
-		await expect.element(page.getByRole("application", { name: "Interactive people and relationship atlas" })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole("application", { name: "Interactive people and relationship atlas" }))
+			.toBeInTheDocument();
 	});
 
 	it("retains mouse and pen drag, mouse pan and wheel while lifecycle cancellation prevents delayed touch callbacks", async () => {
@@ -727,21 +745,27 @@ describe("accessible atlas renderer", () => {
 		const box = canvas.getBoundingClientRect();
 		const center = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
 		const before = renderer.getLayoutSnapshot();
-		canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 21, pointerType: "pen", ...center }));
-		canvas.dispatchEvent(new PointerEvent("pointermove", {
-			bubbles: true,
-			pointerId: 21,
-			pointerType: "pen",
-			clientX: center.clientX + 20,
-			clientY: center.clientY + 10,
-		}));
-		canvas.dispatchEvent(new PointerEvent("pointerup", {
-			bubbles: true,
-			pointerId: 21,
-			pointerType: "pen",
-			clientX: center.clientX + 20,
-			clientY: center.clientY + 10,
-		}));
+		canvas.dispatchEvent(
+			new PointerEvent("pointerdown", { bubbles: true, pointerId: 21, pointerType: "pen", ...center }),
+		);
+		canvas.dispatchEvent(
+			new PointerEvent("pointermove", {
+				bubbles: true,
+				pointerId: 21,
+				pointerType: "pen",
+				clientX: center.clientX + 20,
+				clientY: center.clientY + 10,
+			}),
+		);
+		canvas.dispatchEvent(
+			new PointerEvent("pointerup", {
+				bubbles: true,
+				pointerId: 21,
+				pointerType: "pen",
+				clientX: center.clientX + 20,
+				clientY: center.clientY + 10,
+			}),
+		);
 		const afterPen = renderer.getLayoutSnapshot();
 		expect(afterPen.positions[alice.id]?.x).toBeCloseTo((before.positions[alice.id]?.x ?? 0) + 20);
 		expect(afterPen.positions[alice.id]?.y).toBeCloseTo((before.positions[alice.id]?.y ?? 0) + 10);
@@ -749,27 +773,33 @@ describe("accessible atlas renderer", () => {
 
 		callbacks.onSelectNode.mockClear();
 		callbacks.onLayoutChanged.mockClear();
-		canvas.dispatchEvent(new PointerEvent("pointerdown", {
-			bubbles: true,
-			pointerId: 23,
-			pointerType: "mouse",
-			clientX: center.clientX + 20,
-			clientY: center.clientY + 10,
-		}));
-		canvas.dispatchEvent(new PointerEvent("pointermove", {
-			bubbles: true,
-			pointerId: 23,
-			pointerType: "mouse",
-			clientX: center.clientX + 35,
-			clientY: center.clientY + 5,
-		}));
-		canvas.dispatchEvent(new PointerEvent("pointerup", {
-			bubbles: true,
-			pointerId: 23,
-			pointerType: "mouse",
-			clientX: center.clientX + 35,
-			clientY: center.clientY + 5,
-		}));
+		canvas.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				pointerId: 23,
+				pointerType: "mouse",
+				clientX: center.clientX + 20,
+				clientY: center.clientY + 10,
+			}),
+		);
+		canvas.dispatchEvent(
+			new PointerEvent("pointermove", {
+				bubbles: true,
+				pointerId: 23,
+				pointerType: "mouse",
+				clientX: center.clientX + 35,
+				clientY: center.clientY + 5,
+			}),
+		);
+		canvas.dispatchEvent(
+			new PointerEvent("pointerup", {
+				bubbles: true,
+				pointerId: 23,
+				pointerType: "mouse",
+				clientX: center.clientX + 35,
+				clientY: center.clientY + 5,
+			}),
+		);
 		const afterMouseDrag = renderer.getLayoutSnapshot();
 		expect(afterMouseDrag.positions[alice.id]?.x).toBeCloseTo((afterPen.positions[alice.id]?.x ?? 0) + 15);
 		expect(afterMouseDrag.positions[alice.id]?.y).toBeCloseTo((afterPen.positions[alice.id]?.y ?? 0) - 5);
@@ -779,21 +809,27 @@ describe("accessible atlas renderer", () => {
 		callbacks.onSelectNode.mockClear();
 		callbacks.onLayoutChanged.mockClear();
 		const panStart = { clientX: box.left + 8, clientY: box.top + 8 };
-		canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 24, pointerType: "mouse", ...panStart }));
-		canvas.dispatchEvent(new PointerEvent("pointermove", {
-			bubbles: true,
-			pointerId: 24,
-			pointerType: "mouse",
-			clientX: panStart.clientX + 18,
-			clientY: panStart.clientY + 12,
-		}));
-		canvas.dispatchEvent(new PointerEvent("pointerup", {
-			bubbles: true,
-			pointerId: 24,
-			pointerType: "mouse",
-			clientX: panStart.clientX + 18,
-			clientY: panStart.clientY + 12,
-		}));
+		canvas.dispatchEvent(
+			new PointerEvent("pointerdown", { bubbles: true, pointerId: 24, pointerType: "mouse", ...panStart }),
+		);
+		canvas.dispatchEvent(
+			new PointerEvent("pointermove", {
+				bubbles: true,
+				pointerId: 24,
+				pointerType: "mouse",
+				clientX: panStart.clientX + 18,
+				clientY: panStart.clientY + 12,
+			}),
+		);
+		canvas.dispatchEvent(
+			new PointerEvent("pointerup", {
+				bubbles: true,
+				pointerId: 24,
+				pointerType: "mouse",
+				clientX: panStart.clientX + 18,
+				clientY: panStart.clientY + 12,
+			}),
+		);
 		const afterMousePan = renderer.getLayoutSnapshot();
 		expect(afterMousePan.positions).toEqual(afterMouseDrag.positions);
 		expect(afterMousePan.camera.x).toBeCloseTo(afterMouseDrag.camera.x + 18);
@@ -802,23 +838,27 @@ describe("accessible atlas renderer", () => {
 		expect(callbacks.onLayoutChanged).toHaveBeenCalledOnce();
 
 		callbacks.onLayoutChanged.mockClear();
-		canvas.dispatchEvent(new WheelEvent("wheel", {
-			bubbles: true,
-			cancelable: true,
-			clientX: center.clientX,
-			clientY: center.clientY,
-			deltaY: -1,
-		}));
+		canvas.dispatchEvent(
+			new WheelEvent("wheel", {
+				bubbles: true,
+				cancelable: true,
+				clientX: center.clientX,
+				clientY: center.clientY,
+				deltaY: -1,
+			}),
+		);
 		expect(renderer.getLayoutSnapshot().camera.scale).toBeGreaterThan(afterMousePan.camera.scale);
 		expect(callbacks.onLayoutChanged).toHaveBeenCalledOnce();
 
 		callbacks.onSelectNode.mockClear();
-		canvas.dispatchEvent(new PointerEvent("pointerdown", {
-			bubbles: true,
-			pointerId: 22,
-			pointerType: "touch",
-			...center,
-		}));
+		canvas.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				pointerId: 22,
+				pointerType: "touch",
+				...center,
+			}),
+		);
 		renderer.destroy();
 		await new Promise((resolve) => setTimeout(resolve, 550));
 		expect(callbacks.onSelectNode).not.toHaveBeenCalled();
@@ -831,7 +871,9 @@ describe("accessible atlas renderer", () => {
 		expect(modeControl).not.toBeNull();
 		expect(getComputedStyle(modeControl as HTMLElement).transitionDuration).toBe("0s");
 		expect(getComputedStyle(modeControl as HTMLElement).animationDuration).toBe("0s");
-		expect(document.querySelector<HTMLButtonElement>(".people-atlas-graph-mode")?.getBoundingClientRect().height).toBeGreaterThanOrEqual(24);
+		expect(
+			document.querySelector<HTMLButtonElement>(".people-atlas-graph-mode")?.getBoundingClientRect().height,
+		).toBeGreaterThanOrEqual(24);
 		renderer.destroy();
 
 		const frame = document.createElement("iframe");
@@ -876,7 +918,9 @@ describe("accessible atlas renderer", () => {
 		await userEvent.click(framePerson as HTMLButtonElement);
 		const frameGraphMode = frameDocument.querySelector<HTMLButtonElement>(".people-atlas-graph-mode");
 		await userEvent.click(frameGraphMode as HTMLButtonElement);
-		const frameDetails = frameDocument.querySelector<HTMLButtonElement>(".people-atlas-graph-actions button[aria-label='Details']");
+		const frameDetails = frameDocument.querySelector<HTMLButtonElement>(
+			".people-atlas-graph-actions button[aria-label='Details']",
+		);
 		expect(frameDetails?.disabled).toBe(false);
 		await userEvent.click(frameDetails as HTMLButtonElement);
 		const frameSheet = frameDocument.querySelector<HTMLDialogElement>(".people-atlas-details-sheet");

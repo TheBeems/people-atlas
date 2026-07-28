@@ -74,10 +74,7 @@ function populateIndex(fixture: PerformanceFixture): RawIndexSnapshot {
 	return index.getSnapshot();
 }
 
-function runPipeline(
-	fixture: PerformanceFixture,
-	scenario: IncrementalFixtureScenario,
-): PipelineResult {
+function runPipeline(fixture: PerformanceFixture, scenario: IncrementalFixtureScenario): PipelineResult {
 	const durations = {} as Record<NodeStage, number>;
 	let startedAt = performance.now();
 	const raw = populateIndex(fixture);
@@ -106,12 +103,9 @@ function runPipeline(
 	if (positions.size !== fixture.size) throw new Error("Layout omitted fixture nodes.");
 
 	startedAt = performance.now();
-	const incremental = applyGraphDelta(
-		snapshot,
-		scenario.delta,
-		() => undefined,
-		{ resolutionPeople: scenario.raw.people },
-	);
+	const incremental = applyGraphDelta(snapshot, scenario.delta, () => undefined, {
+		resolutionPeople: scenario.raw.people,
+	});
 	const projectedIncremental = projectGraph(incremental, {
 		centerMode: "none",
 		projectionMode: "free-network",
@@ -148,10 +142,7 @@ function collectNodeHeap(stage: string): HeapObservation {
 	}
 }
 
-function collectCaseMemory(
-	size: PerformanceSize,
-	profile: PerformanceProfile,
-): HeapObservation[] {
+function collectCaseMemory(size: PerformanceSize, profile: PerformanceProfile): HeapObservation[] {
 	const memory: HeapObservation[] = [collectNodeHeap("before-fixture")];
 	const fixture = generatePerformanceFixture(size, profile);
 	const scenario = createIncrementalFixtureScenario(fixture);
@@ -170,12 +161,9 @@ function collectCaseMemory(
 	const positions = createDeterministicLayout(projected);
 	if (positions.size !== size) throw new Error("Memory layout case omitted fixture nodes.");
 	memory.push(collectNodeHeap("after-deterministic-layout"));
-	const incremental = applyGraphDelta(
-		snapshot,
-		scenario.delta,
-		() => undefined,
-		{ resolutionPeople: scenario.raw.people },
-	);
+	const incremental = applyGraphDelta(snapshot, scenario.delta, () => undefined, {
+		resolutionPeople: scenario.raw.people,
+	});
 	const incrementalProjection = projectGraph(incremental, {
 		centerMode: "none",
 		projectionMode: "free-network",
@@ -187,21 +175,15 @@ function collectCaseMemory(
 	return memory;
 }
 
-function characterizeCase(
-	size: PerformanceSize,
-	profile: PerformanceProfile,
-): NodeCaseResult {
+function characterizeCase(size: PerformanceSize, profile: PerformanceProfile): NodeCaseResult {
 	const fixture = generatePerformanceFixture(size, profile);
 	validatePerformanceFixture(fixture);
 	const baseline = buildPerformanceSnapshot(fixture.raw);
 	const counts = validateSnapshotCounts(fixture, baseline);
 	const scenario = createIncrementalFixtureScenario(fixture);
-	const incremental = applyGraphDelta(
-		baseline,
-		scenario.delta,
-		() => undefined,
-		{ resolutionPeople: scenario.raw.people },
-	);
+	const incremental = applyGraphDelta(baseline, scenario.delta, () => undefined, {
+		resolutionPeople: scenario.raw.people,
+	});
 	assertStableIncrementalIdentities(baseline, incremental, scenario);
 	assertEquivalentSnapshots(incremental, buildPerformanceSnapshot(scenario.raw));
 
@@ -248,11 +230,14 @@ describe("P6a Node performance characterization", () => {
 				cases.push(characterizeCase(size, profile));
 			}
 		}
-		const missingData = cases.flatMap((result) => result.memory
-			.filter((observation) => observation.kind === "missing")
-			.map((observation) => (
-				`${result.profile}/${result.size}/${observation.stage}: ${observation.missingReason ?? "unknown reason"}`
-			)));
+		const missingData = cases.flatMap((result) =>
+			result.memory
+				.filter((observation) => observation.kind === "missing")
+				.map(
+					(observation) =>
+						`${result.profile}/${result.size}/${observation.stage}: ${observation.missingReason ?? "unknown reason"}`,
+				),
+		);
 		const result: NodeCharacterizationResult = {
 			runnerVersion: PERFORMANCE_RUNNER_VERSION,
 			fixtureContractVersion: FIXTURE_CONTRACT_VERSION,

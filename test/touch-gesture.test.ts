@@ -52,7 +52,9 @@ describe("TouchGestureController", () => {
 
 		expect(firstFinal).toEqual(secondFinal);
 		expect(firstFinal).toEqual({ x: 200, y: 180, scale: 2 });
-		expect(calculatePinchCamera(camera, { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 49, y: 0 }, { x: 51, y: 0 }, 0.5, 2).scale).toBe(0.5);
+		expect(
+			calculatePinchCamera(camera, { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 49, y: 0 }, { x: 51, y: 0 }, 0.5, 2).scale,
+		).toBe(0.5);
 	});
 
 	it("re-baselines a remaining touch after pinch and persists only after the final lift", () => {

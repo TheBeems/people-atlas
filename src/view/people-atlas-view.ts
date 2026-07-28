@@ -28,7 +28,10 @@ export class PeopleAtlasView extends ItemView {
 	private activePath: string | undefined;
 	private centerModeSelect: HTMLSelectElement | undefined;
 
-	constructor(leaf: WorkspaceLeaf, private readonly plugin: PeopleAtlasPlugin) {
+	constructor(
+		leaf: WorkspaceLeaf,
+		private readonly plugin: PeopleAtlasPlugin,
+	) {
 		super(leaf);
 		this.viewState = plugin.getViewState(this.viewConfigurationKey);
 		this.centerMode = this.viewState.centerMode;
@@ -48,7 +51,7 @@ export class PeopleAtlasView extends ItemView {
 		return "map";
 	}
 
-		override async onOpen(): Promise<void> {
+	override async onOpen(): Promise<void> {
 		this.activePath = this.app.workspace.getActiveFile()?.path;
 		this.contentEl.replaceChildren();
 		this.contentEl.classList.add("people-atlas-view");
@@ -59,26 +62,36 @@ export class PeopleAtlasView extends ItemView {
 		title.textContent = "People Atlas";
 		this.statsEl = this.contentEl.ownerDocument.createElement("span");
 		this.statsEl.className = "people-atlas-stats";
-		const centerMode = this.createSelect("Center", [
-			["configured", "Configured center"],
-			["active-note", "Active note"],
-			["selected-node", "Selected node"],
-			["none", "No center"],
-		], this.centerMode, (value) => {
-			this.centerMode = value as ProjectionCenterMode;
-			this.persistViewState();
-			this.renderSnapshot();
-		});
+		const centerMode = this.createSelect(
+			"Center",
+			[
+				["configured", "Configured center"],
+				["active-note", "Active note"],
+				["selected-node", "Selected node"],
+				["none", "No center"],
+			],
+			this.centerMode,
+			(value) => {
+				this.centerMode = value as ProjectionCenterMode;
+				this.persistViewState();
+				this.renderSnapshot();
+			},
+		);
 		this.centerModeSelect = centerMode;
-		const projectionMode = this.createSelect("Projection", [
-			["ego", "Ego network"],
-			["free-network", "Free network"],
-			["contact-health", "Contact health"],
-		], this.projectionMode, (value) => {
-			this.projectionMode = value as ProjectionMode;
-			this.persistViewState();
-			this.renderSnapshot();
-		});
+		const projectionMode = this.createSelect(
+			"Projection",
+			[
+				["ego", "Ego network"],
+				["free-network", "Free network"],
+				["contact-health", "Contact health"],
+			],
+			this.projectionMode,
+			(value) => {
+				this.projectionMode = value as ProjectionMode;
+				this.persistViewState();
+				this.renderSnapshot();
+			},
+		);
 		const fitButton = this.contentEl.ownerDocument.createElement("button");
 		fitButton.type = "button";
 		fitButton.textContent = "Fit";
@@ -109,7 +122,7 @@ export class PeopleAtlasView extends ItemView {
 
 		this.renderer = new AtlasRenderer(graph, () => this.plugin.settings, {
 			onOpenNode: (node) => this.openNode(node),
-				onCenterNode: (node) => {
+			onCenterNode: (node) => {
 				if (!isResolvedAtlasPersonNode(node)) return;
 				this.centerMode = "selected-node";
 				if (this.centerModeSelect) this.centerModeSelect.value = "selected-node";
@@ -126,21 +139,29 @@ export class PeopleAtlasView extends ItemView {
 			},
 			onLayoutChanged: (layout) => this.persistLayout(layout),
 		});
-		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
-			this.activePath = this.app.workspace.getActiveFile()?.path;
-			if (this.centerMode === "active-note") this.renderSnapshot();
-		}));
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", () => {
+				this.activePath = this.app.workspace.getActiveFile()?.path;
+				if (this.centerMode === "active-note") this.renderSnapshot();
+			}),
+		);
 
 		this.unsubscribe = this.plugin.index.subscribe((snapshot, delta) => {
 			this.rawSnapshot = snapshot;
-			this.fullSnapshot = delta && this.fullSnapshot
-				? applyGraphDelta(this.fullSnapshot, delta, (target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path, { resolutionPeople: snapshot.people })
-				: undefined;
+			this.fullSnapshot =
+				delta && this.fullSnapshot
+					? applyGraphDelta(
+							this.fullSnapshot,
+							delta,
+							(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
+							{ resolutionPeople: snapshot.people },
+						)
+					: undefined;
 			this.renderSnapshot();
 		});
 	}
 
-		override async onClose(): Promise<void> {
+	override async onClose(): Promise<void> {
 		await this.persistLayout(undefined, true);
 		this.unsubscribe?.();
 		this.renderer?.destroy();
@@ -155,17 +176,25 @@ export class PeopleAtlasView extends ItemView {
 		this.selectedPath = node?.filePath;
 		this.renderDetails(node);
 		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
-		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath) this.selectedCenterPath = undefined;
+		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath)
+			this.selectedCenterPath = undefined;
 		if (this.centerMode === "selected-node" && source !== "list") this.renderSnapshot();
 	}
 
 	private renderSnapshot(): void {
-		const full = this.fullSnapshot ?? buildGraphSnapshot(
-			{ visible: this.rawSnapshot, canonical: this.rawSnapshot },
-			(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
-		);
+		const full =
+			this.fullSnapshot ??
+			buildGraphSnapshot(
+				{ visible: this.rawSnapshot, canonical: this.rawSnapshot },
+				(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
+			);
 		this.fullSnapshot = full;
-		const centerPath = this.centerMode === "active-note" ? this.activePath : this.centerMode === "selected-node" ? this.selectedCenterPath : undefined;
+		const centerPath =
+			this.centerMode === "active-note"
+				? this.activePath
+				: this.centerMode === "selected-node"
+					? this.selectedCenterPath
+					: undefined;
 		const projected = projectGraph(full, {
 			centerMode: this.centerMode,
 			projectionMode: this.projectionMode,
@@ -176,11 +205,17 @@ export class PeopleAtlasView extends ItemView {
 		});
 		const layoutKey = buildLayoutKey(this.viewConfigurationKey, this.viewState, this.centerId, centerPath);
 		this.renderer?.setGraph(projected, this.viewState.layouts[layoutKey]);
-		if (this.statsEl) this.statsEl.textContent = `${projected.nodes.length} people · ${projected.edges.length} relationships`;
+		if (this.statsEl)
+			this.statsEl.textContent = `${projected.nodes.length} people · ${projected.edges.length} relationships`;
 		this.renderDiagnostics(projected);
 	}
 
-	private createSelect(label: string, options: Array<[string, string]>, value: string, onChange: (value: string) => void): HTMLSelectElement {
+	private createSelect(
+		label: string,
+		options: Array<[string, string]>,
+		value: string,
+		onChange: (value: string) => void,
+	): HTMLSelectElement {
 		const select = this.contentEl.ownerDocument.createElement("select");
 		select.setAttribute("aria-label", label);
 		for (const [optionValue, optionLabel] of options) {
@@ -199,14 +234,21 @@ export class PeopleAtlasView extends ItemView {
 			...this.viewState,
 			centerMode: this.centerMode,
 			projectionMode: this.projectionMode,
-			centerHistory: centerPersonId ? rememberCenter(this.viewState, centerPersonId).centerHistory : this.viewState.centerHistory,
+			centerHistory: centerPersonId
+				? rememberCenter(this.viewState, centerPersonId).centerHistory
+				: this.viewState.centerHistory,
 		};
 		void this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
 	}
 
 	private async persistLayout(layout?: LayoutSnapshot, flush = false): Promise<void> {
 		if (!this.renderer) return;
-		const centerPath = this.centerMode === "active-note" ? this.activePath : this.centerMode === "selected-node" ? this.selectedCenterPath : undefined;
+		const centerPath =
+			this.centerMode === "active-note"
+				? this.activePath
+				: this.centerMode === "selected-node"
+					? this.selectedCenterPath
+					: undefined;
 		const key = buildLayoutKey(this.viewConfigurationKey, this.viewState, this.centerId, centerPath);
 		this.viewState.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
 		const pending = this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
@@ -227,7 +269,7 @@ export class PeopleAtlasView extends ItemView {
 			return;
 		}
 		const kind = this.detailsEl.ownerDocument.createElement("p");
-		kind.textContent = node.kind === "ghost" ? "Unresolved contact" : node.filePath ?? "Person";
+		kind.textContent = node.kind === "ghost" ? "Unresolved contact" : (node.filePath ?? "Person");
 		this.detailsEl.append(kind);
 		if (node.organisations.length > 0) {
 			const organisations = this.detailsEl.ownerDocument.createElement("p");
@@ -256,7 +298,9 @@ export class PeopleAtlasView extends ItemView {
 			const message = this.diagnosticsEl.ownerDocument.createElement("span");
 			message.textContent = diagnostic.message;
 			item.append(message);
-			const sourcePath = diagnostic.filePaths.find((path) => this.app.vault.getAbstractFileByPath(path) instanceof TFile);
+			const sourcePath = diagnostic.filePaths.find(
+				(path) => this.app.vault.getAbstractFileByPath(path) instanceof TFile,
+			);
 			if (sourcePath) {
 				const openButton = this.diagnosticsEl.ownerDocument.createElement("button");
 				openButton.type = "button";
@@ -276,8 +320,10 @@ export class PeopleAtlasView extends ItemView {
 
 	private canCreateRelationship(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
 		return Boolean(
-			isResolvedAtlasPersonNode(node)
-			&& this.plugin.index.getSnapshot().people.some((person) => person.id === node.id && person.filePath === node.filePath),
+			isResolvedAtlasPersonNode(node) &&
+				this.plugin.index
+					.getSnapshot()
+					.people.some((person) => person.id === node.id && person.filePath === node.filePath),
 		);
 	}
 

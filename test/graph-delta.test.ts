@@ -186,6 +186,9 @@ describe("applyGraphDelta", () => {
 			filePath: "Relationships/alice-bob.md",
 			from: { raw: "alice", target: "alice" },
 			to: { raw: "bob", target: "bob" },
+			presetId: "friend-mentor",
+			fromRole: "Friend",
+			toRole: "Friend",
 			direction: "source-to-target",
 			types: ["friend", "mentor"],
 			closeness: 5,
@@ -224,7 +227,10 @@ describe("applyGraphDelta", () => {
 		expect(incremental.nodes.some((node) => node.kind === "ghost")).toBe(false);
 		expect(incremental.diagnostics.some((diagnostic) => diagnostic.code === "unresolved-contact")).toBe(false);
 		expect(incremental.edges.find((edge) => edge.id === relationship.id)).toMatchObject({
+			presetId: relationship.presetId,
 			types: relationship.types,
+			fromRole: relationship.fromRole,
+			toRole: relationship.toRole,
 			closeness: relationship.closeness,
 			direction: relationship.direction,
 			since: relationship.since,

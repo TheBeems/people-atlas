@@ -8,13 +8,17 @@ import type {
 } from "../domain/types";
 import type { RelationshipMutationInput, RelationshipUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
+import { relationshipPresetMatches, type RelationshipPreset } from "../settings/relationship-presets";
 
 export interface RelationshipFormValues {
 	path: string;
 	fromPath: string;
 	toPath: string;
 	relationshipId: string;
+	presetId: string;
 	types: string;
+	fromRole: string;
+	toRole: string;
 	direction: RelationshipDirection;
 	closeness: string;
 	since: string;
@@ -37,6 +41,8 @@ export type RelationshipSubmitResult =
 	| { status: "busy" }
 	| { status: "cancelled" };
 
+export type RelationshipPresetState = "unlinked" | "up-to-date" | "modified" | "missing";
+
 export function createRelationshipFormValues(
 	people: PersonRecord[],
 	prefillPersonPath?: string,
@@ -48,7 +54,10 @@ export function createRelationshipFormValues(
 		fromPath,
 		toPath: "",
 		relationshipId: "",
+		presetId: "",
 		types: "",
+		fromRole: "",
+		toRole: "",
 		direction: "undirected",
 		closeness: "",
 		since: "",
@@ -68,7 +77,10 @@ export function editRelationshipFormValues(
 		fromPath: resolveEndpointPath(relationship.from, relationship.filePath, people, resolveLink),
 		toPath: resolveEndpointPath(relationship.to, relationship.filePath, people, resolveLink),
 		relationshipId: explicitRelationshipId ?? "",
+		presetId: relationship.presetId ?? "",
 		types: relationship.types.join(", "),
+		fromRole: relationship.fromRole ?? "",
+		toRole: relationship.toRole ?? "",
 		direction: relationship.direction,
 		closeness: relationship.closeness === undefined ? "" : String(relationship.closeness),
 		since: relationship.since ?? "",
@@ -90,6 +102,46 @@ export function proposeRelationshipPath(
 	return `People/Relationships/${fromName} - ${toName}.md`;
 }
 
+export function applyRelationshipPreset(
+	values: RelationshipFormValues,
+	preset: RelationshipPreset,
+): RelationshipFormValues {
+	return {
+		...values,
+		presetId: preset.id,
+		types: preset.types.join(", "),
+		fromRole: preset.fromRole,
+		toRole: preset.toRole,
+		direction: preset.direction,
+	};
+}
+
+export function detachRelationshipPreset(values: RelationshipFormValues): RelationshipFormValues {
+	return { ...values, presetId: "" };
+}
+
+export function getRelationshipPresetState(
+	values: RelationshipFormValues,
+	presets: RelationshipPreset[],
+): RelationshipPresetState {
+	const presetId = values.presetId.trim();
+	if (!presetId) return "unlinked";
+	const preset = presets.find((candidate) => candidate.id === presetId);
+	if (!preset) return "missing";
+	return relationshipPresetMatches(
+		{
+			presetId,
+			types: parseTypes(values.types),
+			direction: values.direction,
+			fromRole: optionalString(values.fromRole),
+			toRole: optionalString(values.toRole),
+		},
+		preset,
+	)
+		? "up-to-date"
+		: "modified";
+}
+
 export function buildRelationshipCreateInput(
 	values: RelationshipFormValues,
 	people: PersonRecord[],
@@ -101,12 +153,18 @@ export function buildRelationshipCreateInput(
 		direction: values.direction,
 	};
 	const relationshipId = optionalString(values.relationshipId);
+	const presetId = optionalString(values.presetId);
 	const types = parseTypes(values.types);
+	const fromRole = optionalString(values.fromRole);
+	const toRole = optionalString(values.toRole);
 	const closeness = optionalNumber(values.closeness);
 	const since = optionalString(values.since);
 	const lastContact = optionalString(values.lastContact);
 	if (relationshipId !== undefined) input.relationshipId = relationshipId;
+	if (presetId !== undefined) input.presetId = presetId;
 	if (types.length > 0) input.types = types;
+	if (fromRole !== undefined) input.fromRole = fromRole;
+	if (toRole !== undefined) input.toRole = toRole;
 	if (closeness !== undefined) input.closeness = closeness;
 	if (since !== undefined) input.since = since;
 	if (lastContact !== undefined) input.lastContact = lastContact;
@@ -129,9 +187,18 @@ export function buildRelationshipUpdates(
 	if (values.relationshipId.trim() !== original.relationshipId.trim()) {
 		updates.relationshipId = optionalString(values.relationshipId) ?? null;
 	}
+	if (values.presetId.trim() !== original.presetId.trim()) {
+		updates.presetId = optionalString(values.presetId) ?? null;
+	}
 	const types = parseTypes(values.types);
 	const originalTypes = parseTypes(original.types);
 	if (!sameStrings(types, originalTypes)) updates.types = types.length > 0 ? types : null;
+	if (values.fromRole.trim() !== original.fromRole.trim()) {
+		updates.fromRole = optionalString(values.fromRole) ?? null;
+	}
+	if (values.toRole.trim() !== original.toRole.trim()) {
+		updates.toRole = optionalString(values.toRole) ?? null;
+	}
 	if (values.direction !== original.direction) updates.direction = values.direction;
 	if (values.closeness.trim() !== original.closeness.trim()) {
 		updates.closeness = optionalNumber(values.closeness) ?? null;

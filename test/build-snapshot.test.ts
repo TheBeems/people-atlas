@@ -49,6 +49,9 @@ describe("buildAtlasSnapshot", () => {
 					filePath: "Relationships/Alice-Bob-friend.md",
 					from: { raw: "[[Alice]]", target: "Alice" },
 					to: { raw: "[[Bob]]", target: "Bob" },
+					presetId: "friend",
+					fromRole: "Friend",
+					toRole: "Friend",
 					direction: "source-to-target",
 					types: ["friend"],
 					closeness: 4,
@@ -72,8 +75,11 @@ describe("buildAtlasSnapshot", () => {
 		expect(edges).toHaveLength(2);
 		expect(edges[0]).toMatchObject({
 			id: "rel-friend",
+			presetId: "friend",
 			direction: "source-to-target",
 			types: ["friend"],
+			fromRole: "Friend",
+			toRole: "Friend",
 			closeness: 4,
 			since: "2018-03-01",
 			lastContact: "2026-07-18",

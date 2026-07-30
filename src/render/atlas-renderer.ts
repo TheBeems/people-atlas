@@ -1,6 +1,7 @@
 import type { AtlasEdge, AtlasNode, AtlasSnapshot, NodeId } from "../domain/types";
 import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import type { PeopleAtlasSettings } from "../settings/types";
+import { formatRelationshipRole } from "../settings/relationship-presets";
 import { Camera } from "./camera";
 import { createDeterministicLayout, type LayoutPoint } from "./layout";
 import { captureLayoutSnapshot, restoreLayoutSnapshot, type LayoutSnapshot } from "./layout-state";
@@ -10,6 +11,8 @@ export interface AtlasRendererCallbacks {
 	onOpenNode(node: AtlasNode): void;
 	onCenterNode(node: AtlasNode): void;
 	onSelectNode(node: AtlasNode | undefined, source: AtlasSelectionSource): void;
+	canEditPerson?(node: AtlasNode): boolean;
+	onEditPerson?(node: AtlasNode): void;
 	canCreateRelationship?(node: AtlasNode): boolean;
 	onCreateRelationship?(node: AtlasNode): void;
 	onLayoutChanged?(layout: LayoutSnapshot): void;
@@ -27,7 +30,7 @@ interface DragState {
 
 type RendererMode = "graph" | "list";
 type SelectedAction = "open" | "center";
-type SheetAction = "close" | "open" | "center" | "create";
+type SheetAction = "close" | "open" | "center" | "edit" | "create";
 type SheetInvoker = "details" | "canvas";
 
 const PERSON_RADIUS = 24;
@@ -542,13 +545,16 @@ export class AtlasRenderer {
 		if (!counterpart) return undefined;
 
 		const counterpartLabel = `${counterpart.label}${counterpart.kind === "ghost" ? " (unresolved)" : ""}`;
-		const direction =
-			edge.direction === "undirected"
-				? `Connected to ${counterpartLabel}`
-				: selectedIsSource
-					? `Outgoing to ${counterpartLabel}`
-					: `Incoming from ${counterpartLabel}`;
-		const parts = [direction];
+		const role = selectedIsSource ? edge.fromRole : edge.toRole;
+		const relationshipDescription =
+			edge.fromRole && edge.toRole && role
+				? formatRelationshipRole(this.getSettings().relationshipRoleFormat, role, counterpartLabel)
+				: edge.direction === "undirected"
+					? `Connected to ${counterpartLabel}`
+					: selectedIsSource
+						? `Outgoing to ${counterpartLabel}`
+						: `Incoming from ${counterpartLabel}`;
+		const parts = [relationshipDescription];
 		if (edge.types.length > 0) parts.push(`Types: ${edge.types.join(", ")}`);
 		if (edge.inferred) parts.push("Contact-link connection");
 		else {
@@ -621,6 +627,9 @@ export class AtlasRenderer {
 				this.createSheetActionButton("Open note", "open"),
 				this.createSheetActionButton("Use as center", "center"),
 			);
+			if (this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true) {
+				actions.append(this.createSheetActionButton("Edit person", "edit"));
+			}
 			if (this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true) {
 				actions.append(this.createSheetActionButton("Create relationship", "create"));
 			}
@@ -914,6 +923,13 @@ export class AtlasRenderer {
 			action === "create" &&
 			this.callbacks.onCreateRelationship &&
 			this.callbacks.canCreateRelationship?.(selected) === true;
+		const canEdit =
+			action === "edit" && this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true;
+		if (action === "edit" && !canEdit) {
+			this.renderSheet();
+			this.focusSheetAction("close");
+			return;
+		}
 		if (action === "create" && !canCreate) {
 			this.renderSheet();
 			this.focusSheetAction("close");
@@ -922,6 +938,7 @@ export class AtlasRenderer {
 		this.closeSheet(false);
 		if (action === "open") this.callbacks.onOpenNode(selected);
 		else if (action === "center") this.callbacks.onCenterNode(selected);
+		else if (canEdit) this.callbacks.onEditPerson?.(selected);
 		else if (canCreate) this.callbacks.onCreateRelationship?.(selected);
 	};
 

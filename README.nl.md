@@ -15,6 +15,7 @@ People Atlas brengt personen, expliciete relaties en onopgeloste contacten uit M
 - Een incrementele vaultindex die alleen gewijzigde bestanden opnieuw verwerkt.
 - Een zelfstandige graafweergave en aangepaste Bases-view op hetzelfde graafmodel.
 - Deterministische layout, pan, zoom, slepen, touchgebaren en een toetsenbordtoegankelijke lijstweergave.
+- Gecureerde aanmaak en bewerking van personen, met namen, aliassen, organisaties, foto's en gevalideerde contactlinks.
 - Expliciete, gevalideerde aanmaak en bewerking van relaties.
 - `@`-suggesties die wikilinks invoegen en alleen na een expliciete keuze een persoonsnotitie aanmaken.
 - Diagnostiek voor dubbele ID's, onopgeloste wikilinks en kapotte relatie-eindpunten.
@@ -55,12 +56,15 @@ Nadat People Atlas is opgenomen:
 1. Controleer onder **Instellingen → People Atlas** de People-map en propertynamen. De standaardmap is `People/`.
 2. Voeg `type: person` en een stabiele `person_id` toe aan persoonsnotities, of pas de instellingen aan je bestaande schema aan.
 3. Voer **People Atlas: Open atlas** uit via het opdrachtenpalet.
-4. Maak een relatie via **People Atlas: Create relationship**, of selecteer een persoon in een atlas en kies **Create relationship**.
-5. Gebruik **People Atlas: Edit current relationship** terwijl een relatienotitie actief is om ondersteunde metadata te wijzigen.
+4. Gebruik **People Atlas: Create person**, of voer **Edit current person** uit terwijl een persoonsnotitie actief is. Een geselecteerde, opgeloste persoon kan ook vanuit beide atlasviews worden bewerkt.
+5. Maak een relatie via **People Atlas: Create relationship**, of selecteer een persoon in een atlas en kies **Create relationship**.
+6. Gebruik **People Atlas: Edit current relationship** terwijl een relatienotitie actief is om ondersteunde metadata te wijzigen.
 
 Relatienotities komen standaard in `People/Relationships/<Persoon A> - <Persoon B>.md`. Het voorgestelde pad blijft controleerbaar en bestaande notities worden nooit overschreven.
 
 Typen van `@` opent persoonsuggesties. Een bestaande persoon kiezen voegt een stabiele wikilink in. Alleen de expliciete aanmaakoptie maakt een nieuwe persoonsnotitie.
+
+De person-editor toont alleen de door People Atlas ondersteunde persoonsvelden en bewaart overige frontmatter. Een gewijzigde naam stelt in dezelfde map een nieuwe bestandsnaam voor en vereist een afzonderlijke bevestiging. Obsidian werkt links bij volgens de vaultinstelling voor automatische linkupdates. Obsidians eigen menu **Eigenschap toevoegen** blijft vaultbreed en kan daarom nog relatieproperties tonen.
 
 Voorbeelden staan onder [`examples/`](examples/).
 

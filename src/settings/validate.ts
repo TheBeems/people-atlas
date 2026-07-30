@@ -1,4 +1,9 @@
 import { DEFAULT_SETTINGS } from "./defaults";
+import {
+	normalizeRelationshipPresets,
+	validateRelationshipRoleFormat,
+	validateStoredRelationshipPresets,
+} from "./relationship-presets";
 import { normalizeViewStates } from "./view-state";
 import type { PeopleAtlasSettings } from "./types";
 
@@ -18,12 +23,16 @@ const STRING_KEYS: Array<keyof PeopleAtlasSettings> = [
 	"relationshipFromProperty",
 	"relationshipToProperty",
 	"relationshipTypesProperty",
+	"relationshipPresetProperty",
+	"relationshipFromRoleProperty",
+	"relationshipToRoleProperty",
 	"directionProperty",
 	"closenessProperty",
 	"sinceProperty",
 	"lastContactProperty",
 	"statusProperty",
 	"defaultCenterPersonId",
+	"relationshipRoleFormat",
 ];
 
 export function validateSettings(raw: unknown): PeopleAtlasSettings {
@@ -42,6 +51,9 @@ export function validateSettings(raw: unknown): PeopleAtlasSettings {
 		if (typeof source[key] === "boolean") result[key] = source[key];
 	}
 	if (source.viewStates !== undefined) result.viewStates = normalizeViewStates(source.viewStates);
+	if (source.relationshipPresets !== undefined && !validateStoredRelationshipPresets(source.relationshipPresets)) {
+		result.relationshipPresets = normalizeRelationshipPresets(source.relationshipPresets);
+	}
 
 	return result;
 }
@@ -61,4 +73,8 @@ export function validatePeopleFolder(value: string): string | undefined {
 	if (normalized.split("/").some((part) => part === ".." || part === "."))
 		return "The People folder must stay inside the vault.";
 	return undefined;
+}
+
+export function validateRelationshipRoleFormatSetting(value: string): string | undefined {
+	return validateRelationshipRoleFormat(value);
 }

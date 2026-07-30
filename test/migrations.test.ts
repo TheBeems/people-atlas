@@ -39,6 +39,31 @@ describe("plugin settings migrations", () => {
 		expect(result.settings.viewStates).toEqual({});
 	});
 
+	it("migrates schema v3 with role properties, an English format and no presets", () => {
+		const result = loadPluginSettings({ schemaVersion: 3, peopleFolder: "People", viewStates: {} });
+
+		expect(result.writeEnabled).toBe(true);
+		expect(result.migrated).toBe(true);
+		expect(result.settings).toMatchObject({
+			schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
+			relationshipPresetProperty: "relationship_preset",
+			relationshipFromRoleProperty: "from_role",
+			relationshipToRoleProperty: "to_role",
+			relationshipRoleFormat: "{role} of {person}",
+			relationshipPresets: [],
+		});
+	});
+
+	it("keeps malformed preset settings read-only", () => {
+		const result = loadPluginSettings({
+			schemaVersion: PLUGIN_DATA_SCHEMA_VERSION,
+			relationshipPresets: [{ id: "Bad ID" }],
+		});
+
+		expect(result.writeEnabled).toBe(false);
+		expect(result.error).toContain("relationshipPresets[0]");
+	});
+
 	it("rejects malformed view state without enabling writes", () => {
 		const result = loadPluginSettings({ schemaVersion: PLUGIN_DATA_SCHEMA_VERSION, viewStates: "invalid" });
 

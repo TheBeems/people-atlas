@@ -141,6 +141,7 @@ interface ControlledApp {
 	workspace: ControlledWorkspace;
 	fileManager: {
 		processFrontMatter(file: TFile, callback: (frontmatter: Record<string, unknown>) => void): Promise<void>;
+		renameFile(file: TFile, newPath: string): Promise<void>;
 	};
 	__runtime: ControlledObsidianRuntime;
 }
@@ -582,6 +583,9 @@ export class ControlledObsidianRuntime {
 					const frontmatter = { ...(cache.frontmatter ?? {}) };
 					callback(frontmatter);
 					this.metadataCache.caches.set(file.path, { ...cache, frontmatter });
+				},
+				renameFile: async (file, newPath) => {
+					this.renameFile(file.path, newPath);
 				},
 			},
 			__runtime: this,

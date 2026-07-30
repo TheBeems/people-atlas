@@ -113,9 +113,11 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(runtime.viewRegistrations.has(VIEW_TYPE_PEOPLE_ATLAS)).toBe(true);
 		expect(runtime.basesRegistrations.has(BASES_VIEW_TYPE_PEOPLE_ATLAS)).toBe(true);
 		expect(runtime.basesRegistrations.get(BASES_VIEW_TYPE_PEOPLE_ATLAS)?.options()).toHaveLength(12);
-		expect(runtime.commands.size).toBe(3);
+		expect(runtime.commands.size).toBe(5);
 		expect([...runtime.commands.values()].map((command) => command.name)).toEqual([
 			"Open atlas",
+			"Create person",
+			"Edit current person",
 			"Create relationship",
 			"Edit current relationship",
 		]);
@@ -282,7 +284,11 @@ describe("controlled People Atlas Obsidian integration", () => {
 			true,
 		);
 
-		runtime.renameFile("People/Bob.md", "People/Robert.md");
+		await plugin.mutations.updatePerson(
+			bobFile as unknown as import("obsidian").TFile,
+			{ name: "Robert" },
+			{ targetPath: "People/Robert.md" },
+		);
 		expect(plugin.index.getPeoplePathsById("bob")).toEqual(["People/Robert.md"]);
 		expect(fullSnapshot(standalone.view).nodes.find((node) => node.id === "bob")?.filePath).toBe("People/Robert.md");
 		expect(fullSnapshot(bases.view).nodes.find((node) => node.id === "bob")?.filePath).toBe("People/Robert.md");

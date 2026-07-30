@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { PersonRecord, RelationshipRecord } from "../src/domain/types";
 import {
 	RelationshipFormSession,
+	applyRelationshipPreset,
 	buildRelationshipCreateInput,
 	buildRelationshipUpdates,
 	createRelationshipFormValues,
+	detachRelationshipPreset,
 	editRelationshipFormValues,
+	getRelationshipPresetState,
 	proposeRelationshipPath,
 	type RelationshipMutationPort,
 } from "../src/editor/relationship-form";
@@ -68,7 +71,10 @@ describe("relationship form contract", () => {
 			fromPath: "People/Alice.md",
 			toPath: "People/Bob.md",
 			relationshipId: "relationship-1",
+			presetId: "friend-colleague",
 			types: "friend, colleague",
+			fromRole: "Friend",
+			toRole: "Friend",
 			closeness: "5",
 			since: "2020-01-02",
 			lastContact: "2026-07-24",
@@ -80,12 +86,38 @@ describe("relationship form contract", () => {
 			from: "[[People/Alice]]",
 			to: "[[People/Bob]]",
 			relationshipId: "relationship-1",
+			presetId: "friend-colleague",
 			types: ["friend", "colleague"],
+			fromRole: "Friend",
+			toRole: "Friend",
 			direction: "undirected",
 			closeness: 5,
 			since: "2020-01-02",
 			lastContact: "2026-07-24",
 			status: "active",
+		});
+	});
+
+	it("applies, detects, customizes and detaches a preset without losing copied values", () => {
+		const preset = {
+			id: "sibling",
+			name: "Sibling",
+			types: ["sibling"],
+			direction: "undirected" as const,
+			fromRole: "Brother",
+			toRole: "Sister",
+		};
+		const applied = applyRelationshipPreset(createRelationshipFormValues(people), preset);
+
+		expect(getRelationshipPresetState(applied, [preset])).toBe("up-to-date");
+		const customized = { ...applied, fromRole: "Sibling" };
+		expect(getRelationshipPresetState(customized, [preset])).toBe("modified");
+		expect(getRelationshipPresetState(customized, [])).toBe("missing");
+		expect(detachRelationshipPreset(customized)).toMatchObject({
+			presetId: "",
+			fromRole: "Sibling",
+			toRole: "Sister",
+			types: "sibling",
 		});
 	});
 

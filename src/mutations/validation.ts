@@ -13,9 +13,12 @@ export interface PersonMutationInput {
 export interface RelationshipMutationInput {
 	path: string;
 	relationshipId?: string;
+	presetId?: string;
 	from: string;
 	to: string;
 	types?: string[];
+	fromRole?: string;
+	toRole?: string;
 	direction?: RelationshipDirection;
 	closeness?: number;
 	since?: string;
@@ -34,9 +37,12 @@ export interface PersonUpdates {
 
 export interface RelationshipUpdates {
 	relationshipId?: string | null;
+	presetId?: string | null;
 	from?: string | null;
 	to?: string | null;
 	types?: string[] | null;
+	fromRole?: string | null;
+	toRole?: string | null;
 	direction?: RelationshipDirection | null;
 	closeness?: number | null;
 	since?: string | null;
@@ -106,6 +112,11 @@ export function validateRelationshipInput(input: RelationshipMutationInput, sett
 	if (!input.from.trim() || !input.to.trim()) errors.push("Both relationship endpoints are required.");
 	if (input.relationshipId !== undefined && !input.relationshipId.trim())
 		errors.push("relationship_id cannot be empty when provided.");
+	if (input.presetId !== undefined && !input.presetId.trim())
+		errors.push("relationship_preset cannot be empty when provided.");
+	const fromRole = input.fromRole?.trim();
+	const toRole = input.toRole?.trim();
+	if (Boolean(fromRole) !== Boolean(toRole)) errors.push("Both endpoint roles must be provided or both omitted.");
 	if (input.direction !== undefined && input.direction !== "undirected" && input.direction !== "source-to-target")
 		errors.push("Relationship direction is invalid.");
 	if (input.status !== undefined && input.status !== "active" && input.status !== "dormant" && input.status !== "ended")
@@ -122,9 +133,14 @@ export function validateRelationshipInput(input: RelationshipMutationInput, sett
 		settings.relationshipIdProperty,
 		settings.relationshipFromProperty,
 		settings.relationshipToProperty,
+		settings.relationshipTypesProperty,
+		settings.relationshipPresetProperty,
+		settings.relationshipFromRoleProperty,
+		settings.relationshipToRoleProperty,
+		settings.directionProperty,
 	];
 	if (new Set(keys).size !== keys.length)
-		errors.push("Relationship identity and endpoint properties must be distinct.");
+		errors.push("Relationship identity, endpoint, type, preset, role and direction properties must be distinct.");
 	return errors;
 }
 

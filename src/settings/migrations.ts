@@ -1,6 +1,7 @@
 import { PLUGIN_DATA_SCHEMA_VERSION } from "../constants";
 import { DEFAULT_SETTINGS } from "./defaults";
-import { validatePeopleFolder, validateSettings } from "./validate";
+import { validateStoredRelationshipPresets } from "./relationship-presets";
+import { validatePeopleFolder, validateRelationshipRoleFormatSetting, validateSettings } from "./validate";
 import type { PeopleAtlasSettings } from "./types";
 import { validateStoredViewStates } from "./view-state";
 
@@ -29,6 +30,11 @@ function validateStoredShape(value: Record<string, unknown>): string | undefined
 		if (key === "viewStates") {
 			const viewStateError = validateStoredViewStates(raw);
 			if (viewStateError) return viewStateError;
+			continue;
+		}
+		if (key === "relationshipPresets") {
+			const presetError = validateStoredRelationshipPresets(raw);
+			if (presetError) return presetError;
 			continue;
 		}
 		if (
@@ -61,9 +67,22 @@ function migrateV2ToV3(value: Record<string, unknown>): Record<string, unknown> 
 	};
 }
 
+function migrateV3ToV4(value: Record<string, unknown>): Record<string, unknown> {
+	return {
+		...value,
+		relationshipPresetProperty: value.relationshipPresetProperty ?? DEFAULT_SETTINGS.relationshipPresetProperty,
+		relationshipFromRoleProperty: value.relationshipFromRoleProperty ?? DEFAULT_SETTINGS.relationshipFromRoleProperty,
+		relationshipToRoleProperty: value.relationshipToRoleProperty ?? DEFAULT_SETTINGS.relationshipToRoleProperty,
+		relationshipRoleFormat: value.relationshipRoleFormat ?? DEFAULT_SETTINGS.relationshipRoleFormat,
+		relationshipPresets: value.relationshipPresets ?? [],
+		schemaVersion: 4,
+	};
+}
+
 const MIGRATIONS: Record<number, (value: Record<string, unknown>) => Record<string, unknown>> = {
 	1: migrateV1ToV2,
 	2: migrateV2ToV3,
+	3: migrateV3ToV4,
 };
 
 export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
@@ -109,6 +128,8 @@ export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
 		if (migratedShapeError) throw new Error(migratedShapeError);
 		const settings = validateSettings(migratedData);
 		if (validatePeopleFolder(settings.peopleFolder)) throw new Error("peopleFolder is invalid.");
+		const roleFormatError = validateRelationshipRoleFormatSetting(settings.relationshipRoleFormat);
+		if (roleFormatError) throw new Error(roleFormatError);
 		return { settings, writeEnabled: true, migrated };
 	} catch (error) {
 		return {

@@ -210,8 +210,19 @@ export function parseAtlasFile(
 		const rawCloseness = readNumber(frontmatter, settings.closenessProperty);
 		const direction = readDirection(frontmatter, settings.directionProperty, file.path);
 		const status = readStatus(frontmatter, settings.statusProperty, file.path);
+		const fromRole = readString(frontmatter, settings.relationshipFromRoleProperty);
+		const toRole = readString(frontmatter, settings.relationshipToRoleProperty);
 		if (direction.diagnostic) diagnostics.push(direction.diagnostic);
 		if (status.diagnostic) diagnostics.push(status.diagnostic);
+		if (Boolean(fromRole) !== Boolean(toRole)) {
+			diagnostics.push({
+				id: `incomplete-relationship-roles:${file.path}`,
+				severity: "warning",
+				code: "incomplete-relationship-roles",
+				message: `Relationship “${file.path}” must define both endpoint roles or neither.`,
+				filePaths: [file.path],
+			});
+		}
 
 		return {
 			filePath: file.path,
@@ -220,6 +231,9 @@ export function parseAtlasFile(
 				filePath: file.path,
 				from,
 				to,
+				presetId: readString(frontmatter, settings.relationshipPresetProperty),
+				fromRole,
+				toRole,
 				direction: direction.direction,
 				types: readStringList(frontmatter, settings.relationshipTypesProperty),
 				closeness: rawCloseness === undefined ? undefined : Math.min(5, Math.max(1, rawCloseness)),

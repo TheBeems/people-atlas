@@ -22,6 +22,10 @@ The relationship contract supports:
 
 - `direction`: `undirected` or `source-to-target`; absent values default to `undirected`;
 - `types`: one or more relationship types;
+- optional `from_role` and `to_role` values that describe each endpoint's
+  explicit perspective; valid plugin writes define both or neither;
+- optional `relationship_preset` provenance. Presets copy their semantic
+  values into the relationship note and never replace it as source of truth;
 - `closeness`: optional bounded value;
 - `since` and `last_contact`: optional date values;
 - `status`: `active`, `dormant`, or `ended`.
@@ -39,3 +43,5 @@ The relationship contract supports:
 - **Build the Bases graph only from `BasesEntry` values.** Rejected because it loses rich relationship notes whenever the Base query excludes them and diverges from standalone behavior.
 - **Resolve duplicate person IDs by first match.** Rejected because it silently assigns a human relationship to an arbitrary note and violates the no-implicit-merge rule.
 - **Collapse all edges by endpoint pair and type.** Rejected because different relationship entities and directions must remain distinguishable.
+- **Resolve roles live from a preset.** Rejected because preset edits or missing
+  plugin data must not silently change the meaning of existing Markdown notes.

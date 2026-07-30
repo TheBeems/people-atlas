@@ -133,6 +133,10 @@ export class PeopleAtlasView extends ItemView {
 				this.renderSnapshot();
 			},
 			onSelectNode: (node, source) => this.handleNodeSelection(node, source),
+			canEditPerson: (node) => this.canEditPerson(node),
+			onEditPerson: (node) => {
+				if (this.canEditPerson(node)) this.plugin.openEditPerson(node.filePath);
+			},
 			canCreateRelationship: (node) => this.canCreateRelationship(node),
 			onCreateRelationship: (node) => {
 				if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
@@ -276,6 +280,13 @@ export class PeopleAtlasView extends ItemView {
 			organisations.textContent = node.organisations.join(" · ");
 			this.detailsEl.append(organisations);
 		}
+		if (this.canEditPerson(node)) {
+			const editPersonButton = this.detailsEl.ownerDocument.createElement("button");
+			editPersonButton.type = "button";
+			editPersonButton.textContent = "Edit person";
+			editPersonButton.addEventListener("click", () => this.plugin.openEditPerson(node.filePath));
+			this.detailsEl.append(editPersonButton);
+		}
 		if (this.canCreateRelationship(node)) {
 			const createRelationshipButton = this.detailsEl.ownerDocument.createElement("button");
 			createRelationshipButton.type = "button";
@@ -325,6 +336,10 @@ export class PeopleAtlasView extends ItemView {
 					.getSnapshot()
 					.people.some((person) => person.id === node.id && person.filePath === node.filePath),
 		);
+	}
+
+	private canEditPerson(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
+		return this.canCreateRelationship(node);
 	}
 
 	private openPath(path: string): void {

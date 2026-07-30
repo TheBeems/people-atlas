@@ -106,7 +106,10 @@ not read vault data, parse frontmatter or write notes.
 18. Each relationship item MUST resolve its counterpart by endpoint
     `NodeId`. Display labels are presentation only and MUST NOT merge or
     identify endpoints.
-19. Direction MUST be described relative to the selected node:
+19. A relationship with complete endpoint roles MUST use the selected
+    endpoint's role and the configured role format, substituting the
+    counterpart as plain text. It MUST NOT append Connected, Incoming or
+    Outgoing. Otherwise direction MUST use the legacy relative fallback:
     - an `undirected` edge is `Connected to <counterpart>`;
     - a `source-to-target` edge is `Outgoing to <counterpart>` when the
       selected node is the source;
@@ -206,14 +209,16 @@ remains selected, invokes no open callback and is described as having no note.
 
 ### Describe explicit and inferred relationships
 
-Given a selected person has an undirected relationship note, a directional
-incoming relationship and an inferred contact link
+Given a selected person has a role-labelled relationship, an undirected
+legacy relationship note, a directional incoming relationship and an inferred
+contact link
 
 When List mode renders its relationship details
 
-Then all three edges remain distinct, direction is relative to the selected
-person, explicit metadata is preserved, and the inferred edge is labelled as
-a contact link without an inferred status.
+Then all four edges remain distinct, the endpoint role is relative to the
+selected person, legacy direction remains relative, explicit metadata is
+preserved, and the inferred edge is labelled as a contact link without an
+inferred status.
 
 ### Keep focus through graph updates
 
@@ -255,8 +260,8 @@ renderer-owned listener, observer or animation frame behind.
 - [ ] Empty, ghost and disappearing-node states remain operable and never
       guess a person or invoke unavailable callbacks.
 - [ ] Selected-node details enumerate every incident edge, preserve parallel
-      edges and accurately describe relative direction, types, explicit
-      status, dates and inferred contact links.
+      edges and accurately describe endpoint roles or legacy relative
+      direction, types, explicit status, dates and inferred contact links.
 - [ ] Resolved people expose native Open and Center actions; existing
       canonical Create relationship actions remain reachable in standalone
       and Bases without adding a renderer vault/index dependency.
@@ -309,9 +314,10 @@ renderer-owned listener, observer or animation frame behind.
    selection and explicit native Center/Create relationship actions rather
    than a custom context menu.
 3. **Relationship content.** User-ratified on 2026-07-26: use a compact people
-   list plus a selected-person relationship list containing counterpart,
-   direction, types, explicit status, `since` and `last_contact` when present;
-   never infer status.
+   list plus a selected-person relationship list containing the explicit
+   endpoint role when complete, otherwise relative direction, followed by
+   types, explicit status, `since` and `last_contact` when present; never infer
+   roles or status.
 4. **Identity and storage.** Record-backed: `AtlasSnapshot` stable IDs and
    explicit relationship edges are authoritative; display names are
    presentation only and rich metadata remains on relationship notes.

@@ -27,6 +27,9 @@ export interface RelationshipRecord {
 	filePath: string;
 	from: PersonReference;
 	to: PersonReference;
+	presetId?: string | undefined;
+	fromRole?: string | undefined;
+	toRole?: string | undefined;
 	direction: RelationshipDirection;
 	types: string[];
 	closeness?: number | undefined;
@@ -47,6 +50,7 @@ export interface AtlasDiagnostic {
 		| "invalid-relationship-direction"
 		| "invalid-relationship-status"
 		| "invalid-relationship-date"
+		| "incomplete-relationship-roles"
 		| "missing-asset"
 		| "unresolved-contact"
 		| "filtered-endpoint"
@@ -75,7 +79,10 @@ export interface AtlasEdge {
 	id: string;
 	sourceId: NodeId;
 	targetId: NodeId;
+	presetId?: string | undefined;
 	types: string[];
+	fromRole?: string | undefined;
+	toRole?: string | undefined;
 	closeness?: number | undefined;
 	direction: RelationshipDirection;
 	since?: string | undefined;

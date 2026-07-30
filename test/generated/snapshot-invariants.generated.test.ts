@@ -67,7 +67,10 @@ describe("generated graph snapshot invariants", () => {
 			expect(rich).toMatchObject({
 				sourceId: generated.ids.alpha,
 				targetId: generated.ids.beta,
+				presetId: richRecord?.presetId,
 				types: richRecord?.types,
+				fromRole: richRecord?.fromRole,
+				toRole: richRecord?.toRole,
 				closeness: richRecord?.closeness,
 				direction: richRecord?.direction,
 				since: richRecord?.since,

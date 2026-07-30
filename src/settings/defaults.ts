@@ -1,4 +1,5 @@
 import { PLUGIN_DATA_SCHEMA_VERSION } from "../constants";
+import { DEFAULT_RELATIONSHIP_ROLE_FORMAT } from "./relationship-presets";
 import type { PeopleAtlasSettings } from "./types";
 
 export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
@@ -18,6 +19,9 @@ export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
 	relationshipFromProperty: "from",
 	relationshipToProperty: "to",
 	relationshipTypesProperty: "relationship_types",
+	relationshipPresetProperty: "relationship_preset",
+	relationshipFromRoleProperty: "from_role",
+	relationshipToRoleProperty: "to_role",
 	directionProperty: "direction",
 	closenessProperty: "closeness",
 	sinceProperty: "since",
@@ -27,5 +31,7 @@ export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
 	enableBases: true,
 	showLabels: true,
 	showDiagnostics: true,
+	relationshipRoleFormat: DEFAULT_RELATIONSHIP_ROLE_FORMAT,
+	relationshipPresets: [],
 	viewStates: {},
 };

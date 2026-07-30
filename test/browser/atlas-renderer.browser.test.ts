@@ -3,6 +3,7 @@ import { commands, page, userEvent } from "vitest/browser";
 import type { AtlasEdge, AtlasNode, AtlasSnapshot } from "../../src/domain/types";
 import { AtlasRenderer, type AtlasRendererCallbacks } from "../../src/render/atlas-renderer";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
+import type { PeopleAtlasSettings } from "../../src/settings/types";
 import "../../styles.css";
 
 const alice: AtlasNode = {
@@ -123,13 +124,17 @@ function snapshot(nodes: AtlasNode[], graphEdges: AtlasEdge[] = []): AtlasSnapsh
 	};
 }
 
-function mount(graph = snapshot([alice, ghost, charlie], edges)): {
+function mount(
+	graph = snapshot([alice, ghost, charlie], edges),
+	settings: PeopleAtlasSettings = DEFAULT_SETTINGS,
+): {
 	renderer: AtlasRenderer;
 	callbacks: {
 		onOpenNode: ReturnType<typeof vi.fn>;
 		onCenterNode: ReturnType<typeof vi.fn>;
 		onSelectNode: ReturnType<typeof vi.fn>;
 		onLayoutChanged: ReturnType<typeof vi.fn>;
+		onEditPerson: ReturnType<typeof vi.fn>;
 		onCreateRelationship: ReturnType<typeof vi.fn>;
 	};
 } {
@@ -143,10 +148,12 @@ function mount(graph = snapshot([alice, ghost, charlie], edges)): {
 		onCenterNode: vi.fn(),
 		onSelectNode: vi.fn(),
 		onLayoutChanged: vi.fn(),
+		canEditPerson: vi.fn((node: AtlasNode) => node.id === alice.id),
+		onEditPerson: vi.fn(),
 		canCreateRelationship: vi.fn((node: AtlasNode) => node.id === alice.id),
 		onCreateRelationship: vi.fn(),
 	};
-	const renderer = new AtlasRenderer(container, () => DEFAULT_SETTINGS, callbacks as AtlasRendererCallbacks);
+	const renderer = new AtlasRenderer(container, () => settings, callbacks as AtlasRendererCallbacks);
 	renderer.setGraph(graph);
 	return { renderer, callbacks };
 }
@@ -248,6 +255,32 @@ describe("accessible atlas renderer", () => {
 		await expect.element(page.getByText("4 people · 4 relationships")).toBeInTheDocument();
 		await expect.element(page.getByRole("button", { name: "Open note" })).toBeInTheDocument();
 		await expect.element(page.getByRole("button", { name: "Use as center" })).toBeInTheDocument();
+	});
+
+	it("renders explicit endpoint roles from both perspectives with the configured grammar", async () => {
+		const roleEdge: AtlasEdge = {
+			id: "relationship-parent-child",
+			sourceId: alice.id,
+			targetId: bob.id,
+			types: ["parent-child"],
+			fromRole: "Kind",
+			toRole: "Vader",
+			direction: "source-to-target",
+			status: "active",
+			inferred: false,
+		};
+		mount(snapshot([alice, bob], [roleEdge]), {
+			...DEFAULT_SETTINGS,
+			relationshipRoleFormat: "{role} van {person}",
+		});
+		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "Alice, Example Org" }).click();
+		await expect.element(page.getByText("Kind van Bob. Types: parent-child. Status: active.")).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain("Outgoing to Bob");
+
+		await page.getByRole("button", { name: "Bob" }).click();
+		await expect.element(page.getByText("Vader van Alice. Types: parent-child. Status: active.")).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain("Incoming from Alice");
 	});
 
 	it("delegates resolved actions and keeps ghosts selectable without capabilities", async () => {
@@ -431,6 +464,13 @@ describe("accessible atlas renderer", () => {
 		await details.click();
 		await page.getByRole("button", { name: "Use as center" }).click();
 		expect(callbacks.onCenterNode).toHaveBeenCalledOnce();
+		callbacks.onEditPerson.mockImplementation(() => expect(dialogElement.open).toBe(false));
+		await details.click();
+		await page.getByRole("button", { name: "Edit person" }).click();
+		expect(callbacks.onEditPerson).toHaveBeenCalledOnce();
+		expect(callbacks.onEditPerson).toHaveBeenCalledWith(
+			expect.objectContaining({ id: alice.id, label: "Alice updated" }),
+		);
 		callbacks.onCreateRelationship.mockImplementation(() => expect(dialogElement.open).toBe(false));
 		await details.click();
 		await page.getByRole("button", { name: "Create relationship" }).click();
@@ -451,6 +491,7 @@ describe("accessible atlas renderer", () => {
 			.toBeInTheDocument();
 		expect(dialogElement.querySelector("button[aria-label='Open note']")).toBeNull();
 		expect(dialogElement.querySelector("button[aria-label='Use as center']")).toBeNull();
+		expect(dialogElement.querySelector("button[aria-label='Edit person']")).toBeNull();
 		expect(dialogElement.querySelector("button[aria-label='Create relationship']")).toBeNull();
 		renderer.setGraph(snapshot([{ ...alice, label: "Ambiguous Alice" }]));
 		expect(dialogElement.open).toBe(false);

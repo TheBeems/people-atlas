@@ -56,10 +56,16 @@ index refresh.
    the selected reference MUST be stored using the resolved person note path
    or stable identity accepted by the existing mutation contract.
 8. The form MUST expose the configured relationship properties supported by
-   `AtlasMutationService`: optional `relationship_id`, relationship types,
-   direction, closeness, `since`, `last_contact` and status.
+   `AtlasMutationService`: optional `relationship_id`, preset provenance,
+   relationship types, both endpoint roles, direction, closeness, `since`,
+   `last_contact` and status.
+   - Endpoint roles MUST be supplied as a pair or omitted as a pair.
+   - Applying or synchronizing a preset changes only unsaved form values until
+     the user explicitly saves.
+   - Detaching a preset removes only its ID and preserves copied values.
 9. Direction MUST default to `undirected` for a new relationship. Status,
-   closeness, dates, types and explicit relationship ID MUST remain optional.
+   closeness, dates, types, paired endpoint roles, preset provenance and
+   explicit relationship ID MUST remain optional.
    Status MUST remain user-authored and MUST NOT be inferred from
    `last_contact`.
 10. Editing MUST initialize every supported field from the active indexed

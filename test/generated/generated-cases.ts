@@ -100,6 +100,9 @@ export function relationship(
 		filePath,
 		from: reference(from),
 		to: reference(to),
+		presetId: options.presetId,
+		fromRole: options.fromRole,
+		toRole: options.toRole,
 		direction: options.direction ?? "undirected",
 		types: options.types ?? [],
 		closeness: options.closeness,
@@ -176,6 +179,9 @@ export function generatedSnapshotCase(seed: number): GeneratedSnapshotCase {
 	const duplicateRelationship = `parallel-${suffix}`;
 	const relationships = [
 		relationship(richRelationship, `Relationships/${suffix}/Rich.md`, alphaId, betaId, {
+			presetId: `preset-${suffix}`,
+			fromRole: `mentor-${suffix}`,
+			toRole: `mentee-${suffix}`,
 			direction: "source-to-target",
 			types: ["mentor", `seed-${seed}`],
 			closeness: 1 + random.int(5),

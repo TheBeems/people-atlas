@@ -373,11 +373,23 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   build and diff hygiene. Reusable scale/popup boundaries are distilled in
   `.10x/knowledge/browser-scale-popup-testing.md`. P7d live/manual evidence
   shaping is the next P7 checkpoint.
+- 2026-07-27: Read-only P7d feasibility shaping confirmed that the prior P7a
+  ratification already selects a separately initiated manual live-evidence
+  child rather than new real-runtime automation. The durable findings are
+  `.10x/research/2026-07-27-p7d-live-validation-feasibility.md`. The locally
+  installed Obsidian binary reports `1.12.7`, below the manifest's required
+  `1.13.0`; no app update, GUI, plugin installation or vault access occurred.
+  A P7d spec and executable ticket remain blocked on authorization to update
+  and verify compatible Desktop Obsidian, the named assistive technology and
+  the available physical Mobile platform(s).
 
 ## Blockers
 
-None for planning. P5, measured P6 and P7a-P7c are closed within their
-explicit evidence boundaries. P7d live/manual evidence shaping is next.
+P5, measured P6 and P7a-P7c are closed within their explicit evidence
+boundaries. P7d shaping awaits the three ratifications recorded in
+`.10x/research/2026-07-27-p7d-live-validation-feasibility.md`: compatible
+Desktop update authorization, named assistive technology and available
+physical Mobile platform(s).
 
 ## Evidence
 

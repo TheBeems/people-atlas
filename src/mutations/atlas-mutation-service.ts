@@ -4,6 +4,7 @@ import type { PersonIndex } from "../index/person-index";
 import type { PeopleAtlasSettings } from "../settings/types";
 import {
 	validateFolderPath,
+	validateNotePath,
 	validatePersonInput,
 	validateRelationshipInput,
 	sanitizeNoteName,
@@ -19,6 +20,28 @@ export class MutationError extends Error {
 		super(message);
 		this.name = "MutationError";
 	}
+}
+
+export class PartialPersonMutationError extends MutationError {
+	readonly propertiesSaved = true as const;
+
+	constructor(
+		message: string,
+		readonly currentPath: string,
+		readonly targetPath: string,
+	) {
+		super(message);
+		this.name = "PartialPersonMutationError";
+	}
+}
+
+export interface PersonEditOptions {
+	targetPath?: string | undefined;
+}
+
+export interface PersonEditResult {
+	file: TFile;
+	renamed: boolean;
 }
 
 export class AtlasMutationService {
@@ -45,8 +68,8 @@ export class AtlasMutationService {
 		return this.runExclusive(() => this.createRelationshipExclusive(input));
 	}
 
-	updatePerson(file: TFile, updates: PersonUpdates): Promise<void> {
-		return this.runExclusive(() => this.updatePersonExclusive(file, updates));
+	updatePerson(file: TFile, updates: PersonUpdates, options: PersonEditOptions = {}): Promise<PersonEditResult> {
+		return this.runExclusive(() => this.updatePersonExclusive(file, updates, options));
 	}
 
 	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void> {
@@ -98,18 +121,41 @@ export class AtlasMutationService {
 		return file;
 	}
 
-	private async updatePersonExclusive(file: TFile, updates: PersonUpdates): Promise<void> {
+	private async updatePersonExclusive(
+		file: TFile,
+		updates: PersonUpdates,
+		options: PersonEditOptions,
+	): Promise<PersonEditResult> {
 		this.assertWritable();
 		const settings = this.getSettings();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-		const name = updates.name === null ? "" : (updates.name ?? String(current[settings.nameProperty] ?? file.basename));
-		const cachedPersonId =
-			typeof current[settings.personIdProperty] === "string"
-				? current[settings.personIdProperty]
-				: this.reservedIdentityForPath(this.reservedPersonIds, file.path);
-		const personId = updates.personId === null ? undefined : (updates.personId ?? cachedPersonId);
+		const targetPath = options.targetPath ? normalizePath(options.targetPath) : undefined;
+		const renameRequired = targetPath !== undefined && targetPath !== file.path;
+		const writeUpdates: PersonUpdates = { ...updates };
+		const explicitPersonId =
+			typeof current[settings.personIdProperty] === "string" && current[settings.personIdProperty].trim()
+				? current[settings.personIdProperty].trim()
+				: undefined;
+		if (renameRequired && explicitPersonId === undefined) {
+			writeUpdates.personId = resolvePersonId(undefined, file.path);
+		}
+		const name =
+			writeUpdates.name === null ? "" : (writeUpdates.name ?? String(current[settings.nameProperty] ?? file.basename));
+		const cachedPersonId = explicitPersonId ?? this.reservedIdentityForPath(this.reservedPersonIds, file.path);
+		const personId = writeUpdates.personId === null ? undefined : (writeUpdates.personId ?? cachedPersonId);
 		const errors = validatePersonInput({ name, personId }, settings);
 		const resultingPersonId = resolvePersonId(personId, file.path);
+		if (renameRequired && targetPath) {
+			if (validateNotePath(targetPath)) errors.push("A safe Markdown person path is required.");
+			const currentParent = file.path.split("/").slice(0, -1).join("/");
+			const targetParent = targetPath.split("/").slice(0, -1).join("/");
+			if (currentParent !== targetParent) errors.push("Editing a person may rename the note but cannot move it.");
+			const expectedName = sanitizeNoteName(name);
+			if (!expectedName || targetPath !== normalizePath(`${targetParent ? `${targetParent}/` : ""}${expectedName}.md`))
+				errors.push("The person note path must match the configured display name.");
+			const existing = this.app.vault.getAbstractFileByPath(targetPath);
+			if (existing && existing !== file) errors.push(`A note already exists at “${targetPath}”.`);
+		}
 		if (
 			this.identityInUse(resultingPersonId, file.path, this.reservedPersonIds, (id) =>
 				this.index.getPeoplePathsById(id),
@@ -118,15 +164,36 @@ export class AtlasMutationService {
 			errors.push(`person_id “${resultingPersonId}” is already in use.`);
 		}
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
-		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
-			this.apply(frontmatter, settings.nameProperty, updates.name);
-			this.apply(frontmatter, settings.personIdProperty, updates.personId);
-			this.apply(frontmatter, settings.aliasesProperty, updates.aliases);
-			this.apply(frontmatter, settings.organisationsProperty, updates.organisations);
-			this.apply(frontmatter, settings.photoProperty, updates.photo);
-			this.apply(frontmatter, settings.contactsProperty, updates.contacts);
-		});
+		const propertiesChanged = Object.keys(writeUpdates).length > 0;
+		if (propertiesChanged) {
+			await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+				this.apply(frontmatter, settings.nameProperty, writeUpdates.name);
+				this.apply(frontmatter, settings.personIdProperty, writeUpdates.personId);
+				this.apply(frontmatter, settings.aliasesProperty, writeUpdates.aliases);
+				this.apply(frontmatter, settings.organisationsProperty, writeUpdates.organisations);
+				this.apply(frontmatter, settings.photoProperty, writeUpdates.photo);
+				this.apply(frontmatter, settings.contactsProperty, writeUpdates.contacts);
+			});
+		}
 		this.rememberIdentity(this.reservedPersonIds, resultingPersonId, file.path);
+		if (renameRequired && targetPath) {
+			try {
+				await this.app.fileManager.renameFile(file, targetPath);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				if (propertiesChanged) {
+					throw new PartialPersonMutationError(
+						`The person properties were saved, but the note could not be renamed: ${reason}`,
+						file.path,
+						targetPath,
+					);
+				}
+				throw new MutationError(`The person note could not be renamed: ${reason}`);
+			}
+			this.rememberIdentity(this.reservedPersonIds, resultingPersonId, file.path);
+			return { file, renamed: true };
+		}
+		return { file, renamed: false };
 	}
 
 	private async updateRelationshipExclusive(file: TFile, updates: RelationshipUpdates): Promise<void> {
@@ -148,8 +215,14 @@ export class AtlasMutationService {
 			to: value<string>(settings.relationshipToProperty, updates.to) ?? "",
 		};
 		if (relationshipId !== undefined) input.relationshipId = relationshipId;
+		const presetId = value<string>(settings.relationshipPresetProperty, updates.presetId);
+		if (presetId !== undefined) input.presetId = presetId;
 		const types = value<string[]>(settings.relationshipTypesProperty, updates.types);
 		if (types !== undefined) input.types = types;
+		const fromRole = value<string>(settings.relationshipFromRoleProperty, updates.fromRole);
+		if (fromRole !== undefined) input.fromRole = fromRole;
+		const toRole = value<string>(settings.relationshipToRoleProperty, updates.toRole);
+		if (toRole !== undefined) input.toRole = toRole;
 		const direction = value<"undirected" | "source-to-target">(settings.directionProperty, updates.direction);
 		if (direction !== undefined) input.direction = direction;
 		const closeness = value<number>(settings.closenessProperty, updates.closeness);
@@ -175,6 +248,9 @@ export class AtlasMutationService {
 			this.apply(frontmatter, settings.relationshipFromProperty, updates.from);
 			this.apply(frontmatter, settings.relationshipToProperty, updates.to);
 			this.apply(frontmatter, settings.relationshipTypesProperty, updates.types);
+			this.apply(frontmatter, settings.relationshipPresetProperty, updates.presetId);
+			this.apply(frontmatter, settings.relationshipFromRoleProperty, updates.fromRole);
+			this.apply(frontmatter, settings.relationshipToRoleProperty, updates.toRole);
 			this.apply(frontmatter, settings.directionProperty, updates.direction);
 			this.apply(frontmatter, settings.closenessProperty, updates.closeness);
 			this.apply(frontmatter, settings.sinceProperty, updates.since);
@@ -263,6 +339,9 @@ export class AtlasMutationService {
 			`${settings.relationshipFromProperty}: ${yamlValue(input.from.trim())}`,
 			`${settings.relationshipToProperty}: ${yamlValue(input.to.trim())}`,
 			...(input.types?.length ? [`${settings.relationshipTypesProperty}: ${yamlValue(input.types)}`] : []),
+			...(input.presetId ? [`${settings.relationshipPresetProperty}: ${yamlValue(input.presetId)}`] : []),
+			...(input.fromRole ? [`${settings.relationshipFromRoleProperty}: ${yamlValue(input.fromRole)}`] : []),
+			...(input.toRole ? [`${settings.relationshipToRoleProperty}: ${yamlValue(input.toRole)}`] : []),
 			...(input.direction ? [`${settings.directionProperty}: ${yamlValue(input.direction)}`] : []),
 			...(input.closeness !== undefined ? [`${settings.closenessProperty}: ${input.closeness}`] : []),
 			...(input.since ? [`${settings.sinceProperty}: ${yamlValue(input.since)}`] : []),

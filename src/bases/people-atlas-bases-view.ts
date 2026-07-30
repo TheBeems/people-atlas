@@ -64,6 +64,10 @@ export class PeopleAtlasBasesView extends BasesView {
 					}
 				},
 				onSelectNode: (node, source) => this.handleNodeSelection(node, source),
+				canEditPerson: (node) => this.canEditPerson(node),
+				onEditPerson: (node) => {
+					if (this.canEditPerson(node)) this.plugin.openEditPerson(node.filePath);
+				},
 				canCreateRelationship: (node) => this.canCreateRelationship(node),
 				onCreateRelationship: (node) => {
 					if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
@@ -290,18 +294,26 @@ export class PeopleAtlasBasesView extends BasesView {
 		);
 	}
 
+	private canEditPerson(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
+		return this.canCreateRelationship(node);
+	}
+
 	private renderSelectionActions(node: AtlasNode | undefined): void {
 		if (!this.selectionActionsEl) return;
 		this.selectionActionsEl.replaceChildren();
-		if (!this.canCreateRelationship(node)) {
+		if (!this.canEditPerson(node)) {
 			this.selectionActionsEl.hidden = true;
 			return;
 		}
-		const button = this.selectionActionsEl.ownerDocument.createElement("button");
-		button.type = "button";
-		button.textContent = `Create relationship with ${node.label}`;
-		button.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
-		this.selectionActionsEl.append(button);
+		const editButton = this.selectionActionsEl.ownerDocument.createElement("button");
+		editButton.type = "button";
+		editButton.textContent = `Edit ${node.label}`;
+		editButton.addEventListener("click", () => this.plugin.openEditPerson(node.filePath));
+		const relationshipButton = this.selectionActionsEl.ownerDocument.createElement("button");
+		relationshipButton.type = "button";
+		relationshipButton.textContent = `Create relationship with ${node.label}`;
+		relationshipButton.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
+		this.selectionActionsEl.append(editButton, relationshipButton);
 		this.selectionActionsEl.hidden = false;
 	}
 }

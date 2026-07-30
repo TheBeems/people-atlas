@@ -264,9 +264,41 @@
 	border-radius: var(--radius-m);
 }
 
-.people-atlas-relationship-form {
+.people-atlas-relationship-form,
+.people-atlas-person-form {
 	display: grid;
 	gap: var(--size-4-3);
+}
+
+.people-atlas-preset-state {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-preset-status,
+.people-atlas-preset-sync-status {
+	margin: 0;
+	color: var(--text-muted);
+}
+
+.people-atlas-preset-sync-list {
+	display: grid;
+	max-block-size: min(50vh, 32rem);
+	margin-block: var(--size-4-3);
+	padding-inline-start: var(--size-4-5);
+	gap: var(--size-4-2);
+	overflow: auto;
+}
+
+.people-atlas-preset-sync-list li {
+	display: grid;
+	gap: var(--size-4-1);
+}
+
+.people-atlas-preset-sync-list span {
+	color: var(--text-muted);
 }
 
 .people-atlas-form-field {
@@ -283,8 +315,60 @@
 }
 
 .people-atlas-form-field input,
-.people-atlas-form-field select {
+.people-atlas-form-field select,
+.people-atlas-form-field textarea {
 	width: 100%;
+}
+
+.people-atlas-person-contacts {
+	display: grid;
+	margin: 0;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-contacts small {
+	color: var(--text-muted);
+}
+
+.people-atlas-person-contact-list {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	gap: var(--size-4-1);
+	list-style: none;
+}
+
+.people-atlas-person-contact-list li,
+.people-atlas-person-contact-controls {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-contact-controls input {
+	min-width: 0;
+	flex: 1;
+}
+
+.people-atlas-person-rename-confirmation {
+	display: grid;
+	gap: var(--size-4-3);
+}
+
+.people-atlas-person-rename-confirmation dl {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	margin: 0;
+	gap: var(--size-4-1) var(--size-4-3);
+}
+
+.people-atlas-person-rename-confirmation dd {
+	margin: 0;
+	overflow-wrap: anywhere;
 }
 
 .people-atlas-form-error {

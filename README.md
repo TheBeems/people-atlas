@@ -10,11 +10,12 @@ People Atlas maps people, explicit relationships, and unresolved contacts stored
 ## Features
 
 - Stable person identities through an explicit `person_id`, with a normalized file-path fallback.
-- Dedicated relationship notes with stable IDs, direction, types, closeness, dates, and status metadata.
+- Dedicated relationship notes with stable IDs, direction, types, endpoint roles, closeness, dates, and status metadata.
 - Wikilink-based contact resolution without matching people by display name.
 - An incremental vault index that reparses changed files without rescanning the whole vault.
 - A standalone graph view and custom Bases view using the same graph snapshot.
 - Deterministic layout, pan, zoom, node dragging, touch gestures, and a keyboard-accessible list view.
+- Curated person creation and editing for names, aliases, organisations, photos, and validated contact links.
 - Explicit relationship creation and editing with validation before any vault write.
 - `@` suggestions that insert stable wikilinks and create person notes only after an explicit choice.
 - Diagnostics for duplicate IDs, unresolved wikilinks, and broken relationship endpoints.
@@ -55,12 +56,15 @@ After People Atlas is listed:
 1. Open **Settings → People Atlas** and review the People folder and property names. The default People folder is `People/`.
 2. Add `type: person` and a stable `person_id` to person notes, or adapt the configured property names to your existing schema.
 3. Run **People Atlas: Open atlas** from the Command Palette.
-4. Create a relationship through **People Atlas: Create relationship**, or select a person in either atlas and choose **Create relationship**.
-5. Run **People Atlas: Edit current relationship** while a relationship note is active to update supported metadata.
+4. Run **People Atlas: Create person**, or use **Edit current person** while a person note is active. A selected resolved person can also be edited from either atlas.
+5. Create a relationship through **People Atlas: Create relationship**, or select a person in either atlas and choose **Create relationship**.
+6. Run **People Atlas: Edit current relationship** while a relationship note is active to update supported metadata.
 
 Relationship notes default to `People/Relationships/<Person A> - <Person B>.md`. The proposed path is reviewable, and existing notes are never overwritten.
 
 Typing `@` opens person suggestions. Choosing an existing person inserts a stable wikilink. Choosing the explicit create option makes a new person note; typing alone never creates one.
+
+The person editor exposes only People Atlas person fields and preserves unrelated frontmatter. Changing a person's name proposes a filename change in the current folder and requires a separate confirmation. Obsidian updates links according to the vault's automatic-link-update setting. Obsidian's native **Add property** menu remains vault-wide and can still show relationship properties.
 
 ## Data model
 
@@ -90,15 +94,27 @@ relationship_id: alice-bob-friend
 from: "[[Alice Example]]"
 to: "[[Bob Example]]"
 direction: undirected
+relationship_preset: friendship
 relationship_types:
   - friend
   - colleague
+from_role: Friend
+to_role: Friend
 closeness: 4
 since: 2018-03-01
 last_contact: 2026-07-18
 status: active
 ---
 ```
+
+`relationship_preset`, `from_role`, and `to_role` are optional. A preset is an
+editor convenience: People Atlas copies its types, direction, and roles into
+the relationship note, so the Markdown remains usable if the preset is later
+changed or removed. Define both endpoint roles or neither. With complete roles,
+the selected endpoint is rendered through the configurable
+`{role} of {person}` format; legacy notes retain the existing
+Connected/Incoming/Outgoing description. Presets never infer gender, kinship,
+or roles from person names or other relationships.
 
 Additional examples are available under [`examples/`](examples/).
 

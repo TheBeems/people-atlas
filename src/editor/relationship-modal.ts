@@ -1,10 +1,14 @@
 import { Modal, Notice, type App, type TFile } from "obsidian";
 import type { PersonRecord, RelationshipRecord } from "../domain/types";
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
+import type { PeopleAtlasSettings } from "../settings/types";
 import {
 	RelationshipFormSession,
+	applyRelationshipPreset,
 	createRelationshipFormValues,
+	detachRelationshipPreset,
 	editRelationshipFormValues,
+	getRelationshipPresetState,
 	proposeRelationshipPath,
 	type RelationshipFormValues,
 } from "./relationship-form";
@@ -26,12 +30,15 @@ export class RelationshipModal extends Modal {
 	private pathManuallyEdited = false;
 	private errorEl: HTMLElement | undefined;
 	private saveButton: HTMLButtonElement | undefined;
+	private presetStatusEl: HTMLElement | undefined;
+	private syncPresetButton: HTMLButtonElement | undefined;
 
 	constructor(
 		app: App,
 		private readonly mode: RelationshipModalMode,
 		private readonly people: PersonRecord[],
 		mutations: AtlasMutationService,
+		private readonly getSettings: () => PeopleAtlasSettings,
 	) {
 		super(app);
 		if (mode.kind === "create") {
@@ -54,9 +61,12 @@ export class RelationshipModal extends Modal {
 
 	override onOpen(): void {
 		this.titleEl.textContent = this.mode.kind === "create" ? "Create relationship" : "Edit relationship";
-		this.contentEl.replaceChildren();
 		this.contentEl.classList.add("people-atlas-relationship-modal");
+		this.renderForm();
+	}
 
+	private renderForm(): void {
+		this.contentEl.replaceChildren();
 		const document = this.contentEl.ownerDocument;
 		const form = document.createElement("form");
 		form.className = "people-atlas-relationship-form";
@@ -115,12 +125,67 @@ export class RelationshipModal extends Modal {
 				this.values.relationshipId = value;
 			},
 		});
+		const presets = this.getSettings().relationshipPresets;
+		const presetOptions: Array<[string, string]> = [["", "Not linked"]];
+		if (this.values.presetId && !presets.some((preset) => preset.id === this.values.presetId)) {
+			presetOptions.push([this.values.presetId, `Missing: ${this.values.presetId}`]);
+		}
+		for (const preset of presets) presetOptions.push([preset.id, preset.name]);
+		this.addSelect(form, {
+			label: "Relationship preset",
+			value: this.values.presetId,
+			options: presetOptions,
+			onChange: (value) => {
+				if (!value) {
+					Object.assign(this.values, detachRelationshipPreset(this.values));
+				} else {
+					const preset = presets.find((candidate) => candidate.id === value);
+					if (preset) Object.assign(this.values, applyRelationshipPreset(this.values, preset));
+				}
+				this.renderForm();
+			},
+		});
+		this.presetStatusEl = document.createElement("p");
+		this.presetStatusEl.className = "people-atlas-preset-status";
+		this.presetStatusEl.setAttribute("aria-live", "polite");
+		this.syncPresetButton = document.createElement("button");
+		this.syncPresetButton.type = "button";
+		this.syncPresetButton.textContent = "Sync from preset";
+		this.syncPresetButton.addEventListener("click", () => {
+			const preset = presets.find((candidate) => candidate.id === this.values.presetId);
+			if (!preset) return;
+			Object.assign(this.values, applyRelationshipPreset(this.values, preset));
+			this.renderForm();
+		});
+		const presetState = document.createElement("div");
+		presetState.className = "people-atlas-preset-state";
+		presetState.append(this.presetStatusEl, this.syncPresetButton);
+		form.append(presetState);
 		this.addInput(form, {
 			label: "Relationship types",
 			description: "Optional comma-separated labels.",
 			value: this.values.types,
 			onInput: (value) => {
 				this.values.types = value;
+				this.refreshPresetState();
+			},
+		});
+		this.addInput(form, {
+			label: "Person A role",
+			description: "Role of Person A relative to Person B. Define both endpoint roles or neither.",
+			value: this.values.fromRole,
+			onInput: (value) => {
+				this.values.fromRole = value;
+				this.refreshPresetState();
+			},
+		});
+		this.addInput(form, {
+			label: "Person B role",
+			description: "Role of Person B relative to Person A.",
+			value: this.values.toRole,
+			onInput: (value) => {
+				this.values.toRole = value;
+				this.refreshPresetState();
 			},
 		});
 		this.addSelect(form, {
@@ -132,6 +197,7 @@ export class RelationshipModal extends Modal {
 			],
 			onChange: (value) => {
 				this.values.direction = value === "source-to-target" ? "source-to-target" : "undirected";
+				this.refreshPresetState();
 			},
 		});
 		this.addInput(form, {
@@ -202,6 +268,7 @@ export class RelationshipModal extends Modal {
 		this.contentEl.append(form);
 
 		if (this.mode.kind === "create") this.refreshProposedPath(pathInput);
+		this.refreshPresetState();
 		fromInput.focus();
 	}
 
@@ -210,6 +277,8 @@ export class RelationshipModal extends Modal {
 		this.contentEl.replaceChildren();
 		this.errorEl = undefined;
 		this.saveButton = undefined;
+		this.presetStatusEl = undefined;
+		this.syncPresetButton = undefined;
 	}
 
 	private async submit(): Promise<void> {
@@ -243,6 +312,19 @@ export class RelationshipModal extends Modal {
 		this.values.path = proposed;
 		const input = pathInput ?? this.contentEl.querySelector<HTMLInputElement>("[data-relationship-path]");
 		if (input) input.value = proposed;
+	}
+
+	private refreshPresetState(): void {
+		if (!this.presetStatusEl || !this.syncPresetButton) return;
+		const state = getRelationshipPresetState(this.values, this.getSettings().relationshipPresets);
+		const messages: Record<typeof state, string> = {
+			unlinked: "No preset is linked. Role and type values are stored directly on this relationship note.",
+			"up-to-date": "The copied relationship values match the linked preset.",
+			modified: "The copied relationship values differ from the linked preset.",
+			missing: `Preset “${this.values.presetId}” is unavailable; copied values remain editable.`,
+		};
+		this.presetStatusEl.textContent = messages[state];
+		this.syncPresetButton.hidden = state !== "modified";
 	}
 
 	private addInput(

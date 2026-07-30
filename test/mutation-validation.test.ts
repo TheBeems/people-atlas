@@ -40,4 +40,30 @@ describe("mutation validation", () => {
 		expect(validateNotePath("Relationships/Jan.txt")).toBeTruthy();
 		expect(validateNotePath("Relationships/Jan.md")).toBeUndefined();
 	});
+
+	it("requires endpoint roles as an explicit pair", () => {
+		expect(
+			validateRelationshipInput(
+				{
+					path: "Relationships/Jan.md",
+					from: "[[Jan]]",
+					to: "[[Sam]]",
+					fromRole: "Brother",
+				},
+				DEFAULT_SETTINGS,
+			),
+		).toContain("Both endpoint roles must be provided or both omitted.");
+		expect(
+			validateRelationshipInput(
+				{
+					path: "Relationships/Jan.md",
+					from: "[[Jan]]",
+					to: "[[Sam]]",
+					fromRole: "Brother",
+					toRole: "Sister",
+				},
+				DEFAULT_SETTINGS,
+			),
+		).toEqual([]);
+	});
 });

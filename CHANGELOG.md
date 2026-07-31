@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Raised the development, CI, and release build baseline from Node.js 22 to
+  Node.js 24 LTS and upgraded checkout/setup-node workflows to v7.
+
 ## 0.3.0
 
 - Replaced directional relationship semantics with stable first/second

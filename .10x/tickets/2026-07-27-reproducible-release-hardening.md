@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-27
-Updated: 2026-07-28
+Updated: 2026-07-31
 
 # P8 — Reproducible release hardening
 
@@ -12,7 +12,7 @@ Depends-On: `.10x/tickets/2026-07-27-high-dpi-popup-browser-matrix.md`
 Implement `.10x/specs/reproducible-obsidian-release.md` as one bounded P8
 outcome:
 
-1. add a committed npm lockfile and declare Node 22;
+1. add a committed npm lockfile and declare Node 24;
 2. add the exact Windows ARM64-compatible `@biomejs/biome@2.4.15`
    configuration and format/lint scripts;
 3. preserve strict TypeScript while making format, lint, type, test, build,
@@ -41,7 +41,7 @@ outcome:
 
 ## Acceptance criteria
 
-- [x] `package-lock.json` is tracked, Node 22 is declared, and CI/release use
+- [x] `package-lock.json` is tracked, Node 24 is declared, and CI/release use
       `npm ci` with lockfile-backed setup-node caching where applicable.
 - [x] `@biomejs/biome` is exactly `2.4.15`; its config checks maintained
       code/config only and excludes `.10x`, dependencies and generated,
@@ -110,6 +110,9 @@ outcome:
 - User-ratified: the uncompressed production `main.js` limit was originally
   200 KiB (204,800 bytes) and was explicitly amended to 400 KiB
   (409,600 bytes) on 2026-07-31 after the fresh-vault cleanup measurement.
+- User-ratified: the declared development, CI and release runtime was raised
+  from Node 22 to Node 24 LTS on 2026-07-31. Earlier Node 22 journal entries
+  remain historical evidence.
 - User-ratified: P8 validates Community-submission readiness only; actual
   publication and submission remain outside P8.
 - Record-backed: P7a-P7c automated Node/integration/generated/Chromium coverage
@@ -136,6 +139,9 @@ outcome:
   200 KiB uncompressed production bundle budget and submission-readiness-only
   scope. On 2026-07-31 the user explicitly raised only that bundle budget to
   400 KiB.
+- 2026-07-31: The user explicitly raised the project, CI and release build
+  baseline from Node 22 to Node 24 LTS. Active contracts and automation now
+  target Node 24; earlier Node 22 observations remain historical.
 - 2026-07-27: A read-only npm registry query resolved the exact selected Biome
   version to `2.5.5`.
 - 2026-07-27: The active governing specification and this single executable

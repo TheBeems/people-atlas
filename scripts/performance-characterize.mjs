@@ -410,7 +410,7 @@ and rounds upward:
 ## Limits
 
 - Absolute timings and heap values do not generalize across hardware.
-- A Linux/Node 22 run is supported and must be labelled
+- A Linux/Node 24 run is supported and must be labelled
   \`informative-ci\`; no Linux run was performed by this Windows evidence run.
 - Headless Chromium is not live Obsidian, Bases, a pop-out window, assistive
   technology or Obsidian Mobile. Those remain P7/manual evidence.
@@ -477,8 +477,8 @@ async function main() {
 					playwright: packageVersion("playwright"),
 					chromium: browserResult.browser.product,
 				},
-				node22LinuxSupport:
-					"runner uses ES2022 and repository CI remains Node 22/ubuntu-latest; execution is manual and informative",
+				ciRuntimeSupport:
+					"runner uses ES2022 and repository CI targets Node 24/ubuntu-latest; execution is manual and informative",
 			},
 			node: nodeResult,
 			browser: browserResult,

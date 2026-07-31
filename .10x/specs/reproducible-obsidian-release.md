@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-27
-Updated: 2026-07-28
+Updated: 2026-07-31
 
 # P8 — Reproducible Obsidian release
 
@@ -18,7 +18,7 @@ reproducibility and release provenance. It does not authorize publishing.
 
 ### Toolchain and dependency installation
 
-1. Node.js major version 22 MUST be the declared and CI/release build runtime.
+1. Node.js major version 24 MUST be the declared and CI/release build runtime.
 2. `package-lock.json` MUST be committed and MUST be the dependency-tree
    authority used by automation.
 3. CI and release workflows MUST install dependencies with `npm ci`; they MUST
@@ -202,7 +202,7 @@ gates passed.
 
 ## Acceptance criteria
 
-- A committed lockfile and Node 22 declaration drive `npm ci` in CI/release.
+- A committed lockfile and Node 24 declaration drive `npm ci` in CI/release.
 - Exactly pinned Biome 2.4.15 provides non-writing format and lint gates without
   formatting `.10x` or generated/installed/release artifacts.
 - Strict typechecking, the full test matrix and production build remain

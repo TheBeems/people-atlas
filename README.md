@@ -201,7 +201,7 @@ Additional examples are available under [`examples/`](examples/).
 
 Requirements:
 
-- Node.js 22.
+- Node.js 24.
 - Obsidian 1.13.0 or newer for integration testing.
 
 Install dependencies and start the development build:

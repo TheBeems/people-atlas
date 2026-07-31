@@ -187,7 +187,7 @@ Voorbeelden staan onder [`examples/`](examples/).
 
 Vereisten:
 
-- Node.js 22.
+- Node.js 24.
 - Obsidian 1.13.0 of nieuwer voor integratietests.
 
 ```bash

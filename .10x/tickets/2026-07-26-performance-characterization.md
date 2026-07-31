@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-07-26
-Updated: 2026-07-26
+Updated: 2026-07-31
 
 # P6a — Performance characterization
 
@@ -67,7 +67,7 @@ contains no product optimization or accepted performance budget.
 - [x] The calibrated Windows result records exact Git/diff, OS, CPU, memory,
       Node/npm/Vitest/Playwright/Chromium, viewport, DPR, fixture and runner
       provenance.
-- [x] A run on Node 22/Linux is supported and labels its output
+- [x] A run on Node 24/Linux is supported and labels its output
       `informative-ci`; no absolute result is generalized across hardware.
 - [x] A date-stamped `.10x/evidence/*.md` record and corresponding
       `.10x/evidence/.storage/*.json` preserve procedure, raw observations,
@@ -132,6 +132,9 @@ contains no product optimization or accepted performance budget.
 - 2026-07-26: The existing required CI runs Node 22 on `ubuntu-latest`, while
   the calibrated local environment currently reports Node 24.18.0. Variable
   hosted-runner timing is therefore not an accepted hard gate.
+- 2026-07-31: The user raised the project, CI and release baseline to Node 24
+  LTS. Future performance output uses a version-neutral `ciRuntimeSupport`
+  field and labels Node 24/Linux; prior Node 22 evidence remains historical.
 - 2026-07-26: The user ratified a characterization-only P6a, deterministic
   100/1,000/5,000 sparse `2N` and stress `8N` workloads, and the
   Windows/Chromium calibrated versus informative-CI/live-P7 boundary.

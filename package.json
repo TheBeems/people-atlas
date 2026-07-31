@@ -1,11 +1,11 @@
 {
   "name": "obsidian-people-atlas",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "A Bases-native people and relationship atlas for Obsidian.",
   "main": "main.js",
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "node esbuild.config.mjs",

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-26
-Updated: 2026-07-26
+Updated: 2026-07-31
 
 # P6a — Performance characterization and architecture decision input
 
@@ -148,7 +148,7 @@ Every result MUST record:
 - browser viewport and device-pixel ratio;
 - fixture contract version and runner version.
 
-The runner MUST remain executable on the repository's Node 22
+The runner MUST remain executable on the repository's Node 24
 `ubuntu-latest` CI environment. Any result obtained there is informative only
 and MUST be labelled `informative-ci`; P6a does not add automatic CI execution
 or a CI pass/fail budget. Live Obsidian desktop, Bases, pop-out and Mobile

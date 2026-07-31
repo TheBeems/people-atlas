@@ -1,9 +1,9 @@
 {
   "id": "people-atlas",
   "name": "People Atlas",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "minAppVersion": "1.13.0",
   "description": "Map people, relationships, and unresolved contacts in your vault.",
-  "author": "Mathijs",
+  "author": "TheBeems",
   "isDesktopOnly": false
 }

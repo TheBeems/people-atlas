@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-30
-Updated: 2026-07-30
+Updated: 2026-07-31
 
 # Perspective-oriented relationship editor and templates
 
@@ -21,6 +21,10 @@ It extends:
 - `.10x/specs/perspective-relationship-foundation.md`;
 - `.10x/specs/safe-mutations-and-versioned-data.md`.
 
+`.10x/specs/simple-relationship-automation.md` further specializes this
+contract for explicit Parent, Child and Sibling choices plus presentation-only
+gendered family terms.
+
 ## Scope
 
 This specification governs:
@@ -29,6 +33,7 @@ This specification governs:
 - self-first endpoint prefilling with neutral fallback;
 - editable endpoint slots and relationships between two other people;
 - dynamic person/role labels without endpoint reordering;
+- explicit simple-relationship role-pair automation;
 - relationship template terminology, creation, copied-value lifecycle and
   safe bulk update language;
 - the People, Relationship, Context and Advanced form hierarchy;
@@ -89,9 +94,13 @@ This specification governs:
     `First person` / `Second person` labels MAY be used.
 18. Label changes MUST NOT recreate the form, move focus or alter the selected
     endpoint.
-19. Valid plugin writes MUST define both endpoint roles or neither. Gender,
-    pronouns, relationship type, display name, graph position and My person
-    identity MUST NOT infer either role.
+19. Valid plugin writes MUST define both endpoint roles or neither. People
+    Atlas MUST NOT infer that a relationship or stored role exists from
+    gender, pronouns, relationship type, display name, graph position or My
+    person identity. The user's explicit Parent, Child or Sibling choice MAY
+    fill the exact canonical role pair, and gender MAY refine only its
+    presentation, as governed by
+    `.10x/specs/simple-relationship-automation.md`.
 
 ### Supported fields and hierarchy
 
@@ -105,6 +114,7 @@ This specification governs:
        - first person;
        - second person.
     2. `Relationship`
+       - Simple relationship;
        - Relationship template;
        - relationship types;
        - both dynamically labelled endpoint roles;
@@ -126,7 +136,10 @@ This specification governs:
 24. Editing MUST initialize every supported field from the indexed
     relationship and preserve fields the user does not change.
 25. The form MUST NOT create missing endpoint people, merge people, convert
-    unresolved links, infer relationship meaning or create contact history.
+    unresolved links, infer relationship existence from graph/profile data or
+    create contact history. Only the explicit simple-relationship choice MAY
+    fill the bounded canonical pairs governed by
+    `.10x/specs/simple-relationship-automation.md`.
 
 ### Relationship templates
 
@@ -191,7 +204,8 @@ This specification governs:
 ### Confirmation, failure and accessibility
 
 47. Only explicit Save MAY invoke `AtlasMutationService`. Cancel, Escape,
-    closing the modal, template selection and preview MUST write nothing.
+    closing the modal, simple-relationship selection, template selection and
+    preview MUST write nothing.
 48. Save MUST validate the complete form before its first write and prevent
     duplicate submission while pending.
 49. Validation or mutation failure MUST keep the modal open, retain all
@@ -200,10 +214,10 @@ This specification governs:
 50. Successful creation MUST close the modal and open the new relationship
     note in a normal workspace leaf. Successful editing MUST close the modal
     and leave the existing note open.
-51. Template selection, detachment, creation, reapplication and dynamic label
-    changes MUST update affected controls in place. They MUST preserve focus,
-    scroll, endpoint selections, manual path edits and Advanced disclosure
-    state.
+51. Simple-relationship selection, template selection, detachment, creation,
+    reapplication and dynamic label/preview changes MUST update affected
+    controls in place. They MUST preserve focus, scroll, endpoint selections,
+    manual path edits and Advanced disclosure state.
 52. Sections MUST use semantic grouping, associated labels, descriptions
     referenced through `aria-describedby`, logical source order and the
     modal's owning `Document`.
@@ -320,6 +334,9 @@ Then the form retains its values, shows the failure and writes nothing.
       terminology appears.
 - [ ] All direction-free supported fields round-trip through configured
       property names, with paired-role and manual-status validation intact.
+- [ ] Explicit Parent, Child and Sibling choices fill only their canonical
+      paired roles, while gender-aware terms remain presentation-only under
+      `.10x/specs/simple-relationship-automation.md`.
 - [ ] The form uses People, Relationship, Context and Advanced sections with
       a reviewable destination and validation-aware disclosure.
 - [ ] Templates contain and copy only types and paired endpoint roles; the
@@ -365,8 +382,10 @@ Then the form retains its values, shows the failure and writes nothing.
 - Relationship direction, arrows or source/target presentation.
 - Reordering existing endpoints to place My person first.
 - Requiring My person in every relationship.
-- Inferring roles or types from gender, pronouns, family structure, names,
-  graph position or relationship type.
+- Inferring relationship existence, stored roles or types from gender,
+  pronouns, family structure, names, graph position or relationship type. The
+  explicit bounded role-pair choice and presentation-only family terms are
+  governed by `.10x/specs/simple-relationship-automation.md`.
 - Live template dependencies or background propagation.
 - Automatic application of a newly created template.
 - Relationship-note rename/move, delete, merge or unresolved-link conversion.
@@ -388,6 +407,9 @@ Then the form retains its values, shows the failure and writes nothing.
 5. Record-backed: the existing mutation service, relationship editor,
    template management and stale-safe bulk synchronization are the supported
    implementation boundaries.
+6. User-ratified on 2026-07-31: an explicit Parent, Child or Sibling choice
+   may fill neutral reciprocal roles; gender may refine only their displayed
+   family terms, with neutral fallback and no family-graph inference.
 
 ## References
 
@@ -395,6 +417,7 @@ Then the form retains its values, shows the failure and writes nothing.
 - `.10x/specs/perspective-relationship-foundation.md`
 - `.10x/specs/safe-mutations-and-versioned-data.md`
 - `.10x/specs/relationship-context-actions.md`
+- `.10x/specs/simple-relationship-automation.md`
 - `.10x/research/2026-07-30-person-relationship-ux-review.md`
 - `.10x/tickets/2026-07-25-relationship-editor-ui.md`
 - `AGENTS.md`

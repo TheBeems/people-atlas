@@ -36,7 +36,7 @@ People Atlas brengt personen, expliciete relaties en onopgeloste persoonslinks u
 - De productiecode gebruikt geen Node.js- of Electron-API's.
 - Gebruikt de declaratieve instellingen en aangepaste Bases-API's uit Obsidian 1.13.
 
-De eerste aanmelding bij Community Plugins gebeurt pas nadat Obsidian 1.13 publiek beschikbaar is.
+Obsidian 1.13 is publiek beschikbaar. People Atlas aanmelden bij Community Plugins blijft een afzonderlijke publicatiestap.
 
 ## Installatie
 
@@ -105,7 +105,7 @@ organisations:
   - Example Foundation
 birth_date: "--07-30"
 pronouns: zij/haar
-gender: vrouw
+gender: woman
 job_title: Engineering lead
 emails:
   - alice@example.com
@@ -135,6 +135,20 @@ naar de relatienotitie. De gekopieerde waarden blijven intact als de template
 later wordt gewijzigd of verwijderd. De expliciete actie **Update linked
 relationships from template** toont eerst de exacte notitiepaden voordat
 bijgewerkte templatewaarden worden gekopieerd.
+
+In de sectie Relationship staat ook de optionele snelkeuze
+**Simple relationship**. **Parent**, **Child** en **Sibling** vullen uitsluitend
+de twee nog niet opgeslagen rollen als `parent`/`child`, `child`/`parent` of
+`sibling`/`sibling`. **Custom** laat templates en handmatige roltekst ongemoeid.
+Alleen **Save** schrijft deze neutrale rollen naar de relatienotitie.
+
+Bij precies deze canonieke rollen mag de weergave het eigen vrijetekstveld
+`gender` van de rolhouder gebruiken. `woman` toont mother, daughter of sister;
+`man` toont father, son of brother. Hoofdletters en omliggende spaties tellen
+niet mee. Bij een ontbrekende of andere waarde blijft de term neutraal:
+parent, child of sibling. Letterlijke en aangepaste rollen veranderen niet.
+People Atlas leidt nooit een relatie af uit gender, namen, gedeelde ouders of
+de graaf. Ook siblings vereisen dus een eigen, expliciete relatienotitie.
 
 Als **My person** eenduidig beschikbaar is, staat die persoon bij een nieuwe
 relatie normaal als eerste, waardoor de eerste-persoonsrol van een template

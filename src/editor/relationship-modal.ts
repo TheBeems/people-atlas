@@ -1,4 +1,5 @@
 import { Modal, Notice, type App, type TFile } from "obsidian";
+import type { SimpleRelationshipChoice } from "../domain/simple-relationships";
 import type { PersonRecord, RelationshipRecord } from "../domain/types";
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
 import { RelationshipPresetModal } from "../settings/relationship-preset-modal";
@@ -7,11 +8,13 @@ import type { PeopleAtlasSettings } from "../settings/types";
 import {
 	RelationshipFormSession,
 	applyRelationshipPreset,
+	applySimpleRelationshipChoice,
 	createRelationshipFormValues,
 	detachRelationshipPreset,
 	editRelationshipFormValues,
 	getRelationshipFormPresentation,
 	getRelationshipPresetState,
+	getSimpleRelationshipChoice,
 	proposeRelationshipPath,
 	type RelationshipFormValues,
 } from "./relationship-form";
@@ -73,6 +76,7 @@ export class RelationshipModal extends Modal {
 	private toPersonLabel: HTMLLabelElement | undefined;
 	private pathInput: HTMLInputElement | undefined;
 	private relationshipIdInput: HTMLInputElement | undefined;
+	private simpleRelationshipSelect: HTMLSelectElement | undefined;
 	private presetSelect: HTMLSelectElement | undefined;
 	private presetStatusEl: HTMLElement | undefined;
 	private applyPresetButton: HTMLButtonElement | undefined;
@@ -173,6 +177,20 @@ export class RelationshipModal extends Modal {
 		peopleGroup.append(datalist);
 
 		const relationshipGroup = this.addGroup(form, "Relationship");
+		const simpleRelationshipField = this.addSelect(relationshipGroup, {
+			label: "Simple relationship",
+			description:
+				"Optional shortcut from the first person to the second person. It fills only both unsaved roles; Custom keeps the roles below unchanged.",
+			value: getSimpleRelationshipChoice(this.values),
+			options: [
+				["custom", "Custom — use template or roles below"],
+				["parent", "Parent of the second person"],
+				["child", "Child of the second person"],
+				["sibling", "Sibling of the second person"],
+			],
+			onChange: (value) => this.selectSimpleRelationship(value),
+		});
+		this.simpleRelationshipSelect = simpleRelationshipField.control;
 		const presetField = this.addSelect(relationshipGroup, {
 			label: "Relationship template",
 			description:
@@ -231,6 +249,7 @@ export class RelationshipModal extends Modal {
 			value: this.values.fromRole,
 			onInput: (value) => {
 				this.values.fromRole = value;
+				this.refreshSimpleRelationshipChoice();
 				this.refreshPresetState();
 				this.refreshPresentation();
 			},
@@ -243,6 +262,7 @@ export class RelationshipModal extends Modal {
 			value: this.values.toRole,
 			onInput: (value) => {
 				this.values.toRole = value;
+				this.refreshSimpleRelationshipChoice();
 				this.refreshPresetState();
 				this.refreshPresentation();
 			},
@@ -360,6 +380,7 @@ export class RelationshipModal extends Modal {
 		if (this.mode.kind === "create") this.refreshProposedPath();
 		this.refreshTemplateOptions();
 		this.refreshTemplateCreationAvailability();
+		this.refreshSimpleRelationshipChoice();
 		this.refreshPresetState();
 		this.refreshPresentation();
 		this.refreshAdvancedSummary();
@@ -375,6 +396,7 @@ export class RelationshipModal extends Modal {
 		this.toPersonLabel = undefined;
 		this.pathInput = undefined;
 		this.relationshipIdInput = undefined;
+		this.simpleRelationshipSelect = undefined;
 		this.presetSelect = undefined;
 		this.presetStatusEl = undefined;
 		this.applyPresetButton = undefined;
@@ -434,6 +456,7 @@ export class RelationshipModal extends Modal {
 			}
 		}
 		this.refreshTemplateOptions();
+		this.refreshSimpleRelationshipChoice();
 		this.refreshPresetState();
 		this.refreshPresentation();
 	}
@@ -445,6 +468,7 @@ export class RelationshipModal extends Modal {
 			this.refreshTemplateOwnedInputs();
 		}
 		this.refreshTemplateOptions();
+		this.refreshSimpleRelationshipChoice();
 		this.refreshPresetState();
 		this.refreshPresentation();
 	}
@@ -529,6 +553,22 @@ export class RelationshipModal extends Modal {
 		if (this.typesInput) this.typesInput.value = this.values.types;
 		if (this.fromRoleInput) this.fromRoleInput.value = this.values.fromRole;
 		if (this.toRoleInput) this.toRoleInput.value = this.values.toRole;
+	}
+
+	private selectSimpleRelationship(value: string): void {
+		const choice = isSimpleRelationshipChoice(value) ? value : "custom";
+		Object.assign(this.values, applySimpleRelationshipChoice(this.values, choice));
+		if (this.fromRoleInput) this.fromRoleInput.value = this.values.fromRole;
+		if (this.toRoleInput) this.toRoleInput.value = this.values.toRole;
+		this.refreshSimpleRelationshipChoice();
+		this.refreshPresetState();
+		this.refreshPresentation();
+	}
+
+	private refreshSimpleRelationshipChoice(): void {
+		if (this.simpleRelationshipSelect) {
+			this.simpleRelationshipSelect.value = getSimpleRelationshipChoice(this.values);
+		}
 	}
 
 	private refreshProposedPath(): void {
@@ -672,6 +712,10 @@ export class RelationshipModal extends Modal {
 
 function comparePeople(left: PersonRecord, right: PersonRecord): number {
 	return left.name.localeCompare(right.name) || left.filePath.localeCompare(right.filePath);
+}
+
+function isSimpleRelationshipChoice(value: string): value is SimpleRelationshipChoice {
+	return value === "custom" || value === "parent" || value === "child" || value === "sibling";
 }
 
 function appendDescribedBy(control: HTMLElement, id: string): void {

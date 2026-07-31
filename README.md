@@ -36,7 +36,7 @@ People Atlas maps people, explicit relationships, and unresolved person links st
 - Production code does not depend on Node.js or Electron APIs.
 - Uses the declarative settings and custom Bases APIs introduced in Obsidian 1.13.
 
-The initial Community Plugins submission will be made only after Obsidian 1.13 reaches public availability.
+Obsidian 1.13 is publicly available. Submitting People Atlas to Community Plugins remains a separate publication step.
 
 ## Installation
 
@@ -147,6 +147,20 @@ or changing the template leaves those copied values intact. The explicit
 **Update linked relationships from template** action previews exact note paths
 before copying updated template values.
 
+The Relationship section also offers an optional **Simple relationship**
+shortcut. **Parent**, **Child**, and **Sibling** fill only the two unsaved roles
+as `parent`/`child`, `child`/`parent`, or `sibling`/`sibling`; **Custom** leaves
+the role fields available for templates or manual text. Only **Save** writes
+these neutral roles to the relationship note.
+
+For those exact canonical roles, presentation may use the role holder's own
+free-text `gender`: `woman` shows mother, daughter, or sister and `man` shows
+father, son, or brother. Comparison is case-insensitive and ignores surrounding
+spaces. Missing or every other value keeps the neutral parent, child, or
+sibling term. Literal and custom roles remain unchanged. People Atlas never
+infers or creates a relationship from gender, names, shared parents, or graph
+structure; siblings still require their own explicit relationship note.
+
 When **My person** resolves, a new relationship normally places that person
 first, so a template's first-person role normally becomes **My role**. Both
 people remain editable, and the same templates work for relationships between
@@ -156,8 +170,8 @@ the selected endpoint is rendered through the configurable
 `{role} of {person}` format; otherwise People Atlas uses the neutral
 `Connected to <person>` description. Stored `from` and `to` values keep their
 first/second positions; they are not arrows or hierarchy. Unowned frontmatter
-is ignored and left untouched. Templates never infer gender, kinship, or roles
-from person names or other relationships.
+is ignored and left untouched. Templates and simple-role presentation never
+infer that a relationship exists from person names or other relationships.
 
 Example contact moment:
 

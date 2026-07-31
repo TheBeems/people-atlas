@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-30
-Updated: 2026-07-30
+Updated: 2026-07-31
 
 # UX3–UX5 — Optional person profiles and complete photo experience
 
@@ -78,9 +78,14 @@ This specification governs:
    MUST NOT:
    - infer either value;
    - constrain either to a fixed enum;
-   - derive relationship roles/types from either; or
-   - change relationship roles, types, status or presentation semantics from
-     either.
+   - derive relationship existence, stored roles, types or status from either;
+     or
+   - change arbitrary/custom relationship presentation from either.
+
+   As the sole bounded exception, explicit gender MAY refine presentation of
+   the stored canonical `parent`, `child` and `sibling` roles under
+   `.10x/specs/simple-relationship-automation.md`. It MUST NOT mutate the
+   relationship note or person profile.
 9. Job title is optional user-authored text and remains distinct from the
    existing list of organisations.
 10. Email addresses are an ordered list of trimmed strings. The editor MUST
@@ -308,7 +313,9 @@ the missing-asset diagnostic remains navigable without breaking the graph.
 - [x] `birth_date` accepts and writes only quoted `YYYY-MM-DD` or `--MM-DD`
       with calendar-valid month/day semantics.
 - [x] Pronouns, gender and job title remain optional free text and influence
-      no relationship inference.
+      no relationship existence or stored-role inference. The only
+      presentation exception is governed by
+      `.10x/specs/simple-relationship-automation.md`.
 - [x] Email/phone lists have the specified minimal validation, duplicate and
       formatting behavior.
 - [x] The person form uses the five sections, preserves existing identity/
@@ -339,7 +346,10 @@ the missing-asset diagnostic remains navigable without breaking the graph.
 
 ## Exclusions
 
-- Automatic gender, pronoun, relationship-role or kinship inference.
+- Inferring gender, pronouns, relationship existence, stored relationship
+  roles or kinship edges. The bounded presentation-only family terms for
+  explicit canonical roles are governed by
+  `.10x/specs/simple-relationship-automation.md`.
 - Fixed gender/pronoun taxonomies.
 - Age calculation, birthday notifications or upcoming-birthday projections.
 - Postal address, social media, employer history, biography, custom arbitrary
@@ -363,6 +373,9 @@ the missing-asset diagnostic remains navigable without breaking the graph.
 4. Photo selection, preview, selected-person presentation and graph avatar
    belong to one user contract with explicit fallback/loading/mobile
    behavior, but implementation may be split by architecture boundary.
+5. User-ratified on 2026-07-31: gender remains optional free text but may
+   refine only the displayed term for explicit canonical Parent, Child and
+   Sibling roles, with neutral fallback and no relationship-note write.
 
 ## References
 
@@ -371,6 +384,7 @@ the missing-asset diagnostic remains navigable without breaking the graph.
 - `.10x/specs/safe-mutations-and-versioned-data.md`
 - `.10x/specs/accessible-semantic-renderer.md`
 - `.10x/specs/performance-characterization.md`
+- `.10x/specs/simple-relationship-automation.md`
 - `src/settings/types.ts`
 - `src/settings/defaults.ts`
 - `src/settings/validate.ts`

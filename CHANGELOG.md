@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+- Added an explicit Simple relationship selector for Parent, Child and Sibling
+  that fills reciprocal neutral endpoint roles without creating or inferring
+  graph relationships.
+- Added presentation-only mother/father, daughter/son and sister/brother terms
+  from each resolved role holder's optional `woman` or `man` gender, with
+  neutral fallback for missing, unsupported, ghost or ambiguous people.
+- Preserved custom roles, copied relationship-template behavior and explicit
+  Save as the only relationship-note write boundary.
+- Updated the published plugin author metadata to `TheBeems`.
+
 ## 0.3.1
 
 - Raised the development, CI, and release build baseline from Node.js 22 to

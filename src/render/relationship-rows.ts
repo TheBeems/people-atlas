@@ -1,5 +1,6 @@
 import type { AtlasEdge, AtlasNode, AtlasSnapshot } from "../domain/types";
-import { isAmbiguousAtlasNode } from "../domain/node-capabilities";
+import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
+import { deriveFamilyRelationshipTerm } from "../domain/simple-relationships";
 import { formatRelationshipRole } from "../settings/relationship-presets";
 
 export interface IncidentRelationshipRow {
@@ -42,9 +43,11 @@ export function buildIncidentRelationshipRows(
 		}
 
 		const role = selectedIsSource ? edge.fromRole : edge.toRole;
+		const roleHolderGender = isResolvedAtlasPersonNode(selected) ? selected.gender : undefined;
+		const presentedRole = role ? deriveFamilyRelationshipTerm(role, roleHolderGender) : undefined;
 		const relationshipDescription =
-			edge.fromRole && edge.toRole && role
-				? formatRelationshipRole(relationshipRoleFormat, role, counterpartLabel)
+			edge.fromRole && edge.toRole && presentedRole
+				? formatRelationshipRole(relationshipRoleFormat, presentedRole, counterpartLabel)
 				: `Connected to ${counterpartLabel}`;
 		const parts = [relationshipDescription];
 		if (edge.types.length > 0) parts.push(`Types: ${edge.types.join(", ")}`);

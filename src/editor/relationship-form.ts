@@ -1,4 +1,10 @@
 import type { TFile } from "obsidian";
+import {
+	deriveFamilyRelationshipTerm,
+	deriveSimpleRelationshipChoice,
+	getSimpleRelationshipRoles,
+	type SimpleRelationshipChoice,
+} from "../domain/simple-relationships";
 import type { PersonRecord, PersonReference, RelationshipRecord, RelationshipStatus } from "../domain/types";
 import type { RelationshipMutationInput, RelationshipUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
@@ -121,10 +127,26 @@ export function getRelationshipFormPresentation(
 	const fromRole = values.fromRole.trim();
 	const toRole = values.toRole.trim();
 	if (fromPerson && toPerson && fromRole && toRole) {
+		const fromTerm = deriveFamilyRelationshipTerm(fromRole, fromPerson.gender);
+		const toTerm = deriveFamilyRelationshipTerm(toRole, toPerson.gender);
 		presentation.rolePreview =
-			`In this relationship, ${fromPerson.name}'s role is ${fromRole} ` + `and ${toPerson.name}'s role is ${toRole}.`;
+			`In this relationship, ${fromPerson.name}'s role is ${fromTerm} ` + `and ${toPerson.name}'s role is ${toTerm}.`;
 	}
 	return presentation;
+}
+
+export function getSimpleRelationshipChoice(
+	values: Pick<RelationshipFormValues, "fromRole" | "toRole">,
+): SimpleRelationshipChoice {
+	return deriveSimpleRelationshipChoice(values.fromRole, values.toRole);
+}
+
+export function applySimpleRelationshipChoice(
+	values: RelationshipFormValues,
+	choice: SimpleRelationshipChoice,
+): RelationshipFormValues {
+	const roles = getSimpleRelationshipRoles(choice);
+	return roles ? { ...values, ...roles } : values;
 }
 
 export function editRelationshipFormValues(

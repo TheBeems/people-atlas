@@ -4,6 +4,7 @@ import type { PersonRecord, RelationshipRecord } from "../src/domain/types";
 import {
 	RelationshipFormSession,
 	applyRelationshipPreset,
+	applySimpleRelationshipChoice,
 	buildRelationshipCreatePrefill,
 	buildRelationshipCreateInput,
 	buildRelationshipUpdates,
@@ -12,6 +13,7 @@ import {
 	editRelationshipFormValues,
 	getRelationshipFormPresentation,
 	getRelationshipPresetState,
+	getSimpleRelationshipChoice,
 	proposeRelationshipPath,
 	resolveCanonicalPersonByPath,
 	type RelationshipMutationPort,
@@ -24,6 +26,7 @@ const people: PersonRecord[] = [
 		name: "Alice / Admin",
 		aliases: [],
 		organisations: [],
+		gender: "woman",
 		emails: [],
 		phones: [],
 		contacts: [],
@@ -34,6 +37,7 @@ const people: PersonRecord[] = [
 		name: "Bob",
 		aliases: [],
 		organisations: [],
+		gender: "man",
 		emails: [],
 		phones: [],
 		contacts: [],
@@ -44,6 +48,7 @@ const people: PersonRecord[] = [
 		name: "Mathijs",
 		aliases: [],
 		organisations: [],
+		gender: "man",
 		emails: [],
 		phones: [],
 		contacts: [],
@@ -188,6 +193,45 @@ describe("relationship form contract", () => {
 			fromRoleLabel: "First person's role",
 			toRoleLabel: "Second person's role",
 		});
+	});
+
+	it("applies simple choices to only the two unsaved roles and derives Custom without rewriting values", () => {
+		const original = {
+			...createRelationshipFormValues(people, "People/Alice.md", "People/Bob.md"),
+			path: "People/Relationships/Manual.md",
+			relationshipId: "relationship-manual",
+			presetId: "family-template",
+			types: "family",
+			fromRole: "mentor",
+			toRole: "mentee",
+			closeness: "4",
+			since: "2020-01-02",
+			lastContact: "2026-07-31",
+			status: "active" as const,
+		};
+
+		const parent = applySimpleRelationshipChoice(original, "parent");
+		expect(parent).toEqual({ ...original, fromRole: "parent", toRole: "child" });
+		expect(getSimpleRelationshipChoice(parent)).toBe("parent");
+		expect(getSimpleRelationshipChoice({ ...parent, fromRole: " Parent " })).toBe("custom");
+		expect(applySimpleRelationshipChoice(original, "custom")).toBe(original);
+		expect(original).toMatchObject({ fromRole: "mentor", toRole: "mentee" });
+	});
+
+	it("uses each role holder's own gender in preview while keeping literal roles unchanged", () => {
+		const parentChild = {
+			...createRelationshipFormValues(people, "People/Alice.md", "People/Bob.md"),
+			fromRole: "parent",
+			toRole: "child",
+		};
+		expect(getRelationshipFormPresentation(parentChild, people).rolePreview).toBe(
+			"In this relationship, Alice / Admin's role is mother and Bob's role is son.",
+		);
+
+		const literal = { ...parentChild, fromRole: "mother", toRole: "daughter" };
+		expect(getRelationshipFormPresentation(literal, people).rolePreview).toBe(
+			"In this relationship, Alice / Admin's role is mother and Bob's role is daughter.",
+		);
 	});
 
 	it("maps canonical endpoint paths and optional fields to a create input", () => {

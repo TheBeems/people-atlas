@@ -20,6 +20,7 @@ const alice: PersonRecord = {
 	name: "Alice",
 	aliases: [],
 	organisations: [],
+	gender: "woman",
 	emails: [],
 	phones: [],
 	contacts: [],
@@ -31,6 +32,7 @@ const bob: PersonRecord = {
 	name: "Bob",
 	aliases: [],
 	organisations: [],
+	gender: "man",
 	emails: [],
 	phones: [],
 	contacts: [],
@@ -42,6 +44,7 @@ const charlie: PersonRecord = {
 	name: "Charlie",
 	aliases: [],
 	organisations: [],
+	gender: "woman",
 	emails: [],
 	phones: [],
 	contacts: [],
@@ -187,6 +190,119 @@ afterEach(() => {
 });
 
 describe("relationship modal", () => {
+	it("applies explicit simple relationships in place for two other people without writing before Save", () => {
+		const { content, form, createRelationship, updateRelationship } = mountModal({
+			mode: {
+				kind: "create",
+				fromPersonPath: charlie.filePath,
+				toPersonPath: bob.filePath,
+				myPersonPath: alice.filePath,
+			},
+			width: 320,
+		});
+		const simple = selectForLabel(content, "Simple relationship");
+		expect(Array.from(simple.options).map((option) => [option.value, option.textContent])).toEqual([
+			["custom", "Custom — use template or roles below"],
+			["parent", "Parent of the second person"],
+			["child", "Child of the second person"],
+			["sibling", "Sibling of the second person"],
+		]);
+		expect(simple.getAttribute("aria-describedby")).toBeTruthy();
+		expect(content.textContent).toContain("shortcut from the first person to the second person");
+
+		setInput(inputForLabel(content, "Relationship types"), "family");
+		setInput(inputForLabel(content, "Closeness"), "5");
+		const advanced = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-advanced");
+		if (!advanced) throw new Error("Expected Advanced disclosure.");
+		advanced.open = true;
+		setInput(inputForLabel(content, "Relationship note path"), "People/Relationships/Keep path.md");
+		content.scrollTop = 80;
+		const scrollTop = content.scrollTop;
+		simple.focus();
+
+		choose(simple, "parent");
+		expect(document.activeElement).toBe(simple);
+		expect(inputForLabel(content, "Charlie's role").value).toBe("parent");
+		expect(inputForLabel(content, "Bob's role").value).toBe("child");
+		expect(content.textContent).toContain("Charlie's role is mother and Bob's role is son");
+		expect(inputForLabel(content, "Relationship types").value).toBe("family");
+		expect(inputForLabel(content, "Closeness").value).toBe("5");
+		expect(inputForLabel(content, "Relationship note path").value).toBe("People/Relationships/Keep path.md");
+		expect(selectForLabel(content, "Relationship template").value).toBe("");
+		expect(advanced.open).toBe(true);
+		expect(content.scrollTop).toBe(scrollTop);
+		expect(content.querySelector("form")).toBe(form);
+		const secondPerson = inputForLabel(content, "Second person — Bob");
+		setInput(secondPerson, alice.filePath);
+		expect(simple.value).toBe("parent");
+		expect(content.textContent).toContain("Charlie's role is mother and Alice's role is daughter");
+		setInput(secondPerson, bob.filePath);
+
+		choose(simple, "child");
+		expect(inputForLabel(content, "Charlie's role").value).toBe("child");
+		expect(inputForLabel(content, "Bob's role").value).toBe("parent");
+		expect(content.textContent).toContain("Charlie's role is daughter and Bob's role is father");
+
+		choose(simple, "sibling");
+		expect(inputForLabel(content, "Charlie's role").value).toBe("sibling");
+		expect(inputForLabel(content, "Bob's role").value).toBe("sibling");
+		expect(content.textContent).toContain("Charlie's role is sister and Bob's role is brother");
+		expect(content.scrollWidth).toBeLessThanOrEqual(content.clientWidth);
+		expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth);
+		expect(createRelationship).not.toHaveBeenCalled();
+		expect(updateRelationship).not.toHaveBeenCalled();
+	});
+
+	it("derives the simple choice after manual and template role changes without changing template provenance", () => {
+		const familyTemplate: RelationshipPreset = {
+			id: "family-parent-child",
+			name: "Family",
+			types: ["family"],
+			fromRole: "parent",
+			toRole: "child",
+		};
+		const { content, createRelationship } = mountModal({
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [familyTemplate] },
+		});
+		const simple = selectForLabel(content, "Simple relationship");
+		const template = selectForLabel(content, "Relationship template");
+
+		choose(template, familyTemplate.id);
+		expect(simple.value).toBe("parent");
+		expect(content.textContent).toContain("Alice's role is mother and Bob's role is son");
+
+		setInput(inputForLabel(content, "My role"), "mentor");
+		expect(simple.value).toBe("custom");
+		expect(inputForLabel(content, "Bob's role").value).toBe("child");
+		expect(template.value).toBe(familyTemplate.id);
+		expect(content.textContent).toContain("differ from the selected template");
+
+		buttonWithText(content, "Apply latest template values").click();
+		expect(simple.value).toBe("parent");
+		choose(simple, "sibling");
+		expect(template.value).toBe(familyTemplate.id);
+		expect(inputForLabel(content, "My role").value).toBe("sibling");
+		expect(inputForLabel(content, "Bob's role").value).toBe("sibling");
+		expect(content.textContent).toContain("differ from the selected template");
+		expect(createRelationship).not.toHaveBeenCalled();
+	});
+
+	it("saves only canonical neutral roles after an explicit simple choice", async () => {
+		const { content, createRelationship } = mountModal();
+		choose(selectForLabel(content, "Simple relationship"), "parent");
+		expect(createRelationship).not.toHaveBeenCalled();
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(createRelationship).toHaveBeenCalledOnce());
+		expect(createRelationship).toHaveBeenCalledWith(
+			expect.objectContaining({
+				fromRole: "parent",
+				toRole: "child",
+			}),
+		);
+		expect(createRelationship.mock.calls[0]?.[0]).not.toHaveProperty("simpleRelationship");
+	});
+
 	it("keeps one semantic form and every unsaved value while a new template is saved and choices refresh", async () => {
 		let mounted: MountedRelationshipModal | undefined;
 		const save = vi.fn(async (preset: RelationshipPreset) => {
@@ -495,6 +611,8 @@ describe("relationship modal", () => {
 			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
 			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
 			types: ["friend"],
+			fromRole: "parent",
+			toRole: "child",
 		};
 		const file = relationshipFile(relationship.filePath);
 		const { content, updateRelationship, close, afterClose, openFile } = mountModal({
@@ -505,6 +623,7 @@ describe("relationship modal", () => {
 				myPersonPath: alice.filePath,
 			},
 		});
+		expect(selectForLabel(content, "Simple relationship").value).toBe("parent");
 		setInput(inputForLabel(content, "Closeness"), "3");
 
 		buttonWithText(content, "Save").click();

@@ -9,6 +9,7 @@ const alice: AtlasNode = {
 	label: "Alice",
 	filePath: "People/Alice.md",
 	organisations: [],
+	gender: "woman",
 	emails: [],
 	phones: [],
 	isCenter: true,
@@ -21,6 +22,7 @@ const bob: AtlasNode = {
 	label: "Bob",
 	filePath: "People/Bob.md",
 	organisations: [],
+	gender: "man",
 	emails: [],
 	phones: [],
 	isCenter: false,
@@ -43,6 +45,7 @@ const ambiguous: AtlasNode = {
 	label: "Duplicate person",
 	filePath: "People/Duplicate.md",
 	organisations: [],
+	gender: "woman",
 	emails: [],
 	phones: [],
 	isCenter: false,
@@ -140,6 +143,107 @@ describe("incident relationship rows", () => {
 
 		expect(fromAlice[0]).toMatchObject({ noteBacked: false, description: "Kind van Bob. Types: parent-child." });
 		expect(fromBob[0]).toMatchObject({ noteBacked: false, description: "Ouder van Alice. Types: parent-child." });
+	});
+
+	it("derives family terms from each selected endpoint's own gender through the configured format", () => {
+		const parentChild: AtlasEdge = {
+			id: "relationship-parent-child",
+			sourceId: alice.id,
+			targetId: bob.id,
+			types: ["family"],
+			fromRole: "parent",
+			toRole: "child",
+			filePath: "Relationships/Alice Bob family.md",
+			inferred: false,
+		};
+		const sibling: AtlasEdge = {
+			...parentChild,
+			id: "relationship-sibling",
+			fromRole: "sibling",
+			toRole: "sibling",
+		};
+
+		expect(buildIncidentRelationshipRows(snapshot([parentChild]), alice, "{person}: {role}")[0]?.description).toBe(
+			"Bob: mother. Types: family.",
+		);
+		expect(buildIncidentRelationshipRows(snapshot([parentChild]), bob, "{person}: {role}")[0]?.description).toBe(
+			"Alice: son. Types: family.",
+		);
+		expect(buildIncidentRelationshipRows(snapshot([sibling]), alice, "{role} of {person}")[0]?.description).toBe(
+			"sister of Bob. Types: family.",
+		);
+		expect(buildIncidentRelationshipRows(snapshot([sibling]), bob, "{role} of {person}")[0]?.description).toBe(
+			"brother of Alice. Types: family.",
+		);
+	});
+
+	it("uses neutral canonical terms for ghost and ambiguous role holders and preserves custom roles literally", () => {
+		const parentChild: AtlasEdge = {
+			id: "relationship-ghost-child",
+			sourceId: alice.id,
+			targetId: ghost.id,
+			types: [],
+			fromRole: "parent",
+			toRole: "child",
+			filePath: "Relationships/Alice Missing.md",
+			inferred: false,
+		};
+		const literal: AtlasEdge = {
+			...parentChild,
+			id: "relationship-literal",
+			sourceId: alice.id,
+			targetId: bob.id,
+			fromRole: "Moeder",
+			toRole: "Dochter",
+		};
+
+		expect(buildIncidentRelationshipRows(snapshot([parentChild]), ghost, "{role} of {person}")[0]?.description).toBe(
+			"child of Alice.",
+		);
+		const ambiguousParent: AtlasEdge = {
+			...parentChild,
+			id: "relationship-ambiguous-parent",
+			sourceId: ambiguous.id,
+			targetId: alice.id,
+			fromRole: "parent",
+			toRole: "child",
+		};
+		expect(
+			buildIncidentRelationshipRows(snapshot([ambiguousParent], [ambiguous, alice]), ambiguous, "{role} of {person}")[0]
+				?.description,
+		).toBe("parent of Alice.");
+		const ambiguousChild: AtlasEdge = {
+			...ambiguousParent,
+			id: "relationship-ambiguous-child",
+			fromRole: "child",
+			toRole: "parent",
+		};
+		expect(
+			buildIncidentRelationshipRows(snapshot([ambiguousChild], [ambiguous, alice]), ambiguous, "{role} of {person}")[0]
+				?.description,
+		).toBe("child of Alice.");
+		const ambiguousMan: AtlasNode = {
+			...ambiguous,
+			id: "ambiguous:duplicate-person-man",
+			gender: "man",
+		};
+		const ambiguousSibling: AtlasEdge = {
+			...ambiguousParent,
+			id: "relationship-ambiguous-sibling",
+			sourceId: ambiguousMan.id,
+			fromRole: "sibling",
+			toRole: "sibling",
+		};
+		expect(
+			buildIncidentRelationshipRows(
+				snapshot([ambiguousSibling], [ambiguousMan, alice]),
+				ambiguousMan,
+				"{role} of {person}",
+			)[0]?.description,
+		).toBe("sibling of Alice.");
+		expect(buildIncidentRelationshipRows(snapshot([literal]), alice, "{role} of {person}")[0]?.description).toBe(
+			"Moeder of Bob.",
+		);
 	});
 
 	it("keeps an ambiguous path-resolved counterpart visibly ambiguous while targeting the relationship note", () => {

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-26
-Updated: 2026-07-26
+Updated: 2026-07-30
 
 # P7b — Generated graph and index invariants
 
@@ -51,7 +51,8 @@ individual seed and transition when an invariant fails.
     `unresolved-contact` diagnostic. An ambiguous explicit-ID reference MUST
     produce `ambiguous-person-reference` and MUST NOT create a guessed edge.
 11. Rich relationship records with resolved, non-self endpoints MUST preserve
-    their direction, types, closeness, dates, status and source path.
+    their endpoint/role association, types, closeness, dates, status and
+    source path without synthesizing direction.
     Independent parallel records MUST remain independent edges.
 12. Duplicate relationship IDs MUST produce
     `duplicate-relationship-id`; their emitted edge IDs MUST remain unique and

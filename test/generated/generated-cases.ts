@@ -75,6 +75,12 @@ export function person(
 		aliases?: string[];
 		organisations?: string[];
 		photoPath?: string;
+		birthDate?: string;
+		pronouns?: string;
+		gender?: string;
+		emails?: string[];
+		phones?: string[];
+		jobTitle?: string;
 	} = {},
 ): PersonRecord {
 	return {
@@ -84,6 +90,12 @@ export function person(
 		aliases: options.aliases ?? [],
 		organisations: options.organisations ?? [],
 		photoPath: options.photoPath,
+		birthDate: options.birthDate,
+		pronouns: options.pronouns,
+		gender: options.gender,
+		emails: options.emails ?? [],
+		phones: options.phones ?? [],
+		jobTitle: options.jobTitle,
 		contacts,
 	};
 }
@@ -103,7 +115,6 @@ export function relationship(
 		presetId: options.presetId,
 		fromRole: options.fromRole,
 		toRole: options.toRole,
-		direction: options.direction ?? "undirected",
 		types: options.types ?? [],
 		closeness: options.closeness,
 		since: options.since,
@@ -182,7 +193,6 @@ export function generatedSnapshotCase(seed: number): GeneratedSnapshotCase {
 			presetId: `preset-${suffix}`,
 			fromRole: `mentor-${suffix}`,
 			toRole: `mentee-${suffix}`,
-			direction: "source-to-target",
 			types: ["mentor", `seed-${seed}`],
 			closeness: 1 + random.int(5),
 			since: "2020-01-02",
@@ -196,7 +206,6 @@ export function generatedSnapshotCase(seed: number): GeneratedSnapshotCase {
 			types: ["friend"],
 		}),
 		relationship(duplicateRelationship, `Relationships/${suffix}/Duplicate B.md`, betaId, alphaId, {
-			direction: "source-to-target",
 			types: ["peer"],
 		}),
 		relationship(`self-${suffix}`, `Relationships/${suffix}/Self.md`, alphaId, alphaId),

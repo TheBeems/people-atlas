@@ -1,6 +1,7 @@
-Status: active
+Status: superseded
 Created: 2026-07-24
-Updated: 2026-07-24
+Updated: 2026-07-30
+Superseded-By: `.10x/decisions/perspective-oriented-relationship-model.md`
 
 # Canonical graph source for standalone and Bases views
 

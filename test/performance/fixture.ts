@@ -60,6 +60,8 @@ export function generatePerformanceFixture(size: PerformanceSize, profile: Perfo
 			name: `Person ${suffix}`,
 			aliases: [],
 			organisations: [`Organisation ${index % 17}`],
+			emails: [],
+			phones: [],
 			contacts: [],
 		};
 	});
@@ -76,7 +78,6 @@ export function generatePerformanceFixture(size: PerformanceSize, profile: Perfo
 				filePath: `Relationships/${relationshipId}.md`,
 				from: { raw: source.id, target: source.id },
 				to: { raw: target.id, target: target.id },
-				direction: "undirected",
 				types: ["performance-fixture"],
 				closeness: ((sourceIndex + offset) % 5) + 1,
 				since: `20${(sourceIndex % 20).toString().padStart(2, "0")}-01-01`,
@@ -109,6 +110,7 @@ export function normalizePerformanceSnapshot(snapshot: AtlasSnapshot): AtlasSnap
 	return {
 		nodes: [...snapshot.nodes].map((node) => ({ ...node })).sort(compareStableId),
 		edges: [...snapshot.edges].map((edge) => ({ ...edge })).sort(compareStableId),
+		contactMoments: [...snapshot.contactMoments].map((moment) => ({ ...moment })).sort(compareStableId),
 		diagnostics: [...snapshot.diagnostics]
 			.map((diagnostic) => ({
 				...diagnostic,
@@ -117,6 +119,7 @@ export function normalizePerformanceSnapshot(snapshot: AtlasSnapshot): AtlasSnap
 			.sort(compareDiagnostic),
 		hiddenNodeCount: snapshot.hiddenNodeCount,
 		hiddenEdgeCount: snapshot.hiddenEdgeCount,
+		hiddenContactMomentCount: snapshot.hiddenContactMomentCount,
 		generatedAt: FIXED_GENERATED_AT,
 	};
 }

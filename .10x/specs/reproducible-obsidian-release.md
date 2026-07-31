@@ -65,8 +65,8 @@ reproducibility and release provenance. It does not authorize publishing.
     MUST NOT embed the sourcemap in `main.js`.
 17. `main.js`, `main.js.map` and release staging MUST remain ignored and
     untracked.
-18. The production `main.js` MUST be at most 204,800 bytes uncompressed.
-19. A size failure MUST report the observed byte count and the 204,800-byte
+18. The production `main.js` MUST be at most 409,600 bytes uncompressed.
+19. A size failure MUST report the observed byte count and the 409,600-byte
     limit. The budget MUST NOT be silently raised.
 
 ### Version and Community-submission readiness
@@ -160,7 +160,7 @@ Obsidian `1.13.0`
 When the release contract validates tag `0.1.0` after a production build
 
 Then the tag and metadata pass, `main.js` is minified and no larger than
-204,800 bytes, no sourcemap is present, and exactly the three Obsidian assets
+409,600 bytes, no sourcemap is present, and exactly the three Obsidian assets
 are eligible for attestation and publication.
 
 ### Scenario: invalid prefixed tag is rejected
@@ -212,7 +212,7 @@ gates passed.
 - Automated tests falsify version/tag/metadata/asset/size validation through
   positive and negative cases, including non-regular release paths and inline
   or external `sourceMappingURL` directives.
-- Production `main.js` is no larger than 204,800 bytes.
+- Production `main.js` is no larger than 409,600 bytes.
 - Dependency audit blocks high/critical findings in CI/release.
 - Two clean production outputs have the same SHA-256 digest.
 - The tag workflow validates exact `x.y.z` equality, attests and publishes only

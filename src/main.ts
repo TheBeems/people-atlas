@@ -4,17 +4,34 @@ import { PeopleAtlasBasesView } from "./bases/people-atlas-bases-view";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "./constants";
 import { PersonIndex } from "./index/person-index";
 import { AtlasMutationService } from "./mutations/atlas-mutation-service";
+import {
+	captureContactMomentEditSourceBaseline,
+	type ContactMomentEditSourceBaseline,
+} from "./mutations/contact-moment";
+import { capturePersonEditSourceBaseline } from "./mutations/person-source-guard";
 import { PersonMentionSuggest } from "./editor/person-mention-suggest";
 import { PersonModal } from "./editor/person-modal";
 import { DEFAULT_SETTINGS } from "./settings/defaults";
-import { loadPluginSettings } from "./settings/migrations";
+import { loadPluginSettings } from "./settings/load";
 import { PeopleAtlasSettingTab } from "./settings/settings-tab";
 import type { PeopleAtlasSettings } from "./settings/types";
-import { validatePeopleFolder, validateSettings } from "./settings/validate";
+import {
+	validateContactMomentPropertyMappings,
+	validateContactMomentsFolder,
+	validateNoteTypeValues,
+	validatePeopleFolder,
+	validatePersonPropertyMappings,
+	validateSettings,
+} from "./settings/validate";
 import { PeopleAtlasView } from "./view/people-atlas-view";
 import { cloneViewState, DEFAULT_VIEW_STATE, type AtlasViewState } from "./settings/view-state";
 import { ViewStateWriteCoordinator } from "./settings/view-state-write-coordinator";
-import { RelationshipModal } from "./editor/relationship-modal";
+import { RelationshipModal, type RelationshipTemplateCreation } from "./editor/relationship-modal";
+import { buildRelationshipCreatePrefill, resolveCanonicalPersonByPath } from "./editor/relationship-form";
+import { ContactMomentModal } from "./editor/contact-moment-modal";
+import type { ContactMomentFormContext } from "./editor/contact-moment-form";
+import type { ContactMomentRecord, ContactMomentSummary, PersonRecord, RelationshipRecord } from "./domain/types";
+import { parseAtlasFile } from "./index/frontmatter";
 import type { RelationshipPreset } from "./settings/relationship-presets";
 import { validateRelationshipRoleFormat, validateStoredRelationshipPresets } from "./settings/relationship-presets";
 import {
@@ -24,6 +41,18 @@ import {
 	type RelationshipPresetSyncChange,
 	type RelationshipPresetSyncResult,
 } from "./settings/relationship-preset-sync";
+
+export interface MyPersonCandidate {
+	id: string;
+	name: string;
+	filePath: string;
+}
+
+interface ResolvedCanonicalContactMoment {
+	file: TFile;
+	contactMoment: ContactMomentRecord;
+	sourceBaseline: ContactMomentEditSourceBaseline;
+}
 
 export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
@@ -44,16 +73,6 @@ export default class PeopleAtlasPlugin extends Plugin {
 		this.settings = loaded.settings;
 		this.settingsWriteEnabled = loaded.writeEnabled;
 		if (loaded.error) new Notice(loaded.error);
-		if (loaded.migrated && loaded.writeEnabled) {
-			try {
-				await this.saveData(this.settings);
-			} catch (error) {
-				this.settingsWriteEnabled = false;
-				new Notice(
-					`People Atlas settings migration could not be saved: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
-		}
 
 		this.registerView(VIEW_TYPE_PEOPLE_ATLAS, (leaf) => new PeopleAtlasView(leaf, this));
 		if (this.settings.enableBases) {
@@ -71,6 +90,11 @@ export default class PeopleAtlasPlugin extends Plugin {
 			id: "open-people-atlas",
 			name: "Open atlas",
 			callback: () => void this.activateView(),
+		});
+		this.addCommand({
+			id: "open-follow-ups",
+			name: "Open follow-ups",
+			callback: () => void this.activateView("follow-ups"),
 		});
 		this.addCommand({
 			id: "create-person",
@@ -92,6 +116,16 @@ export default class PeopleAtlasPlugin extends Plugin {
 			name: "Edit current relationship",
 			callback: () => this.openEditCurrentRelationship(),
 		});
+		this.addCommand({
+			id: "log-contact",
+			name: "Log contact",
+			callback: () => this.openLogContact(),
+		});
+		this.addCommand({
+			id: "edit-current-contact-moment",
+			name: "Edit current contact moment",
+			callback: () => this.openEditCurrentContactMoment(),
+		});
 		this.addSettingTab(new PeopleAtlasSettingTab(this));
 		this.registerEditorSuggest(new PersonMentionSuggest(this.app, this.index, this.mutations, () => this.settings));
 
@@ -106,7 +140,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		if (key === "relationshipPresets") {
 			const presetError = validateStoredRelationshipPresets(value);
 			if (presetError) {
-				new Notice(`Relationship presets are invalid: ${presetError}`);
+				new Notice(`Relationship templates are invalid: ${presetError}`);
 				return false;
 			}
 		}
@@ -126,6 +160,26 @@ export default class PeopleAtlasPlugin extends Plugin {
 			const next = validateSettings({ ...this.settings, [key]: value });
 			if (validatePeopleFolder(next.peopleFolder)) {
 				new Notice("The People folder is invalid.");
+				return false;
+			}
+			const personPropertyError = validatePersonPropertyMappings(next);
+			if (personPropertyError) {
+				new Notice(`Person property mappings are invalid: ${personPropertyError}`);
+				return false;
+			}
+			const contactMomentsFolderError = validateContactMomentsFolder(next.contactMomentsFolder);
+			if (contactMomentsFolderError) {
+				new Notice(contactMomentsFolderError);
+				return false;
+			}
+			const contactMomentPropertyError = validateContactMomentPropertyMappings(next);
+			if (contactMomentPropertyError) {
+				new Notice(`Contact-moment property mappings are invalid: ${contactMomentPropertyError}`);
+				return false;
+			}
+			const noteTypeError = validateNoteTypeValues(next);
+			if (noteTypeError) {
+				new Notice(`Note type values are invalid: ${noteTypeError}`);
 				return false;
 			}
 			this.settings = next;
@@ -148,6 +202,10 @@ export default class PeopleAtlasPlugin extends Plugin {
 		return true;
 	}
 
+	canWritePeopleAtlasData(): boolean {
+		return this.settingsWriteEnabled;
+	}
+
 	getRelationshipPresetSyncChanges(presetId: string): RelationshipPresetSyncChange[] {
 		const preset = this.settings.relationshipPresets.find((candidate) => candidate.id === presetId);
 		if (!preset) return [];
@@ -168,7 +226,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				completed: 0,
 				skipped: 0,
 				remaining: approvedChanges.length,
-				failure: { message: `Preset “${presetId}” is no longer available.` },
+				failure: { message: `Relationship template “${presetId}” is no longer available.` },
 			};
 		}
 		const approvedPresetValues = approvedChanges[0]?.after;
@@ -178,7 +236,9 @@ export default class PeopleAtlasPlugin extends Plugin {
 				completed: 0,
 				skipped: 0,
 				remaining: approvedChanges.length,
-				failure: { message: "The preset changed after this preview was opened. Review a new preview." },
+				failure: {
+					message: "The relationship template changed after this preview was opened. Review a new preview.",
+				},
 			};
 		}
 
@@ -218,8 +278,13 @@ export default class PeopleAtlasPlugin extends Plugin {
 				};
 			}
 			try {
-				await this.mutations.updateRelationship(file, relationshipPresetUpdates(preset));
-				completed += 1;
+				const result = await this.mutations.syncRelationshipPreset(
+					file,
+					approved.before,
+					relationshipPresetUpdates(preset),
+				);
+				if (result.status === "updated") completed += 1;
+				else skipped += 1;
 			} catch (error) {
 				return {
 					completed,
@@ -254,6 +319,40 @@ export default class PeopleAtlasPlugin extends Plugin {
 		return this.viewStateWrites.flush(viewConfigurationKey);
 	}
 
+	getMyPersonCandidates(): MyPersonCandidate[] {
+		const people = this.index.getSnapshot().people;
+		const counts = new Map<string, number>();
+		for (const person of people) {
+			counts.set(person.id, (counts.get(person.id) ?? 0) + 1);
+		}
+		return people
+			.filter((person) => counts.get(person.id) === 1)
+			.map((person) => ({ id: person.id, name: person.name, filePath: person.filePath }))
+			.sort(
+				(left, right) =>
+					left.name.localeCompare(right.name) ||
+					left.filePath.localeCompare(right.filePath) ||
+					left.id.localeCompare(right.id),
+			);
+	}
+
+	resolveMyPerson(): PersonRecord | undefined {
+		const configuredId = this.settings.myPersonId.trim();
+		if (!configuredId) return undefined;
+		const matches = this.index.getSnapshot().people.filter((person) => person.id === configuredId);
+		return matches.length === 1 ? matches[0] : undefined;
+	}
+
+	getMyPersonWarning(): string | undefined {
+		const configuredId = this.settings.myPersonId.trim();
+		if (!configuredId) return undefined;
+		const matches = this.index.getSnapshot().people.filter((person) => person.id === configuredId);
+		if (matches.length === 1) return undefined;
+		return matches.length === 0
+			? `My person ID “${configuredId}” is not available in the canonical index.`
+			: `My person ID “${configuredId}” is ambiguous across ${matches.length} person notes.`;
+	}
+
 	private async persistViewState(viewConfigurationKey: string, state: AtlasViewState): Promise<void> {
 		const previous = this.settings;
 		this.settings = {
@@ -273,20 +372,27 @@ export default class PeopleAtlasPlugin extends Plugin {
 		}
 	}
 
-	async activateView(): Promise<void> {
+	async activateView(mode?: "follow-ups"): Promise<void> {
 		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PEOPLE_ATLAS)[0];
 		const leaf: WorkspaceLeaf = existing ?? this.app.workspace.getLeaf("tab");
 		if (!existing) await leaf.setViewState({ type: VIEW_TYPE_PEOPLE_ATLAS, active: true });
 		await this.app.workspace.revealLeaf(leaf);
+		if (mode === "follow-ups" && leaf.view instanceof PeopleAtlasView) leaf.view.showFollowUps();
 	}
 
 	openCreatePerson(): void {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticePersonWritesDisabled();
+			return;
+		}
+		const people = this.index.getSnapshot().people;
 		new PersonModal(
 			this.app,
 			{ kind: "create" },
-			this.index.getSnapshot().people,
+			people,
 			this.mutations,
 			() => this.settings,
+			() => this.index.getSnapshot().people,
 		).open();
 	}
 
@@ -296,69 +402,476 @@ export default class PeopleAtlasPlugin extends Plugin {
 			new Notice("No editable person note is active.");
 			return;
 		}
-		this.openEditPerson(file.path);
+		void this.openEditPerson(file.path);
 	}
 
-	openEditPerson(personPath: string): void {
-		const person = this.index.getSnapshot().people.find((candidate) => candidate.filePath === personPath);
-		const file = this.app.vault.getAbstractFileByPath(personPath);
-		if (!person || !(file instanceof TFile)) {
+	async openEditPerson(personPath: string): Promise<void> {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticePersonWritesDisabled();
+			return;
+		}
+		let target = this.resolveCanonicalPerson(personPath);
+		if (!target) {
 			new Notice("The selected person is no longer available in the People Atlas index.");
 			return;
 		}
-		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-		const rawPersonId = frontmatter[this.settings.personIdProperty];
-		const explicitPersonId = typeof rawPersonId === "string" && rawPersonId.trim() ? rawPersonId.trim() : undefined;
+		const sourceBaseline =
+			target.personClassification === "tag"
+				? await capturePersonEditSourceBaseline(this.app, target.file, this.settings.personTag)
+				: undefined;
+		if (target.personClassification === "tag") {
+			const refreshedTarget = this.resolveCanonicalPerson(personPath);
+			if (
+				!sourceBaseline ||
+				!refreshedTarget ||
+				refreshedTarget.file !== target.file ||
+				refreshedTarget.personClassification !== "tag" ||
+				!this.canWritePeopleAtlasData()
+			) {
+				new Notice("The selected person changed while its source was being verified. Reopen it before editing.");
+				return;
+			}
+			target = refreshedTarget;
+		}
+		const { file, person, frontmatter } = target;
 		const rawPhotoValue = frontmatter[this.settings.photoProperty];
 		const rawPhoto = typeof rawPhotoValue === "string" ? rawPhotoValue : undefined;
+		const people = this.index.getSnapshot().people;
 		new PersonModal(
 			this.app,
-			explicitPersonId
-				? { kind: "edit", file, person, explicitPersonId, rawPhoto }
-				: { kind: "edit", file, person, rawPhoto },
-			this.index.getSnapshot().people,
+			{
+				kind: "edit",
+				file,
+				person,
+				rawPhoto,
+				personClassification: target.personClassification,
+				...(sourceBaseline ? { sourceBaseline } : {}),
+			},
+			people,
 			this.mutations,
 			() => this.settings,
+			() => this.index.getSnapshot().people,
 		).open();
 	}
 
 	openCreateRelationship(prefillPersonPath?: string): void {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeRelationshipWritesDisabled();
+			return;
+		}
 		const people = this.index.getSnapshot().people;
-		if (prefillPersonPath && !people.some((person) => person.filePath === prefillPersonPath)) {
+		if (prefillPersonPath && !resolveCanonicalPersonByPath(people, prefillPersonPath)) {
 			new Notice("The selected person is no longer available in the People Atlas index.");
 			return;
 		}
+		const prefill = buildRelationshipCreatePrefill(people, prefillPersonPath, this.settings.myPersonId);
 		new RelationshipModal(
 			this.app,
-			prefillPersonPath ? { kind: "create", prefillPersonPath } : { kind: "create" },
+			{ kind: "create", ...prefill },
 			people,
 			this.mutations,
 			() => this.settings,
+			undefined,
+			this.relationshipTemplateCreation(),
+			() => this.index.getSnapshot().people,
 		).open();
 	}
 
 	openEditCurrentRelationship(): void {
 		const file = this.app.workspace.getActiveFile();
-		const relationship = file
-			? this.index.getSnapshot().relationships.find((candidate) => candidate.filePath === file.path)
-			: undefined;
-		if (!(file instanceof TFile) || !relationship) {
+		if (
+			!(file instanceof TFile) ||
+			this.index.getSnapshot().relationships.filter((candidate) => candidate.filePath === file.path).length !== 1
+		) {
 			new Notice("No editable relationship note is active.");
 			return;
 		}
-		const rawRelationshipId =
-			this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.relationshipIdProperty];
-		const explicitRelationshipId =
-			typeof rawRelationshipId === "string" && rawRelationshipId.trim() ? rawRelationshipId.trim() : undefined;
+		this.openEditRelationship(file.path);
+	}
+
+	canOpenRelationship(relationshipPath: string): boolean {
+		return this.resolveCanonicalRelationship(relationshipPath) !== undefined;
+	}
+
+	async openRelationship(relationshipPath: string): Promise<boolean> {
+		const target = this.resolveCanonicalRelationship(relationshipPath);
+		if (!target) {
+			this.noticeRelationshipUnavailable();
+			return false;
+		}
+		try {
+			await this.app.workspace.getLeaf("tab").openFile(target.file);
+			return true;
+		} catch (error) {
+			new Notice(
+				`The relationship note could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return false;
+		}
+	}
+
+	openEditRelationship(relationshipPath: string, onClose?: () => void): boolean {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeRelationshipWritesDisabled();
+			return false;
+		}
+		const target = this.resolveCanonicalRelationship(relationshipPath);
+		if (!target) {
+			this.noticeRelationshipUnavailable();
+			return false;
+		}
+		const myPersonPath = this.resolveMyPerson()?.filePath;
 		new RelationshipModal(
 			this.app,
-			explicitRelationshipId
-				? { kind: "edit", file, relationship, explicitRelationshipId }
-				: { kind: "edit", file, relationship },
+			{
+				kind: "edit",
+				file: target.file,
+				relationship: target.relationship,
+				...(myPersonPath ? { myPersonPath } : {}),
+			},
 			this.index.getSnapshot().people,
 			this.mutations,
 			() => this.settings,
+			onClose,
+			this.relationshipTemplateCreation(),
+			() => this.index.getSnapshot().people,
 		).open();
+		return true;
+	}
+
+	openLogContact(prefilledPersonPath?: string): boolean {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeContactMomentWritesDisabled();
+			return false;
+		}
+		let canonicalPrefillPath: string | undefined;
+		if (prefilledPersonPath) {
+			const person = this.resolveCanonicalPerson(prefilledPersonPath);
+			if (!person) {
+				new Notice("The selected person is no longer available in the People Atlas index.");
+				return false;
+			}
+			canonicalPrefillPath = person.person.filePath;
+		} else {
+			const activeFile = this.app.workspace.getActiveFile();
+			if (activeFile instanceof TFile) {
+				canonicalPrefillPath = this.resolveCanonicalPerson(activeFile.path)?.person.filePath;
+			}
+		}
+		const context = this.contactMomentContext();
+		new ContactMomentModal(
+			this.app,
+			{
+				kind: "create",
+				...(canonicalPrefillPath ? { prefilledPersonPath: canonicalPrefillPath } : {}),
+			},
+			context,
+			this.mutations,
+			() => this.settings,
+			undefined,
+			() => this.contactMomentContext(),
+		).open();
+		return true;
+	}
+
+	openEditCurrentContactMoment(): void {
+		const file = this.app.workspace.getActiveFile();
+		if (
+			!(file instanceof TFile) ||
+			(this.index.getSnapshot().contactMoments ?? []).filter((candidate) => candidate.filePath === file.path).length !==
+				1
+		) {
+			new Notice("No editable contact-moment note is active.");
+			return;
+		}
+		this.openEditContactMoment(file.path);
+	}
+
+	openEditContactMoment(contactMomentPath: string, onClose?: () => void): boolean {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeContactMomentWritesDisabled();
+			return false;
+		}
+		const target = this.resolveCanonicalContactMoment(contactMomentPath);
+		if (!target) {
+			this.noticeContactMomentUnavailable();
+			return false;
+		}
+		return this.openResolvedContactMomentEditor(target, onClose);
+	}
+
+	canOpenContactMomentSummary(moment: ContactMomentSummary): boolean {
+		return this.resolveCanonicalContactMomentSummary(moment) !== undefined;
+	}
+
+	noticeContactMomentActionUnavailable(): void {
+		new Notice("The selected contact moment changed or is no longer available. Review the current atlas data.");
+	}
+
+	async openContactMomentSummary(moment: ContactMomentSummary): Promise<boolean> {
+		const target = this.resolveCanonicalContactMomentSummary(moment);
+		if (!target) {
+			this.noticeContactMomentUnavailable();
+			return false;
+		}
+		try {
+			await this.app.workspace.getLeaf("tab").openFile(target.file);
+			return true;
+		} catch (error) {
+			new Notice(
+				`The contact-moment note could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return false;
+		}
+	}
+
+	canEditContactMomentSummary(moment: ContactMomentSummary): boolean {
+		return this.canWritePeopleAtlasData() && this.resolveCanonicalContactMomentSummary(moment) !== undefined;
+	}
+
+	openEditContactMomentSummary(moment: ContactMomentSummary, onClose?: () => void): boolean {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeContactMomentWritesDisabled();
+			return false;
+		}
+		const target = this.resolveCanonicalContactMomentSummary(moment);
+		if (!target) {
+			this.noticeContactMomentUnavailable();
+			return false;
+		}
+		return this.openResolvedContactMomentEditor(target, onClose);
+	}
+
+	canUpdateContactMomentFollowUp(moment: ContactMomentSummary): boolean {
+		if (
+			!this.canWritePeopleAtlasData() ||
+			!moment.followUpOn ||
+			(moment.followUpStatus !== undefined && moment.followUpStatus !== "open")
+		) {
+			return false;
+		}
+		const target = this.resolveCanonicalContactMomentSummary(moment);
+		const indexed = this.resolveIndexedContactMomentSummary(moment);
+		return Boolean(
+			target &&
+				indexed?.actionable &&
+				indexed.followUpActionable &&
+				indexed.followUpOn === moment.followUpOn &&
+				indexed.followUpStatus === moment.followUpStatus,
+		);
+	}
+
+	async updateContactMomentFollowUp(moment: ContactMomentSummary, status: "done" | "dismissed"): Promise<boolean> {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeContactMomentWritesDisabled();
+			return false;
+		}
+		if (!this.canUpdateContactMomentFollowUp(moment) || !moment.followUpOn) {
+			new Notice("The selected follow-up changed or is no longer available. Review the current contact moment.");
+			return false;
+		}
+		try {
+			await this.mutations.updateContactMomentFollowUpStatus({
+				filePath: moment.filePath,
+				contactMomentId: moment.id,
+				reviewedPersonIds: [...moment.personIds],
+				...(moment.relationshipId ? { reviewedRelationshipId: moment.relationshipId } : {}),
+				reviewedOccurredOn: moment.occurredOn,
+				reviewedFollowUpOn: moment.followUpOn,
+				reviewedFollowUpStatus: moment.followUpStatus === "open" ? "open" : undefined,
+				status,
+			});
+			new Notice(status === "done" ? "Follow-up marked done." : "Follow-up dismissed.");
+			return true;
+		} catch (error) {
+			new Notice(`The follow-up was not changed: ${error instanceof Error ? error.message : String(error)}`);
+			return false;
+		}
+	}
+
+	private openResolvedContactMomentEditor(target: ResolvedCanonicalContactMoment, onClose?: () => void): boolean {
+		const context = this.contactMomentContext();
+		try {
+			new ContactMomentModal(
+				this.app,
+				{
+					kind: "edit",
+					file: target.file,
+					record: target.contactMoment,
+					sourceBaseline: target.sourceBaseline,
+				},
+				context,
+				this.mutations,
+				() => this.settings,
+				onClose,
+				() => this.contactMomentContext(),
+			).open();
+		} catch (error) {
+			new Notice(
+				`The contact moment cannot be edited until its person references are repaired: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+			);
+			return false;
+		}
+		return true;
+	}
+
+	canOpenContactMoment(contactMomentPath: string): boolean {
+		return this.resolveCanonicalContactMoment(contactMomentPath) !== undefined;
+	}
+
+	async openContactMoment(contactMomentPath: string): Promise<boolean> {
+		const target = this.resolveCanonicalContactMoment(contactMomentPath);
+		if (!target) {
+			this.noticeContactMomentUnavailable();
+			return false;
+		}
+		try {
+			await this.app.workspace.getLeaf("tab").openFile(target.file);
+			return true;
+		} catch (error) {
+			new Notice(
+				`The contact-moment note could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return false;
+		}
+	}
+
+	private relationshipTemplateCreation(): RelationshipTemplateCreation {
+		return {
+			enabled: () => this.canWritePeopleAtlasData(),
+			save: async (template) =>
+				this.updateSetting("relationshipPresets", [...this.settings.relationshipPresets, template]),
+		};
+	}
+
+	private resolveCanonicalRelationship(
+		relationshipPath: string,
+	): { file: TFile; relationship: RelationshipRecord } | undefined {
+		const relationships = this.index.getSnapshot().relationships;
+		const canonicalMatches = relationships.filter((candidate) => candidate.filePath === relationshipPath);
+		if (canonicalMatches.length !== 1) return undefined;
+		const indexedRelationship = canonicalMatches[0];
+		if (!indexedRelationship) return undefined;
+		if (relationships.filter((candidate) => candidate.id === indexedRelationship.id).length !== 1) return undefined;
+
+		const file = this.app.vault.getAbstractFileByPath(relationshipPath);
+		if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return undefined;
+		const cache = this.app.metadataCache.getFileCache(file);
+		const currentRelationship = parseAtlasFile(this.app, file, cache, this.settings).relationship;
+		if (!currentRelationship || currentRelationship.id !== indexedRelationship.id) return undefined;
+
+		return { file, relationship: currentRelationship };
+	}
+
+	private resolveCanonicalContactMoment(contactMomentPath: string): ResolvedCanonicalContactMoment | undefined {
+		const contactMoments = this.index.getSnapshot().contactMoments ?? [];
+		const pathMatches = contactMoments.filter((candidate) => candidate.filePath === contactMomentPath);
+		if (pathMatches.length !== 1) return undefined;
+		const indexedContactMoment = pathMatches[0];
+		if (
+			!indexedContactMoment ||
+			contactMoments.filter((candidate) => candidate.id === indexedContactMoment.id).length !== 1
+		) {
+			return undefined;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(contactMomentPath);
+		if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return undefined;
+		const cache = this.app.metadataCache.getFileCache(file);
+		const currentContactMoment = parseAtlasFile(this.app, file, cache, this.settings).contactMoment;
+		if (!currentContactMoment || currentContactMoment.id !== indexedContactMoment.id) return undefined;
+		const sourceBaseline = captureContactMomentEditSourceBaseline(cache?.frontmatter ?? {}, this.settings);
+		return { file, contactMoment: currentContactMoment, sourceBaseline };
+	}
+
+	private resolveCanonicalContactMomentSummary(
+		moment: ContactMomentSummary,
+	): ResolvedCanonicalContactMoment | undefined {
+		const target = this.resolveCanonicalContactMoment(moment.filePath);
+		if (!target || target.contactMoment.id !== moment.id) return undefined;
+		return this.resolveIndexedContactMomentSummary(moment) ? target : undefined;
+	}
+
+	private resolveIndexedContactMomentSummary(moment: ContactMomentSummary): ContactMomentRecord | undefined {
+		const indexedMatches = (this.index.getSnapshot().contactMoments ?? []).filter(
+			(candidate) => candidate.id === moment.id && candidate.filePath === moment.filePath,
+		);
+		const indexed = indexedMatches.length === 1 ? indexedMatches[0] : undefined;
+		if (
+			!indexed?.actionable ||
+			indexed.occurredOn !== moment.occurredOn ||
+			indexed.relationshipId !== moment.relationshipId ||
+			indexed.personIds.length !== moment.personIds.length ||
+			indexed.personIds.some((personId, index) => personId !== moment.personIds[index])
+		) {
+			return undefined;
+		}
+		return indexed;
+	}
+
+	private contactMomentContext(): ContactMomentFormContext {
+		const snapshot = this.index.getSnapshot();
+		return {
+			people: snapshot.people,
+			relationships: snapshot.relationships,
+			resolveLink: (target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
+		};
+	}
+
+	private resolveCanonicalPerson(personPath: string):
+		| {
+				file: TFile;
+				person: PersonRecord;
+				frontmatter: Record<string, unknown>;
+				personClassification: "type" | "tag";
+		  }
+		| undefined {
+		const people = this.index.getSnapshot().people;
+		const pathMatches = people.filter((candidate) => candidate.filePath === personPath);
+		if (pathMatches.length !== 1) return undefined;
+		const indexedPerson = pathMatches[0];
+		if (!indexedPerson || people.filter((candidate) => candidate.id === indexedPerson.id).length !== 1) {
+			return undefined;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(personPath);
+		if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return undefined;
+		const cache = this.app.metadataCache.getFileCache(file);
+		const currentPerson = parseAtlasFile(this.app, file, cache, this.settings).person;
+		if (!currentPerson || currentPerson.id !== indexedPerson.id) return undefined;
+		const rawType = cache?.frontmatter?.[this.settings.typeProperty];
+		const personClassification =
+			typeof rawType === "string" && rawType.trim().toLowerCase() === this.settings.personTypeValue.trim().toLowerCase()
+				? "type"
+				: "tag";
+		return {
+			file,
+			person: currentPerson,
+			frontmatter: cache?.frontmatter ?? {},
+			personClassification,
+		};
+	}
+
+	private noticePersonWritesDisabled(): void {
+		new Notice("Person creation and editing are read-only until the People Atlas plugin data is repaired.");
+	}
+
+	private noticeRelationshipUnavailable(): void {
+		new Notice("The selected relationship is no longer available in the People Atlas index.");
+	}
+
+	private noticeRelationshipWritesDisabled(): void {
+		new Notice("Relationship creation and editing are read-only until the People Atlas plugin data is repaired.");
+	}
+
+	private noticeContactMomentUnavailable(): void {
+		new Notice("The selected contact moment is no longer available in the People Atlas index.");
+	}
+
+	private noticeContactMomentWritesDisabled(): void {
+		new Notice("Contact-moment creation and editing are read-only until the People Atlas plugin data is repaired.");
 	}
 }
 
@@ -366,7 +879,6 @@ function presetValues(preset: RelationshipPreset): RelationshipPresetSyncChange[
 	return {
 		presetId: preset.id,
 		types: [...preset.types],
-		direction: preset.direction,
 		fromRole: preset.fromRole,
 		toRole: preset.toRole,
 	};

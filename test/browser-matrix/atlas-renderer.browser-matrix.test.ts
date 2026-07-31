@@ -14,7 +14,10 @@ const matrixNode: AtlasNode = {
 	kind: "person",
 	label: "Matrix person",
 	filePath: "People/Matrix person.md",
+	photoPath: "Assets/Matrix person.png",
 	organisations: [],
+	emails: [],
+	phones: [],
 	isCenter: true,
 };
 
@@ -22,20 +25,78 @@ function matrixSnapshot(): AtlasSnapshot {
 	return {
 		nodes: [matrixNode],
 		edges: [],
+		contactMoments: [],
 		diagnostics: [],
 		hiddenNodeCount: 0,
 		hiddenEdgeCount: 0,
+		hiddenContactMomentCount: 0,
 		generatedAt: 1,
 	};
 }
 
-function callbacks() {
+function callbacks(resolvePersonPhoto?: AtlasRendererCallbacks["resolvePersonPhoto"]) {
 	return {
 		onOpenNode: vi.fn<AtlasRendererCallbacks["onOpenNode"]>(),
 		onCenterNode: vi.fn<AtlasRendererCallbacks["onCenterNode"]>(),
 		onSelectNode: vi.fn<AtlasRendererCallbacks["onSelectNode"]>(),
 		onLayoutChanged: vi.fn<NonNullable<AtlasRendererCallbacks["onLayoutChanged"]>>(),
+		resolvePersonPhoto,
 	};
+}
+
+function wideRasterDataUrl(doc: Document): string {
+	const canvas = doc.createElement("canvas");
+	canvas.width = 512;
+	canvas.height = 256;
+	const context = canvas.getContext("2d");
+	if (!context) throw new Error(`[DPR ${expectedFactor}] avatar fixture canvas is unavailable.`);
+	context.fillStyle = "rgb(255, 0, 0)";
+	context.fillRect(0, 0, 128, 256);
+	context.fillStyle = "rgb(0, 255, 0)";
+	context.fillRect(128, 0, 256, 256);
+	context.fillStyle = "rgb(0, 0, 255)";
+	context.fillRect(384, 0, 128, 256);
+	return canvas.toDataURL("image/png");
+}
+
+function photoResolver(resourceUrl: string): NonNullable<AtlasRendererCallbacks["resolvePersonPhoto"]> {
+	return (photoPath) => ({
+		status: "ready",
+		resourceUrl,
+		cacheKey: `${photoPath}\u000042:4096`,
+	});
+}
+
+function canvasPixelAtCss(canvas: HTMLCanvasElement, x: number, y: number, ratio: number): Uint8ClampedArray {
+	const context = canvas.getContext("2d");
+	if (!context) throw new Error(`[DPR ${expectedFactor}] graph canvas context is unavailable.`);
+	return context.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data;
+}
+
+function expectGreenAvatarPixel(pixel: Uint8ClampedArray, boundary: string): void {
+	expect(pixel[0], `[DPR ${expectedFactor}] ${boundary}: red channel`).toBeLessThan(20);
+	expect(pixel[1], `[DPR ${expectedFactor}] ${boundary}: green channel`).toBeGreaterThan(235);
+	expect(pixel[2], `[DPR ${expectedFactor}] ${boundary}: blue channel`).toBeLessThan(20);
+	expect(pixel[3], `[DPR ${expectedFactor}] ${boundary}: alpha channel`).toBe(255);
+}
+
+function trackFillTextAlignment(win: Window & typeof globalThis): {
+	alignments: Array<{ text: string; textAlign: CanvasTextAlign }>;
+} {
+	const alignments: Array<{ text: string; textAlign: CanvasTextAlign }> = [];
+	const nativeFillText = win.CanvasRenderingContext2D.prototype.fillText;
+	vi.spyOn(win.CanvasRenderingContext2D.prototype, "fillText").mockImplementation(function (
+		this: CanvasRenderingContext2D,
+		text: string,
+		x: number,
+		y: number,
+		maxWidth?: number,
+	): void {
+		alignments.push({ text, textAlign: this.textAlign });
+		if (maxWidth === undefined) nativeFillText.call(this, text, x, y);
+		else nativeFillText.call(this, text, x, y, maxWidth);
+	});
+	return { alignments };
 }
 
 function fixedContainer(doc: Document, size: { width: number; height: number }): HTMLDivElement {
@@ -121,7 +182,8 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 		).toBe(expectedFactor);
 
 		const container = fixedContainer(document, primarySize);
-		const rendererCallbacks = callbacks();
+		const fillText = trackFillTextAlignment(window);
+		const rendererCallbacks = callbacks(photoResolver(wideRasterDataUrl(document)));
 		const renderer = new AtlasRenderer(container, () => DEFAULT_SETTINGS, rendererCallbacks);
 		renderer.setGraph(matrixSnapshot());
 		const canvas = page.getByRole("application", { name: "Interactive people and relationship atlas" });
@@ -141,6 +203,31 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			if (!context || canvasElement.width < 1 || canvasElement.height < 1) return false;
 			return context.getImageData(canvasElement.width - 1, canvasElement.height - 1, 1, 1).data[3] === 255;
 		});
+		await waitFor("main-document avatar decode", () => renderer.getPhotoCacheStats().ready === 1);
+		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+		const avatarLayout = renderer.getLayoutSnapshot();
+		const avatarPosition = avatarLayout.positions[matrixNode.id];
+		if (!avatarPosition) throw new Error(`[DPR ${expectedFactor}] matrix avatar has no layout position.`);
+		const avatarX = avatarPosition.x * avatarLayout.camera.scale + avatarLayout.camera.x;
+		const avatarY = avatarPosition.y * avatarLayout.camera.scale + avatarLayout.camera.y;
+		expectGreenAvatarPixel(
+			canvasPixelAtCss(canvasElement, avatarX, avatarY, expectedFactor),
+			"main-document center crop",
+		);
+		const ringPixel = canvasPixelAtCss(
+			canvasElement,
+			avatarX + 23 * avatarLayout.camera.scale,
+			avatarY,
+			expectedFactor,
+		);
+		expect(
+			(ringPixel[1] ?? 0) < 235 || (ringPixel[0] ?? 0) >= 20 || (ringPixel[2] ?? 0) >= 20,
+			`[DPR ${expectedFactor}] main-document ring must remain painted over the avatar`,
+		).toBe(true);
+		expect(
+			fillText.alignments.some(({ text, textAlign }) => text === matrixNode.label && textAlign === "center"),
+			`[DPR ${expectedFactor}] main-document label must remain painted beside the avatar`,
+		).toBe(true);
 
 		const box = canvasElement.getBoundingClientRect();
 		await canvas.click({ position: { x: box.width / 2, y: box.height / 2 } });
@@ -204,9 +291,11 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 
 			const popupWindow = popup as Window & typeof globalThis;
 			const NativeResizeObserver = popupWindow.ResizeObserver;
+			const NativeImage = popupWindow.Image;
 			const nativeRequestAnimationFrame = popupWindow.requestAnimationFrame.bind(popupWindow);
 			const nativeCancelAnimationFrame = popupWindow.cancelAnimationFrame.bind(popupWindow);
 			const observedTargets: Element[] = [];
+			const popupImages: HTMLImageElement[] = [];
 			let observerDisconnects = 0;
 			const requestedFrames: number[] = [];
 			const cancelledFrames: number[] = [];
@@ -234,9 +323,19 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 				}
 			}
 
+			function ObservablePopupImage(): HTMLImageElement {
+				const image = new NativeImage();
+				popupImages.push(image);
+				return image;
+			}
+
 			Object.defineProperty(popupWindow, "ResizeObserver", {
 				configurable: true,
 				value: ObservablePopupResizeObserver,
+			});
+			Object.defineProperty(popupWindow, "Image", {
+				configurable: true,
+				value: ObservablePopupImage,
 			});
 			Object.defineProperty(popupWindow, "requestAnimationFrame", {
 				configurable: true,
@@ -261,7 +360,9 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			});
 
 			const popupContainer = fixedContainer(popupDocument, primarySize);
-			const popupCallbacks = callbacks();
+			const popupDrawImage = vi.spyOn(popupWindow.CanvasRenderingContext2D.prototype, "drawImage");
+			const popupFillText = trackFillTextAlignment(popupWindow);
+			const popupCallbacks = callbacks(photoResolver(wideRasterDataUrl(popupDocument)));
 			const renderer = new AtlasRenderer(popupContainer, () => DEFAULT_SETTINGS, popupCallbacks);
 			renderer.setGraph(matrixSnapshot());
 			const root = popupDocument.querySelector<HTMLElement>(".people-atlas-renderer");
@@ -293,6 +394,43 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			expect(observedTargets).toContain(popupSurface);
 			expect(observedTargets.every((target) => target.ownerDocument === popupDocument)).toBe(true);
 			expect(requestedFrames.length).toBeGreaterThan(0);
+			await waitFor("popup avatar decode", () => renderer.getPhotoCacheStats().ready === 1);
+			await new Promise<void>((resolve) => popupWindow.requestAnimationFrame(() => resolve()));
+			expect(popupImages).toHaveLength(1);
+			expect(popupImages[0]?.ownerDocument).toBe(popupDocument);
+			expect(popupImages[0]?.hasAttribute("src")).toBe(false);
+			const popupThumbnailDraw = popupDrawImage.mock.calls.find(
+				([source]) => source instanceof popupWindow.HTMLCanvasElement && source !== canvas,
+			);
+			expect(
+				popupThumbnailDraw,
+				`[DPR ${expectedFactor}] popup avatar must use a popup-owned thumbnail canvas`,
+			).toBeDefined();
+			expect((popupThumbnailDraw?.[0] as HTMLCanvasElement | undefined)?.ownerDocument).toBe(popupDocument);
+			expect((popupThumbnailDraw?.[0] as HTMLCanvasElement | undefined)?.ownerDocument).not.toBe(document);
+			const popupLayout = renderer.getLayoutSnapshot();
+			const popupPosition = popupLayout.positions[matrixNode.id];
+			if (!popupPosition) throw new Error(`[DPR ${expectedFactor}] popup avatar has no layout position.`);
+			const popupAvatarX = popupPosition.x * popupLayout.camera.scale + popupLayout.camera.x;
+			const popupAvatarY = popupPosition.y * popupLayout.camera.scale + popupLayout.camera.y;
+			expectGreenAvatarPixel(
+				canvasPixelAtCss(canvas as HTMLCanvasElement, popupAvatarX, popupAvatarY, expectedFactor),
+				"popup center crop",
+			);
+			const popupRingPixel = canvasPixelAtCss(
+				canvas as HTMLCanvasElement,
+				popupAvatarX + 23 * popupLayout.camera.scale,
+				popupAvatarY,
+				expectedFactor,
+			);
+			expect(
+				(popupRingPixel[1] ?? 0) < 235 || (popupRingPixel[0] ?? 0) >= 20 || (popupRingPixel[2] ?? 0) >= 20,
+				`[DPR ${expectedFactor}] popup ring must remain painted over the avatar`,
+			).toBe(true);
+			expect(
+				popupFillText.alignments.some(({ text, textAlign }) => text === matrixNode.label && textAlign === "center"),
+				`[DPR ${expectedFactor}] popup label must remain painted beside the avatar`,
+			).toBe(true);
 
 			await userEvent.click(listMode as HTMLButtonElement);
 			const popupPerson = popupDocument.querySelector<HTMLButtonElement>(".people-atlas-person-button");
@@ -311,6 +449,14 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 			const pendingFrame = Array.from(pendingFrames)[0] as number;
 			const capturedPressed = listMode?.getAttribute("aria-pressed");
 			renderer.destroy();
+			expect(renderer.getPhotoCacheStats()).toMatchObject({
+				ready: 0,
+				pending: 0,
+				failed: 0,
+				total: 0,
+				retainedPixels: 0,
+				destroyed: true,
+			});
 			expect(dialog?.open, `${popupTeardown}: destroy must close the native dialog`).toBe(false);
 			expect(observerDisconnects, `${popupTeardown}: destroy must disconnect the popup observer exactly once`).toBe(1);
 			expect(cancelledFrames, `${popupTeardown}: destroy must cancel the pending popup frame`).toContain(pendingFrame);

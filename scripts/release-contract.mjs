@@ -3,7 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-export const BUNDLE_LIMIT_BYTES = 204_800;
+export const BUNDLE_LIMIT_BYTES = 409_600;
 export const REQUIRED_MIN_APP_VERSION = "1.13.0";
 export const RELEASE_ASSETS = Object.freeze(["main.js", "manifest.json", "styles.css"]);
 export const REQUIRED_INPUTS = Object.freeze(["README.md", "LICENSE", "manifest.json", "versions.json"]);

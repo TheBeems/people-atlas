@@ -1,6 +1,7 @@
-Status: active
+Status: superseded
 Created: 2026-07-25
-Updated: 2026-07-25
+Updated: 2026-07-30
+Superseded-By: `.10x/specs/perspective-relationship-editor-templates.md`
 
 # P3b — Relationship editor user interface
 

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-25
-Updated: 2026-07-25
+Updated: 2026-07-30
 
 # P4 — Projection modes, contact-health ordering and persisted view state
 
@@ -73,8 +73,9 @@ implicit behavior.
 - `free-network` includes every input node and every edge whose endpoints are
   included. It has no center, regardless of center-mode context.
 - `ego` includes the resolved center and nodes reachable through undirected
-  adjacency up to `hops`. Directional relationship metadata remains unchanged
-  in the returned edges; traversal is intentionally about network proximity.
+  adjacency up to `hops`. Endpoint roles, type, status, dates and other rich
+  relationship metadata remain unchanged in the returned edges; traversal is
+  intentionally about network proximity.
 - `contact-health` uses the same node inclusion as `ego` when a valid center is
   available and the same inclusion as `free-network` otherwise. Its edges are
   ordered deterministically by `lastContact`: valid dates oldest first,
@@ -156,7 +157,8 @@ When the projection is `ego`, center mode is `configured`, center ID is
 `alice`, and `hops` is `2`
 
 Then Alice is the only center, nodes at distance 0–2 are included, farther
-nodes are hidden, and relationship direction/status/date metadata is unchanged.
+nodes are hidden, and relationship role/type/status/date metadata is
+unchanged.
 
 ### No-center full network
 

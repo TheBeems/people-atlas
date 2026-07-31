@@ -7,17 +7,22 @@ const snapshot: AtlasSnapshot = {
 	diagnostics: [],
 	hiddenNodeCount: 0,
 	hiddenEdgeCount: 0,
+	hiddenContactMomentCount: 0,
+	contactMoments: [],
 	nodes: ["a", "b", "c", "d"].map((id) => ({
 		id,
 		kind: "person" as const,
+		personId: id,
 		label: id,
 		organisations: [],
+		emails: [],
+		phones: [],
 		isCenter: false,
 	})),
 	edges: [
-		{ id: "ab", sourceId: "a", targetId: "b", types: [], direction: "undirected", inferred: true },
-		{ id: "bc", sourceId: "b", targetId: "c", types: [], direction: "undirected", inferred: true },
-		{ id: "cd", sourceId: "c", targetId: "d", types: [], direction: "undirected", inferred: true },
+		{ id: "ab", sourceId: "a", targetId: "b", types: [], inferred: true },
+		{ id: "bc", sourceId: "b", targetId: "c", types: [], inferred: true },
+		{ id: "cd", sourceId: "c", targetId: "d", types: [], inferred: true },
 	],
 };
 
@@ -111,5 +116,44 @@ describe("projectGraph", () => {
 
 		expect(projected.hiddenNodeCount).toBe(2);
 		expect(projected.hiddenEdgeCount).toBe(2);
+	});
+
+	it("filters multi-person and linked contact summaries after ego and node-limit projection exactly once", () => {
+		const withMoments: AtlasSnapshot = {
+			...snapshot,
+			contactMoments: [
+				{
+					id: "multi",
+					filePath: "Moments/Multi.md",
+					personIds: ["a", "b"],
+					occurredOn: "2026-07-30",
+				},
+				{
+					id: "linked",
+					filePath: "Moments/Linked.md",
+					personIds: ["a"],
+					relationshipId: "ab",
+					occurredOn: "2026-07-31",
+				},
+			],
+			hiddenContactMomentCount: 2,
+			edges: [
+				{ id: "ab", sourceId: "a", targetId: "b", types: ["friend"], inferred: false },
+				...snapshot.edges.slice(1),
+			],
+		};
+
+		const projected = projectGraph(withMoments, {
+			centerId: "a",
+			centerMode: "configured",
+			projectionMode: "ego",
+			hops: 0,
+			maxNodes: 1,
+		});
+
+		expect(projected.contactMoments).toEqual([]);
+		expect(projected.hiddenContactMomentCount).toBe(4);
+		expect(projected.hiddenNodeCount).toBe(3);
+		expect(projected.hiddenEdgeCount).toBe(3);
 	});
 });

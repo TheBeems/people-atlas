@@ -1,0 +1,588 @@
+import type { App, TFile } from "obsidian";
+import { TFile as StubTFile } from "obsidian";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PersonRecord, RelationshipRecord } from "../../src/domain/types";
+import {
+	RelationshipModal,
+	type RelationshipModalMode,
+	type RelationshipTemplateCreation,
+} from "../../src/editor/relationship-modal";
+import type { AtlasMutationService } from "../../src/mutations/atlas-mutation-service";
+import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
+import { RelationshipPresetModal } from "../../src/settings/relationship-preset-modal";
+import type { RelationshipPreset } from "../../src/settings/relationship-presets";
+import type { PeopleAtlasSettings } from "../../src/settings/types";
+import "../../styles.css";
+
+const alice: PersonRecord = {
+	id: "person-alice",
+	filePath: "People/Alice.md",
+	name: "Alice",
+	aliases: [],
+	organisations: [],
+	emails: [],
+	phones: [],
+	contacts: [],
+};
+
+const bob: PersonRecord = {
+	id: "person-bob",
+	filePath: "People/Bob.md",
+	name: "Bob",
+	aliases: [],
+	organisations: [],
+	emails: [],
+	phones: [],
+	contacts: [],
+};
+
+const charlie: PersonRecord = {
+	id: "person-charlie",
+	filePath: "People/Charlie.md",
+	name: "Charlie",
+	aliases: [],
+	organisations: [],
+	emails: [],
+	phones: [],
+	contacts: [],
+};
+
+const friendship: RelationshipPreset = {
+	id: "friendship",
+	name: "Friendship",
+	types: ["friend"],
+	fromRole: "friend",
+	toRole: "friend",
+};
+
+interface SettingsReference {
+	current: PeopleAtlasSettings;
+}
+
+interface MountedRelationshipModal {
+	modal: RelationshipModal;
+	content: HTMLElement;
+	form: HTMLFormElement;
+	settings: SettingsReference;
+	createRelationship: ReturnType<typeof vi.fn>;
+	updateRelationship: ReturnType<typeof vi.fn>;
+	openFile: ReturnType<typeof vi.fn>;
+	close: ReturnType<typeof vi.fn>;
+	afterClose: ReturnType<typeof vi.fn>;
+}
+
+function mountModal(options?: {
+	mode?: RelationshipModalMode;
+	settings?: PeopleAtlasSettings;
+	templateCreation?: RelationshipTemplateCreation;
+	createRelationship?: ReturnType<typeof vi.fn>;
+	updateRelationship?: ReturnType<typeof vi.fn>;
+	getCurrentPeople?: () => PersonRecord[];
+	width?: number;
+	ownerDocument?: Document;
+}): MountedRelationshipModal {
+	const settings = { current: structuredClone(options?.settings ?? DEFAULT_SETTINGS) };
+	const createRelationship = options?.createRelationship ?? vi.fn(async () => relationshipFile("Created.md"));
+	const updateRelationship = options?.updateRelationship ?? vi.fn(async () => undefined);
+	const openFile = vi.fn(async () => undefined);
+	const app = {
+		metadataCache: {
+			getFirstLinkpathDest: (target: string) => {
+				const person = [alice, bob, charlie].find(
+					(candidate) =>
+						candidate.id === target ||
+						candidate.filePath === target ||
+						candidate.filePath.replace(/\.md$/i, "") === target,
+				);
+				return person ? ({ path: person.filePath } as TFile) : null;
+			},
+		},
+		workspace: {
+			getLeaf: () => ({ openFile }),
+		},
+	} as unknown as App;
+	const afterClose = vi.fn();
+	const modal = new RelationshipModal(
+		app,
+		options?.mode ?? {
+			kind: "create",
+			fromPersonPath: alice.filePath,
+			toPersonPath: bob.filePath,
+			myPersonPath: alice.filePath,
+		},
+		[alice, bob, charlie],
+		{ createRelationship, updateRelationship } as unknown as AtlasMutationService,
+		() => settings.current,
+		afterClose,
+		options?.templateCreation,
+		options?.getCurrentPeople,
+	);
+	const ownerDocument = options?.ownerDocument ?? document;
+	const title = ownerDocument.createElement("h2");
+	const content = ownerDocument.createElement("div");
+	content.style.boxSizing = "border-box";
+	content.style.width = `${options?.width ?? 640}px`;
+	content.style.height = "360px";
+	content.style.overflow = "auto";
+	ownerDocument.body.append(title, content);
+	modal.titleEl = title;
+	modal.contentEl = content;
+	const close = vi.fn(() => modal.onClose());
+	modal.close = close;
+	modal.onOpen();
+	const form = content.querySelector<HTMLFormElement>("form");
+	if (!form) throw new Error("Relationship form was not mounted.");
+	return {
+		modal,
+		content,
+		form,
+		settings,
+		createRelationship,
+		updateRelationship,
+		openFile,
+		close,
+		afterClose,
+	};
+}
+
+function relationshipFile(path: string): TFile {
+	const file = new StubTFile();
+	file.path = path;
+	return file;
+}
+
+function inputForLabel(content: HTMLElement, text: string): HTMLInputElement {
+	const label = Array.from(content.querySelectorAll("label")).find((candidate) => candidate.textContent === text);
+	const input = label?.htmlFor ? content.querySelector<HTMLInputElement>(`#${label.htmlFor}`) : null;
+	if (!input) throw new Error(`No input found for ${text}.`);
+	return input;
+}
+
+function selectForLabel(content: HTMLElement, text: string): HTMLSelectElement {
+	const label = Array.from(content.querySelectorAll("label")).find((candidate) => candidate.textContent === text);
+	const select = label?.htmlFor ? content.querySelector<HTMLSelectElement>(`#${label.htmlFor}`) : null;
+	if (!select) throw new Error(`No select found for ${text}.`);
+	return select;
+}
+
+function buttonWithText(content: HTMLElement, text: string): HTMLButtonElement {
+	const button = Array.from(content.querySelectorAll("button")).find((candidate) => candidate.textContent === text);
+	if (!button) throw new Error(`No button found for ${text}.`);
+	return button;
+}
+
+function setInput(input: HTMLInputElement, value: string): void {
+	input.value = value;
+	input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function choose(select: HTMLSelectElement, value: string): void {
+	select.value = value;
+	select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+afterEach(() => {
+	document.body.replaceChildren();
+	vi.restoreAllMocks();
+});
+
+describe("relationship modal", () => {
+	it("keeps one semantic form and every unsaved value while a new template is saved and choices refresh", async () => {
+		let mounted: MountedRelationshipModal | undefined;
+		const save = vi.fn(async (preset: RelationshipPreset) => {
+			if (!mounted) return false;
+			mounted.settings.current = {
+				...mounted.settings.current,
+				relationshipPresets: [...mounted.settings.current.relationshipPresets, preset],
+			};
+			return true;
+		});
+		const templateCreation: RelationshipTemplateCreation = {
+			enabled: () => true,
+			save,
+		};
+		let nestedModal: RelationshipPresetModal | undefined;
+		vi.spyOn(RelationshipPresetModal.prototype, "open").mockImplementation(function (this: RelationshipPresetModal) {
+			this.titleEl = document.createElement("h2");
+			this.contentEl = document.createElement("div");
+			nestedModal = this;
+		});
+		mounted = mountModal({ templateCreation });
+		const { content, form } = mounted;
+
+		expect(
+			Array.from(form.children)
+				.filter((child) => child.matches("fieldset, details"))
+				.map((child) => child.querySelector("legend, summary")?.textContent?.split(" — ")[0]),
+		).toEqual(["People", "Relationship", "Context", "Advanced"]);
+		const advanced = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-advanced");
+		expect(advanced?.querySelector("summary")?.textContent).toContain(
+			"Destination: People/Relationships/Alice - Bob.md",
+		);
+		expect(content.textContent).toContain("No relationship templates yet");
+		expect(content.textContent).toContain("Manual relationship values remain available.");
+		expect(selectForLabel(content, "Relationship template").options[0]?.textContent).toBe(
+			"No template — enter values manually",
+		);
+		for (const control of Array.from(
+			content.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+				".people-atlas-form-field input, .people-atlas-form-field select",
+			),
+		)) {
+			const descriptionId = control.getAttribute("aria-describedby");
+			expect(descriptionId).toBeTruthy();
+			expect(descriptionId ? content.querySelector(`#${descriptionId}`) : null).not.toBeNull();
+		}
+
+		setInput(inputForLabel(content, "Relationship types"), "manual-type");
+		setInput(inputForLabel(content, "My role"), "manual-first-role");
+		setInput(inputForLabel(content, "Bob's role"), "manual-second-role");
+		setInput(inputForLabel(content, "Closeness"), "4");
+		setInput(inputForLabel(content, "Since"), "2020-01-02");
+		setInput(inputForLabel(content, "Last contact"), "2026-07-30");
+		choose(selectForLabel(content, "Status"), "active");
+		if (!advanced) throw new Error("Expected Advanced disclosure.");
+		advanced.open = true;
+		setInput(inputForLabel(content, "Relationship note path"), "People/Relationships/Manual.md");
+		setInput(inputForLabel(content, "Relationship ID"), "relationship-manual");
+		content.scrollTop = 90;
+		const originalScrollTop = content.scrollTop;
+		const createTemplate = buttonWithText(content, "Create template");
+		createTemplate.focus();
+		createTemplate.click();
+		expect(nestedModal).toBeDefined();
+
+		const createdTemplate: RelationshipPreset = {
+			id: "new-template",
+			name: "New template",
+			types: ["new"],
+			fromRole: "new-first",
+			toRole: "new-second",
+		};
+		const nestedSave = (
+			nestedModal as unknown as {
+				onSave(preset: RelationshipPreset): Promise<boolean>;
+			}
+		).onSave;
+		expect(await nestedSave(createdTemplate)).toBe(true);
+		nestedModal?.onClose();
+		await vi.waitFor(() => expect(document.activeElement).toBe(createTemplate));
+
+		expect(save).toHaveBeenCalledWith(createdTemplate);
+		expect(content.querySelector("form")).toBe(form);
+		expect(advanced.open).toBe(true);
+		expect(content.scrollTop).toBe(originalScrollTop);
+		expect(inputForLabel(content, "Relationship note path").value).toBe("People/Relationships/Manual.md");
+		expect(inputForLabel(content, "Relationship ID").value).toBe("relationship-manual");
+		expect(inputForLabel(content, "Relationship types").value).toBe("manual-type");
+		expect(inputForLabel(content, "My role").value).toBe("manual-first-role");
+		expect(inputForLabel(content, "Bob's role").value).toBe("manual-second-role");
+		expect(inputForLabel(content, "Closeness").value).toBe("4");
+		expect(inputForLabel(content, "Since").value).toBe("2020-01-02");
+		expect(inputForLabel(content, "Last contact").value).toBe("2026-07-30");
+		expect(selectForLabel(content, "Status").value).toBe("active");
+		const templateSelect = selectForLabel(content, "Relationship template");
+		expect(Array.from(templateSelect.options).map((option) => option.value)).toContain("new-template");
+		expect(templateSelect.value).toBe("");
+		expect(content.querySelector<HTMLElement>(".people-atlas-template-empty-state")?.hidden).toBe(true);
+	});
+
+	it("updates dynamic labels, applies, modifies, reapplies and detaches a template without replacing controls", () => {
+		const { content, form } = mountModal({
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
+			templateCreation: { enabled: () => true, save: vi.fn(async () => true) },
+		});
+		expect(inputForLabel(content, "My role").value).toBe("");
+		expect(inputForLabel(content, "Bob's role").value).toBe("");
+		const firstPerson = inputForLabel(content, "First person — Alice");
+		firstPerson.focus();
+		setInput(firstPerson, charlie.filePath);
+		expect(document.activeElement).toBe(firstPerson);
+		expect(inputForLabel(content, "Charlie's role")).toBeDefined();
+		expect(inputForLabel(content, "Bob's role")).toBeDefined();
+		expect(content.querySelector("form")).toBe(form);
+
+		setInput(firstPerson, alice.filePath);
+		const advanced = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-advanced");
+		if (!advanced) throw new Error("Expected Advanced disclosure.");
+		advanced.open = true;
+		setInput(inputForLabel(content, "Relationship note path"), "People/Relationships/Keep me.md");
+		const templateSelect = selectForLabel(content, "Relationship template");
+		templateSelect.focus();
+		choose(templateSelect, friendship.id);
+		expect(document.activeElement).toBe(templateSelect);
+		expect(inputForLabel(content, "Relationship types").value).toBe("friend");
+		expect(inputForLabel(content, "My role").value).toBe("friend");
+		expect(inputForLabel(content, "Bob's role").value).toBe("friend");
+		expect(content.textContent).toContain("In this relationship, Alice's role is friend and Bob's role is friend.");
+
+		setInput(inputForLabel(content, "Relationship types"), "locally changed");
+		setInput(inputForLabel(content, "Bob's role"), "locally changed");
+		const applyLatest = buttonWithText(content, "Apply latest template values");
+		expect(applyLatest.hidden).toBe(false);
+		applyLatest.focus();
+		applyLatest.click();
+		expect(document.activeElement).toBe(applyLatest);
+		expect(inputForLabel(content, "Relationship types").value).toBe("friend");
+		expect(inputForLabel(content, "Bob's role").value).toBe("friend");
+		expect(inputForLabel(content, "Relationship note path").value).toBe("People/Relationships/Keep me.md");
+		expect(advanced.open).toBe(true);
+		expect(content.querySelector("form")).toBe(form);
+
+		templateSelect.focus();
+		choose(templateSelect, "");
+		expect(document.activeElement).toBe(templateSelect);
+		expect(inputForLabel(content, "Relationship types").value).toBe("friend");
+		expect(inputForLabel(content, "My role").value).toBe("friend");
+		expect(inputForLabel(content, "Bob's role").value).toBe("friend");
+		expect(content.textContent).toContain("No template is selected.");
+		expect(content.querySelector("form")).toBe(form);
+	});
+
+	it("resynchronizes a template selection that disappears before it can be applied", () => {
+		const { content, settings } = mountModal({
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
+			templateCreation: { enabled: () => true, save: vi.fn(async () => true) },
+		});
+		const firstPerson = inputForLabel(content, "First person — Alice");
+		const secondPerson = inputForLabel(content, "Second person — Bob");
+		const types = inputForLabel(content, "Relationship types");
+		const firstRole = inputForLabel(content, "My role");
+		const secondRole = inputForLabel(content, "Bob's role");
+		const closeness = inputForLabel(content, "Closeness");
+		const path = inputForLabel(content, "Relationship note path");
+		setInput(types, "manual");
+		setInput(firstRole, "mentor");
+		setInput(secondRole, "mentee");
+		setInput(closeness, "4");
+		setInput(path, "People/Relationships/Keep manual.md");
+		const templateSelect = selectForLabel(content, "Relationship template");
+
+		settings.current = { ...settings.current, relationshipPresets: [] };
+		choose(templateSelect, friendship.id);
+
+		expect(Array.from(templateSelect.options).map((option) => option.value)).toEqual([""]);
+		expect(templateSelect.value).toBe("");
+		expect(content.textContent).toContain("No template is selected.");
+		expect(firstPerson.value).toBe(alice.filePath);
+		expect(secondPerson.value).toBe(bob.filePath);
+		expect(types.value).toBe("manual");
+		expect(firstRole.value).toBe("mentor");
+		expect(secondRole.value).toBe("mentee");
+		expect(closeness.value).toBe("4");
+		expect(path.value).toBe("People/Relationships/Keep manual.md");
+	});
+
+	it("shows a selected template as missing when it disappears before reapply", () => {
+		const { content, settings } = mountModal({
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
+			templateCreation: { enabled: () => true, save: vi.fn(async () => true) },
+		});
+		const templateSelect = selectForLabel(content, "Relationship template");
+		choose(templateSelect, friendship.id);
+		setInput(inputForLabel(content, "Closeness"), "4");
+		const path = inputForLabel(content, "Relationship note path");
+		setInput(path, "People/Relationships/Keep selected.md");
+
+		settings.current = { ...settings.current, relationshipPresets: [] };
+		buttonWithText(content, "Apply latest template values").click();
+
+		expect(Array.from(templateSelect.options).map((option) => [option.value, option.textContent])).toEqual([
+			["", "No template — enter values manually"],
+			[friendship.id, `Missing template — ${friendship.id}`],
+		]);
+		expect(templateSelect.value).toBe(friendship.id);
+		expect(content.textContent).toContain(`Template “${friendship.id}” is unavailable.`);
+		expect(inputForLabel(content, "Relationship types").value).toBe("friend");
+		expect(inputForLabel(content, "My role").value).toBe("friend");
+		expect(inputForLabel(content, "Bob's role").value).toBe("friend");
+		expect(inputForLabel(content, "Closeness").value).toBe("4");
+		expect(path.value).toBe("People/Relationships/Keep selected.md");
+	});
+
+	it("shows inline feedback when settings become read-only after the template editor opens", async () => {
+		let enabled = true;
+		const save = vi.fn(async () => true);
+		let nestedModal: RelationshipPresetModal | undefined;
+		vi.spyOn(RelationshipPresetModal.prototype, "open").mockImplementation(function (this: RelationshipPresetModal) {
+			this.titleEl = document.createElement("h2");
+			this.contentEl = document.createElement("div");
+			document.body.append(this.titleEl, this.contentEl);
+			this.onOpen();
+			nestedModal = this;
+		});
+		const { content } = mountModal({
+			templateCreation: {
+				enabled: () => enabled,
+				save,
+			},
+		});
+		buttonWithText(content, "Create template").click();
+		if (!nestedModal) throw new Error("Expected a nested relationship template modal.");
+		const nestedContent = nestedModal.contentEl;
+		setInput(inputForLabel(nestedContent, "Name"), "Colleague");
+		setInput(inputForLabel(nestedContent, "Relationship types"), "colleague");
+		setInput(inputForLabel(nestedContent, "First-person role"), "colleague");
+		setInput(inputForLabel(nestedContent, "Second-person role"), "colleague");
+
+		enabled = false;
+		buttonWithText(nestedContent, "Save").click();
+		await vi.waitFor(() => expect(nestedContent.textContent).toContain("could not be saved"));
+
+		expect(nestedContent.textContent).toContain("read-only or invalid");
+		expect(save).not.toHaveBeenCalled();
+		expect(buttonWithText(nestedContent, "Save").disabled).toBe(false);
+	});
+
+	it("opens Advanced, associates an identity error and focuses its control without writing a note", async () => {
+		const createRelationship = vi.fn(async () => {
+			throw new Error("relationship_id “relationship-duplicate” is already in use.");
+		});
+		const { content } = mountModal({ createRelationship });
+		const advanced = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-advanced");
+		if (!advanced) throw new Error("Expected Advanced disclosure.");
+		expect(advanced.open).toBe(false);
+		advanced.open = true;
+		const relationshipId = inputForLabel(content, "Relationship ID");
+		setInput(relationshipId, "relationship-duplicate");
+		advanced.open = false;
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(content.textContent).toContain("relationship-duplicate"));
+
+		expect(createRelationship).toHaveBeenCalledOnce();
+		expect(advanced.open).toBe(true);
+		expect(document.activeElement).toBe(relationshipId);
+		expect(relationshipId.getAttribute("aria-invalid")).toBe("true");
+		const describedBy = relationshipId.getAttribute("aria-describedby")?.split(/\s+/) ?? [];
+		expect(describedBy).toHaveLength(2);
+		expect(describedBy.some((id) => content.querySelector(`#${id}`)?.getAttribute("role") === "alert")).toBe(true);
+		expect(buttonWithText(content, "Save").disabled).toBe(false);
+	});
+
+	it("keeps create open and write-free when a selected person disappears after open", async () => {
+		let currentPeople = [alice, bob, charlie];
+		const { content, createRelationship, close } = mountModal({
+			getCurrentPeople: () => currentPeople,
+		});
+		currentPeople = [alice, charlie];
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(content.textContent).toContain("Second person must be selected"));
+
+		expect(createRelationship).not.toHaveBeenCalled();
+		expect(close).not.toHaveBeenCalled();
+		expect(buttonWithText(content, "Save").disabled).toBe(false);
+	});
+
+	it("closes after create and opens the created relationship note", async () => {
+		const createdFile = relationshipFile("People/Relationships/Created relationship.md");
+		const createRelationship = vi.fn(async () => createdFile);
+		const { content, close, afterClose, openFile } = mountModal({ createRelationship });
+
+		buttonWithText(content, "Save").click();
+
+		await vi.waitFor(() => expect(createRelationship).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(openFile).toHaveBeenCalledWith(createdFile));
+		expect(close).toHaveBeenCalledOnce();
+		expect(afterClose).toHaveBeenCalledOnce();
+	});
+
+	it("closes after edit without opening another relationship note", async () => {
+		const relationship: RelationshipRecord = {
+			id: "relationship-alice-bob",
+			filePath: "People/Relationships/Alice - Bob.md",
+			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			types: ["friend"],
+		};
+		const file = relationshipFile(relationship.filePath);
+		const { content, updateRelationship, close, afterClose, openFile } = mountModal({
+			mode: {
+				kind: "edit",
+				file,
+				relationship,
+				myPersonPath: alice.filePath,
+			},
+		});
+		setInput(inputForLabel(content, "Closeness"), "3");
+
+		buttonWithText(content, "Save").click();
+
+		await vi.waitFor(() => expect(updateRelationship).toHaveBeenCalledWith(file, { closeness: 3 }));
+		await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+		expect(afterClose).toHaveBeenCalledOnce();
+		expect(openFile).not.toHaveBeenCalled();
+	});
+
+	it("keeps an edit form reflow-safe, shows its source path and cancels without any mutation", () => {
+		const relationship: RelationshipRecord = {
+			id: "relationship-alice-bob",
+			filePath: "People/Relationships/Alice - Bob.md",
+			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			types: ["friend"],
+		};
+		const file = relationshipFile(relationship.filePath);
+		const { content, form, createRelationship, updateRelationship, close, afterClose } = mountModal({
+			mode: {
+				kind: "edit",
+				file,
+				relationship,
+				myPersonPath: alice.filePath,
+			},
+			width: 320,
+		});
+		const advanced = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-advanced");
+		expect(advanced?.querySelector("summary")?.textContent).toBe(
+			"Advanced — Source: People/Relationships/Alice - Bob.md",
+		);
+		advanced?.setAttribute("open", "");
+		expect(inputForLabel(content, "Source note path").readOnly).toBe(true);
+		expect(content.scrollWidth).toBeLessThanOrEqual(content.clientWidth);
+		expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth);
+		const cancel = buttonWithText(content, "Cancel");
+		const save = buttonWithText(content, "Save");
+		expect(advanced?.contains(cancel)).toBe(false);
+		expect(advanced?.contains(save)).toBe(false);
+		const createTemplate = buttonWithText(content, "Create template");
+		expect(createTemplate.disabled).toBe(true);
+		expect(content.textContent).toContain("settings are read-only or invalid");
+
+		cancel.click();
+
+		expect(close).toHaveBeenCalledOnce();
+		expect(afterClose).toHaveBeenCalledOnce();
+		expect(createRelationship).not.toHaveBeenCalled();
+		expect(updateRelationship).not.toHaveBeenCalled();
+	});
+
+	it("creates controls in the owning pop-out document and restores its cross-realm focus", async () => {
+		const frame = document.createElement("iframe");
+		document.body.append(frame);
+		const frameDocument = frame.contentDocument;
+		if (!frameDocument) throw new Error("Expected an iframe document.");
+		let nestedModal: RelationshipPresetModal | undefined;
+		vi.spyOn(RelationshipPresetModal.prototype, "open").mockImplementation(function (this: RelationshipPresetModal) {
+			this.titleEl = frameDocument.createElement("h2");
+			this.contentEl = frameDocument.createElement("div");
+			nestedModal = this;
+		});
+		const { content } = mountModal({
+			ownerDocument: frameDocument,
+			templateCreation: { enabled: () => true, save: vi.fn(async () => true) },
+		});
+		expect(content.ownerDocument).toBe(frameDocument);
+		expect(Array.from(content.querySelectorAll("*")).every((element) => element.ownerDocument === frameDocument)).toBe(
+			true,
+		);
+		const templateSelect = selectForLabel(content, "Relationship template");
+		templateSelect.focus();
+		expect(frameDocument.activeElement).toBe(templateSelect);
+		buttonWithText(content, "Create template").click();
+		expect(nestedModal).toBeDefined();
+
+		nestedModal?.onClose();
+		await vi.waitFor(() => expect(frameDocument.activeElement).toBe(templateSelect));
+	});
+});

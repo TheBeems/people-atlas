@@ -4,6 +4,7 @@ import type {
 	AtlasEdge,
 	AtlasNode,
 	AtlasSnapshot,
+	ContactMomentRecord,
 	IndexDelta,
 	NodeId,
 	PersonRecord,
@@ -11,12 +12,14 @@ import type {
 	RelationshipRecord,
 } from "../domain/types";
 import { stableHash } from "../utils/hash";
-import type { LinkResolver } from "./build-snapshot";
+import { filterContactMomentDiagnostics, projectContactMomentSummaries, type LinkResolver } from "./build-snapshot";
 import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-elements";
 
 export interface ApplyGraphDeltaOptions {
 	resolutionPeople?: PersonRecord[];
 	visiblePaths?: Set<string>;
+	contactMoments?: readonly ContactMomentRecord[];
+	relationships?: readonly RelationshipRecord[];
 }
 
 interface ResolvedReference {
@@ -123,6 +126,8 @@ function addContactEdge(
 				kind: "ghost",
 				label: reference.label ?? reference.target,
 				organisations: [],
+				emails: [],
+				phones: [],
 				isCenter: false,
 			});
 		}
@@ -141,7 +146,6 @@ function addContactEdge(
 			targetId,
 			types: ["contact"],
 			filePath: person.filePath,
-			direction: "undirected",
 			inferred: true,
 		});
 		return;
@@ -163,7 +167,6 @@ function addContactEdge(
 		targetId: target.id,
 		types: ["contact"],
 		filePath: person.filePath,
-		direction: "undirected",
 		inferred: true,
 	});
 }
@@ -228,7 +231,6 @@ function addRelationshipEdge(
 		fromRole: relationship.fromRole,
 		toRole: relationship.toRole,
 		closeness: relationship.closeness,
-		direction: relationship.direction,
 		since: relationship.since,
 		lastContact: relationship.lastContact,
 		status: relationship.status,
@@ -268,6 +270,12 @@ export function applyGraphDelta(
 			filePath: person.filePath,
 			photoPath: person.photoPath,
 			organisations: person.organisations,
+			birthDate: person.birthDate,
+			pronouns: person.pronouns,
+			gender: person.gender,
+			emails: person.emails,
+			phones: person.phones,
+			jobTitle: person.jobTitle,
 			isCenter: false,
 		});
 	}
@@ -284,6 +292,13 @@ export function applyGraphDelta(
 							name: node.label,
 							aliases: [],
 							organisations: node.organisations,
+							photoPath: node.photoPath,
+							birthDate: node.birthDate,
+							pronouns: node.pronouns,
+							gender: node.gender,
+							emails: node.emails,
+							phones: node.phones,
+							jobTitle: node.jobTitle,
 							contacts: [],
 						},
 						duplicatePersonIds,
@@ -341,12 +356,79 @@ export function applyGraphDelta(
 	const hiddenEdgeCount = visiblePaths
 		? [...diagnostics.values()].filter((diagnostic) => diagnostic.code === "filtered-endpoint").length
 		: 0;
+	const contactMomentProjection = nextContactMomentProjection(
+		previous,
+		delta,
+		people,
+		remappedNodes,
+		resolveLink,
+		options,
+	);
+	let outputDiagnostics = [...diagnostics.values()];
+	if (visiblePaths && options.contactMoments !== undefined && options.relationships !== undefined) {
+		outputDiagnostics = filterContactMomentDiagnostics(
+			outputDiagnostics,
+			options.contactMoments,
+			options.relationships,
+			people,
+			visiblePaths,
+			resolveLink,
+		);
+	}
 	return {
 		nodes: [...remappedNodes.values()],
 		edges: [...edges.values()],
-		diagnostics: [...diagnostics.values()],
+		contactMoments: contactMomentProjection.contactMoments,
+		diagnostics: outputDiagnostics,
 		hiddenNodeCount,
 		hiddenEdgeCount,
+		hiddenContactMomentCount: contactMomentProjection.hiddenContactMomentCount,
 		generatedAt: Date.now(),
 	};
+}
+
+function nextContactMomentProjection(
+	previous: AtlasSnapshot,
+	delta: IndexDelta,
+	people: readonly PersonRecord[],
+	nodes: ReadonlyMap<NodeId, AtlasNode>,
+	resolveLink: LinkResolver,
+	options: ApplyGraphDeltaOptions,
+): { contactMoments: AtlasSnapshot["contactMoments"]; hiddenContactMomentCount: number } {
+	const visiblePersonPaths =
+		options.visiblePaths ??
+		new Set(
+			[...nodes.values()]
+				.filter((node) => node.kind === "person" && node.filePath)
+				.map((node) => node.filePath as string),
+		);
+	const currentContactMoments = options.contactMoments;
+	const currentRelationships = options.relationships;
+	if (currentContactMoments !== undefined && currentRelationships !== undefined) {
+		return projectContactMomentSummaries(
+			currentContactMoments,
+			currentRelationships,
+			people,
+			visiblePersonPaths,
+			resolveLink,
+		);
+	}
+
+	const hasContactMomentDelta = [
+		delta.affectedContactMomentIds,
+		delta.addedContactMoments,
+		delta.updatedContactMoments,
+		delta.removedContactMoments,
+		delta.affectedContactMoments,
+	].some((value) => (value?.length ?? 0) > 0);
+	if (!hasContactMomentDelta) {
+		return {
+			contactMoments: [...(previous.contactMoments ?? [])],
+			hiddenContactMomentCount: previous.hiddenContactMomentCount ?? 0,
+		};
+	}
+
+	throw new Error(
+		"Contact-moment deltas require complete current contactMoments and relationships projection sources.",
+	);
 }

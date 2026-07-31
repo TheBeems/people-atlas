@@ -42,13 +42,45 @@ export function projectGraph(snapshot: AtlasSnapshot, options: ProjectGraphOptio
 	const limited = limitGraph(projectedNodes, projectedEdges, maxNodes);
 	const omittedNodes = snapshot.nodes.length - limited.nodes.length;
 	const omittedEdges = snapshot.edges.length - limited.edges.length;
+	const projectedContactMoments = projectContactMoments(snapshot, limited.nodes);
 	return {
 		nodes: limited.nodes,
 		edges: limited.edges,
+		contactMoments: projectedContactMoments.contactMoments,
 		diagnostics: [...snapshot.diagnostics, ...projectionDiagnostics, ...limited.diagnostics],
 		hiddenNodeCount: snapshot.hiddenNodeCount + omittedNodes,
 		hiddenEdgeCount: snapshot.hiddenEdgeCount + omittedEdges,
+		hiddenContactMomentCount:
+			(snapshot.hiddenContactMomentCount ?? 0) + projectedContactMoments.hiddenContactMomentCount,
 		generatedAt: snapshot.generatedAt,
+	};
+}
+
+function projectContactMoments(
+	snapshot: AtlasSnapshot,
+	nodes: readonly AtlasNode[],
+): { contactMoments: AtlasSnapshot["contactMoments"]; hiddenContactMomentCount: number } {
+	const nodeIds = new Set(nodes.map((node) => node.id));
+	const personIds = new Set(nodes.filter((node) => node.kind === "person").map((node) => node.personId ?? node.id));
+	const relationshipEdges = new Map<string, AtlasEdge[]>();
+	for (const edge of snapshot.edges) {
+		if (edge.inferred) continue;
+		const matches = relationshipEdges.get(edge.id) ?? [];
+		matches.push(edge);
+		relationshipEdges.set(edge.id, matches);
+	}
+	const inputContactMoments = snapshot.contactMoments ?? [];
+	const contactMoments = inputContactMoments.filter((moment) => {
+		if (!moment.personIds.every((personId) => personIds.has(personId))) return false;
+		if (!moment.relationshipId) return true;
+		const matches = relationshipEdges.get(moment.relationshipId) ?? [];
+		if (matches.length !== 1) return false;
+		const relationship = matches[0];
+		return Boolean(relationship && nodeIds.has(relationship.sourceId) && nodeIds.has(relationship.targetId));
+	});
+	return {
+		contactMoments,
+		hiddenContactMomentCount: inputContactMoments.length - contactMoments.length,
 	};
 }
 

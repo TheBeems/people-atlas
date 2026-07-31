@@ -1,11 +1,32 @@
-import type { AtlasEdge, AtlasNode, AtlasSnapshot, NodeId } from "../domain/types";
+import type {
+	AtlasEdge,
+	AtlasNode,
+	AtlasSnapshot,
+	ContactMomentFollowUpStatus,
+	ContactMomentSummary,
+	NodeId,
+} from "../domain/types";
 import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
+import { personPhotoInitials } from "../domain/person-photo";
 import type { PeopleAtlasSettings } from "../settings/types";
-import { formatRelationshipRole } from "../settings/relationship-presets";
 import { Camera } from "./camera";
+import {
+	buildSelectedPersonContactMomentPresentation,
+	type ContactMomentFollowUpRow,
+	groupContactMomentFollowUps,
+} from "./contact-moment-presentation";
 import { createDeterministicLayout, type LayoutPoint } from "./layout";
 import { captureLayoutSnapshot, restoreLayoutSnapshot, type LayoutSnapshot } from "./layout-state";
+import { PERSON_PHOTO_THUMBNAIL_MAX_READY, PersonPhotoThumbnailCache } from "./person-photo-thumbnail-cache";
+import { renderPersonProfile, safeLocalPhotoResourceUrl, type PersonPhotoResourceResolver } from "./person-profile";
+import {
+	buildIncidentRelationshipRows,
+	type IncidentRelationshipRow,
+	relationshipActionAccessibleName,
+} from "./relationship-rows";
 import { TouchGestureController, type TouchGestureUpdate } from "./touch-gesture";
+
+export type ContactMomentAction = "open" | "edit" | "done" | "dismiss";
 
 export interface AtlasRendererCallbacks {
 	onOpenNode(node: AtlasNode): void;
@@ -15,7 +36,32 @@ export interface AtlasRendererCallbacks {
 	onEditPerson?(node: AtlasNode): void;
 	canCreateRelationship?(node: AtlasNode): boolean;
 	onCreateRelationship?(node: AtlasNode): void;
+	canLogContact?(node: AtlasNode): boolean;
+	onLogContact?(node: AtlasNode): void;
+	canOpenContactMoment?(moment: ContactMomentSummary): boolean;
+	onOpenContactMoment?(moment: ContactMomentSummary, invoker: HTMLButtonElement): unknown;
+	canEditContactMoment?(moment: ContactMomentSummary): boolean;
+	onEditContactMoment?(moment: ContactMomentSummary, invoker: HTMLButtonElement): unknown;
+	canUpdateFollowUp?(
+		moment: ContactMomentSummary,
+		status: Extract<ContactMomentFollowUpStatus, "done" | "dismissed">,
+	): boolean;
+	onUpdateFollowUp?(
+		moment: ContactMomentSummary,
+		status: Extract<ContactMomentFollowUpStatus, "done" | "dismissed">,
+		invoker: HTMLButtonElement,
+	): boolean | Promise<boolean>;
+	onContactMomentActionUnavailable?(
+		moment: ContactMomentSummary,
+		action: ContactMomentAction,
+		invoker: HTMLButtonElement,
+	): void;
+	canOpenRelationship?(edge: AtlasEdge): boolean;
+	onOpenRelationship?(edge: AtlasEdge, invoker: HTMLButtonElement): void | Promise<void>;
+	canEditRelationship?(edge: AtlasEdge): boolean;
+	onEditRelationship?(edge: AtlasEdge, invoker: HTMLButtonElement): void | Promise<void>;
 	onLayoutChanged?(layout: LayoutSnapshot): void;
+	resolvePersonPhoto?: PersonPhotoResourceResolver | undefined;
 }
 
 export type AtlasSelectionSource = "canvas" | "list" | "graph-update";
@@ -28,10 +74,50 @@ interface DragState {
 	lastY: number;
 }
 
-type RendererMode = "graph" | "list";
-type SelectedAction = "open" | "center";
-type SheetAction = "close" | "open" | "center" | "edit" | "create";
+export type RendererMode = "graph" | "list" | "follow-ups";
+type SelectedAction = "open" | "center" | "log-contact";
+type SheetAction = "close" | "open" | "center" | "edit" | "create" | "log-contact";
 type SheetInvoker = "details" | "canvas";
+type RelationshipAction = "open" | "edit";
+type ContactMomentSurface = "details" | "sheet" | "follow-ups";
+type TerminalFollowUpStatus = Extract<ContactMomentFollowUpStatus, "done" | "dismissed">;
+
+interface RelationshipActionFocus {
+	action: RelationshipAction;
+	edgeId: string;
+	filePath?: string | undefined;
+}
+
+interface ContactMomentActionFocus {
+	action: ContactMomentAction;
+	momentId: string;
+	filePath: string;
+	surface: ContactMomentSurface;
+}
+
+interface CanvasPhotoRequest {
+	cacheKey: string;
+	resourceUrl: string;
+}
+
+export interface AtlasRendererPhotoCacheStats {
+	ready: number;
+	pending: number;
+	failed: number;
+	total: number;
+	maxReady: number;
+	maxPending: number;
+	maxFailed: number;
+	maxDimension: number;
+	retainedPixels: number;
+	destroyed: boolean;
+	requests: number;
+	loadsStarted: number;
+	loadsSucceeded: number;
+	loadsFailed: number;
+	capacityRejections: number;
+	readyEvictions: number;
+}
 
 const PERSON_RADIUS = 24;
 const GHOST_RADIUS = 17;
@@ -44,6 +130,7 @@ export class AtlasRenderer {
 	private readonly modeControls: HTMLFieldSetElement;
 	private readonly graphModeButton: HTMLButtonElement;
 	private readonly listModeButton: HTMLButtonElement;
+	private readonly followUpsModeButton: HTMLButtonElement;
 	private readonly graphSurface: HTMLDivElement;
 	private readonly graphActions: HTMLDivElement;
 	private readonly zoomOutButton: HTMLButtonElement;
@@ -57,17 +144,26 @@ export class AtlasRenderer {
 	private readonly emptyMessage: HTMLParagraphElement;
 	private readonly peopleList: HTMLUListElement;
 	private readonly details: HTMLElement;
+	private readonly followUpsPanel: HTMLElement;
+	private readonly followUpsHeading: HTMLHeadingElement;
+	private readonly followUpsSummary: HTMLParagraphElement;
+	private readonly followUpsContent: HTMLDivElement;
 	private readonly sheet: HTMLDialogElement;
 	private readonly sheetContent: HTMLDivElement;
 	private readonly resizeObserver: ResizeObserver;
+	private readonly photoThumbnailCache: PersonPhotoThumbnailCache;
 	private readonly camera = new Camera();
 	private readonly touchGesture = new TouchGestureController(this.camera.minScale, this.camera.maxScale);
+	private readonly relationshipEdgesByButton = new WeakMap<HTMLButtonElement, AtlasEdge>();
+	private readonly contactMomentsByButton = new WeakMap<HTMLButtonElement, ContactMomentSummary>();
 	private snapshot: AtlasSnapshot = {
 		nodes: [],
 		edges: [],
+		contactMoments: [],
 		diagnostics: [],
 		hiddenNodeCount: 0,
 		hiddenEdgeCount: 0,
+		hiddenContactMomentCount: 0,
 		generatedAt: 0,
 	};
 	private positions = new Map<NodeId, LayoutPoint>();
@@ -81,10 +177,16 @@ export class AtlasRenderer {
 	private frame: number | undefined;
 	private cameraInitialized = false;
 	private longPressTimer: number | undefined;
+	private followUpDayTimer: number | undefined;
 	private sheetNodeId: NodeId | undefined;
 	private sheetInvoker: SheetInvoker | undefined;
+	private sheetReturnFocusElement: HTMLElement | undefined;
 	private suppressMouseUntil = 0;
 	private destroyed = false;
+	private expandedContactHistoryPersonId: string | undefined;
+	private readonly pendingFollowUpMomentIdentities = new Set<string>();
+	private canvasPhotoRequests = new Map<NodeId, CanvasPhotoRequest>();
+	private admittedCanvasPhotoKeys = new Set<string>();
 
 	constructor(
 		private readonly container: HTMLElement,
@@ -95,6 +197,20 @@ export class AtlasRenderer {
 		const owningWindow = this.doc.defaultView as (Window & typeof globalThis) | null;
 		if (!owningWindow) throw new Error("AtlasRenderer requires a container with an owning window.");
 		this.win = owningWindow;
+		this.photoThumbnailCache = new PersonPhotoThumbnailCache({
+			window: this.win,
+			document: this.doc,
+			onStateChange: ({ cacheKey }) => {
+				if (
+					this.destroyed ||
+					!this.admittedCanvasPhotoKeys.has(cacheKey) ||
+					![...this.canvasPhotoRequests.values()].some((request) => request.cacheKey === cacheKey)
+				) {
+					return;
+				}
+				this.requestDraw();
+			},
+		});
 
 		this.root = this.doc.createElement("div");
 		this.root.className = "people-atlas-renderer";
@@ -105,7 +221,8 @@ export class AtlasRenderer {
 		legend.textContent = "View";
 		this.graphModeButton = this.createModeButton("Graph", "people-atlas-graph-mode", true);
 		this.listModeButton = this.createModeButton("List", "people-atlas-list-mode", false);
-		this.modeControls.append(legend, this.graphModeButton, this.listModeButton);
+		this.followUpsModeButton = this.createModeButton("Follow-ups", "people-atlas-follow-ups-mode", false);
+		this.modeControls.append(legend, this.graphModeButton, this.listModeButton, this.followUpsModeButton);
 
 		this.graphSurface = this.doc.createElement("div");
 		this.graphSurface.className = "people-atlas-graph-surface";
@@ -149,6 +266,22 @@ export class AtlasRenderer {
 		this.details.setAttribute("aria-label", "Selected person details");
 		this.semanticPanel.append(this.summary, this.emptyMessage, this.peopleList, this.details);
 
+		this.followUpsPanel = this.doc.createElement("section");
+		this.followUpsPanel.className = "people-atlas-follow-ups-panel";
+		this.followUpsPanel.setAttribute("aria-label", "Contact follow-ups");
+		this.followUpsPanel.hidden = true;
+		this.followUpsHeading = this.doc.createElement("h2");
+		this.followUpsHeading.textContent = "Contact follow-ups";
+		this.followUpsHeading.tabIndex = -1;
+		this.followUpsHeading.dataset.followUpsHeading = "true";
+		this.followUpsSummary = this.doc.createElement("p");
+		this.followUpsSummary.className = "people-atlas-follow-ups-summary";
+		this.followUpsSummary.setAttribute("role", "status");
+		this.followUpsSummary.setAttribute("aria-live", "polite");
+		this.followUpsContent = this.doc.createElement("div");
+		this.followUpsContent.className = "people-atlas-follow-ups-content";
+		this.followUpsPanel.append(this.followUpsHeading, this.followUpsSummary, this.followUpsContent);
+
 		this.sheet = this.doc.createElement("dialog");
 		this.sheet.className = "people-atlas-details-sheet";
 		this.sheet.setAttribute("aria-label", "Selected person details");
@@ -156,15 +289,17 @@ export class AtlasRenderer {
 		this.sheetContent.className = "people-atlas-details-sheet-content";
 		this.sheet.append(this.sheetContent);
 
-		this.root.append(this.modeControls, this.graphSurface, this.semanticPanel, this.sheet);
+		this.root.append(this.modeControls, this.graphSurface, this.semanticPanel, this.followUpsPanel, this.sheet);
 		this.container.append(this.root);
 
 		this.graphModeButton.addEventListener("click", this.onGraphMode);
 		this.listModeButton.addEventListener("click", this.onListMode);
+		this.followUpsModeButton.addEventListener("click", this.onFollowUpsMode);
 		this.peopleList.addEventListener("click", this.onPeopleListClick);
 		this.peopleList.addEventListener("keydown", this.onPeopleListKeyDown);
 		this.peopleList.addEventListener("focusin", this.onPeopleListFocusIn);
 		this.details.addEventListener("click", this.onDetailsClick);
+		this.followUpsPanel.addEventListener("click", this.onFollowUpsClick);
 		this.zoomOutButton.addEventListener("click", this.onZoomOut);
 		this.zoomInButton.addEventListener("click", this.onZoomIn);
 		this.fitButton.addEventListener("click", this.onFit);
@@ -194,10 +329,20 @@ export class AtlasRenderer {
 		const listHeldFocus = Boolean(focusedButton && this.semanticPanel.contains(focusedButton));
 		const focusedAction = this.actionButtonFrom(activeElement)?.dataset.action as SelectedAction | undefined;
 		const actionHeldFocus = Boolean(focusedAction && this.details.contains(activeElement));
+		const focusedRelationshipAction = this.relationshipActionFocusFrom(activeElement);
+		const relationshipActionHeldFocus = Boolean(focusedRelationshipAction && this.details.contains(activeElement));
 		const focusedSheetAction = this.sheetActionButtonFrom(activeElement)?.dataset.sheetAction as
 			| SheetAction
 			| undefined;
 		const sheetHeldFocus = Boolean(focusedSheetAction && this.sheet.contains(activeElement));
+		const focusedSheetRelationshipAction = this.relationshipActionFocusFrom(activeElement);
+		const sheetRelationshipActionHeldFocus = Boolean(
+			focusedSheetRelationshipAction && this.sheet.contains(activeElement),
+		);
+		const focusedContactMomentAction = this.contactMomentActionFocusFrom(activeElement);
+		const contactMomentActionHeldFocus = Boolean(focusedContactMomentAction);
+		const previousFollowUpOrder =
+			focusedContactMomentAction?.surface === "follow-ups" ? this.followUpMomentOrder() : [];
 
 		this.snapshot = snapshot;
 		this.positions = createDeterministicLayout(snapshot);
@@ -205,19 +350,28 @@ export class AtlasRenderer {
 
 		if (this.selectedId && !this.nodeById(this.selectedId)) {
 			this.selectedId = undefined;
+			this.expandedContactHistoryPersonId = undefined;
 			this.callbacks.onSelectNode(undefined, "graph-update");
 		}
 
 		const focusedStillExists = this.focusedId ? Boolean(this.nodeById(this.focusedId)) : false;
 		if (this.selectedId) this.focusedId = this.selectedId;
 		else if (!focusedStillExists) this.focusedId = snapshot.nodes[0]?.id;
+		this.reconcileCanvasPhotoRequests();
 		this.updateSemanticPanel();
+		if (this.mode === "follow-ups") this.renderFollowUps();
 		if (this.sheet.open) {
 			if (!this.sheetNodeId || this.sheetNodeId !== this.selectedId || !this.nodeById(this.sheetNodeId)) {
 				this.closeSheet(false);
 			} else {
 				this.renderSheet();
-				if (sheetHeldFocus && focusedSheetAction && !this.focusSheetAction(focusedSheetAction)) {
+				if (
+					sheetRelationshipActionHeldFocus &&
+					focusedSheetRelationshipAction &&
+					!this.focusRelationshipAction(this.sheet, focusedSheetRelationshipAction)
+				) {
+					this.focusSelectedDetailsHeading(this.sheet);
+				} else if (sheetHeldFocus && focusedSheetAction && !this.focusSheetAction(focusedSheetAction)) {
 					this.focusSheetAction("close");
 				}
 			}
@@ -229,8 +383,27 @@ export class AtlasRenderer {
 			else this.listModeButton.focus();
 		} else if (actionHeldFocus && focusedAction) {
 			this.focusSelectedAction(focusedAction);
+		} else if (relationshipActionHeldFocus && focusedRelationshipAction) {
+			if (!this.focusRelationshipAction(this.details, focusedRelationshipAction)) {
+				this.focusSelectedDetailsHeading(this.details);
+			}
+		}
+		if (contactMomentActionHeldFocus && focusedContactMomentAction) {
+			if (!this.focusContactMomentAction(focusedContactMomentAction)) {
+				if (focusedContactMomentAction.surface === "follow-ups") {
+					this.focusFollowUpAfterRemoval(previousFollowUpOrder, focusedContactMomentAction.momentId);
+				} else if (focusedContactMomentAction.surface === "sheet" && this.sheet.open) {
+					this.focusSelectedDetailsHeading(this.sheet);
+				} else {
+					this.focusSelectedDetailsHeading(this.details);
+				}
+			}
 		}
 		this.requestDraw();
+	}
+
+	showFollowUps(): void {
+		this.setMode("follow-ups");
 	}
 
 	fitToContent(): void {
@@ -263,6 +436,28 @@ export class AtlasRenderer {
 		return captureLayoutSnapshot(this.positions, this.camera);
 	}
 
+	getPhotoCacheStats(): Readonly<AtlasRendererPhotoCacheStats> {
+		const stats = this.photoThumbnailCache.stats();
+		return Object.freeze({
+			ready: stats.ready,
+			pending: stats.pending,
+			failed: stats.failures,
+			total: stats.ready + stats.pending + stats.failures,
+			maxReady: stats.maxReady,
+			maxPending: stats.maxPending,
+			maxFailed: stats.maxFailures,
+			maxDimension: stats.maxDimension,
+			retainedPixels: stats.retainedPixels,
+			destroyed: stats.destroyed,
+			requests: stats.requests,
+			loadsStarted: stats.loadsStarted,
+			loadsSucceeded: stats.loadsSucceeded,
+			loadsFailed: stats.loadsFailed,
+			capacityRejections: stats.capacityRejections,
+			readyEvictions: stats.readyEvictions,
+		});
+	}
+
 	restoreLayoutSnapshot(layout: LayoutSnapshot): void {
 		const restored = restoreLayoutSnapshot(
 			layout,
@@ -280,19 +475,58 @@ export class AtlasRenderer {
 		this.requestDraw();
 	}
 
+	restoreRelationshipActionFocus(invoker: HTMLButtonElement): void {
+		if (this.destroyed) return;
+		if (invoker.ownerDocument === this.doc && invoker.isConnected && this.root.contains(invoker)) {
+			invoker.focus();
+			if (this.doc.activeElement === invoker) return;
+		}
+		if (this.sheet.open && this.focusSelectedDetailsHeading(this.sheet)) return;
+		if (this.focusSelectedDetailsHeading(this.details)) return;
+		if (!this.detailsButton.disabled && this.detailsButton.isConnected) this.detailsButton.focus();
+	}
+
+	restoreContactMomentActionFocus(invoker: HTMLButtonElement): void {
+		if (this.destroyed || invoker.ownerDocument !== this.doc) return;
+		if (invoker.isConnected && this.root.contains(invoker)) {
+			invoker.focus();
+			if (this.doc.activeElement === invoker) return;
+		}
+		const focus = this.contactMomentActionFocusFrom(invoker);
+		if (focus && this.focusContactMomentAction(focus)) return;
+		if (focus?.surface === "follow-ups") {
+			const row = this.contactMomentRow(focus.momentId, focus.filePath);
+			if (row) {
+				row.focus();
+				if (this.doc.activeElement === row) return;
+			}
+			this.followUpsHeading.focus();
+			return;
+		}
+		if (focus?.surface === "sheet" && this.sheet.open && this.focusSelectedDetailsHeading(this.sheet)) return;
+		if (this.focusSelectedDetailsHeading(this.details)) return;
+		if (!this.detailsButton.disabled && this.detailsButton.isConnected) this.detailsButton.focus();
+	}
+
 	destroy(): void {
 		if (this.destroyed) return;
 		this.destroyed = true;
 		this.cancelTouchInteraction();
+		this.cancelFollowUpDayRefresh();
 		this.closeSheet(false);
 		this.resizeObserver.disconnect();
 		if (this.frame !== undefined) this.win.cancelAnimationFrame(this.frame);
+		this.photoThumbnailCache.destroy();
+		this.canvasPhotoRequests.clear();
+		this.admittedCanvasPhotoKeys.clear();
 		this.graphModeButton.removeEventListener("click", this.onGraphMode);
 		this.listModeButton.removeEventListener("click", this.onListMode);
+		this.followUpsModeButton.removeEventListener("click", this.onFollowUpsMode);
 		this.peopleList.removeEventListener("click", this.onPeopleListClick);
 		this.peopleList.removeEventListener("keydown", this.onPeopleListKeyDown);
 		this.peopleList.removeEventListener("focusin", this.onPeopleListFocusIn);
 		this.details.removeEventListener("click", this.onDetailsClick);
+		this.followUpsPanel.removeEventListener("click", this.onFollowUpsClick);
 		this.zoomOutButton.removeEventListener("click", this.onZoomOut);
 		this.zoomInButton.removeEventListener("click", this.onZoomIn);
 		this.fitButton.removeEventListener("click", this.onFit);
@@ -328,18 +562,34 @@ export class AtlasRenderer {
 	}
 
 	private setMode(mode: RendererMode): void {
-		if (this.mode === mode) return;
+		if (this.destroyed) return;
+		if (this.mode === mode) {
+			if (mode === "follow-ups") {
+				this.renderFollowUps();
+				this.scheduleFollowUpDayRefresh();
+			}
+			return;
+		}
 		this.cancelTouchInteraction();
-		if (mode === "list") this.closeSheet(false);
+		if (mode !== "graph") this.closeSheet(false);
+		this.cancelFollowUpDayRefresh();
 		this.mode = mode;
 		const graphActive = mode === "graph";
+		const listActive = mode === "list";
+		const followUpsActive = mode === "follow-ups";
 		this.graphModeButton.setAttribute("aria-pressed", String(graphActive));
-		this.listModeButton.setAttribute("aria-pressed", String(!graphActive));
+		this.listModeButton.setAttribute("aria-pressed", String(listActive));
+		this.followUpsModeButton.setAttribute("aria-pressed", String(followUpsActive));
 		this.graphSurface.hidden = !graphActive;
-		this.semanticPanel.hidden = graphActive;
+		this.semanticPanel.hidden = !listActive;
+		this.followUpsPanel.hidden = !followUpsActive;
 		this.canvas.hidden = !graphActive;
 		this.canvas.tabIndex = graphActive ? 0 : -1;
 		if (graphActive) this.resize();
+		if (followUpsActive) {
+			this.renderFollowUps();
+			this.scheduleFollowUpDayRefresh();
+		}
 	}
 
 	private resize(): void {
@@ -408,21 +658,45 @@ export class AtlasRenderer {
 			ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
 			ctx.fillStyle = node.kind === "ghost" ? background : secondary;
 			ctx.fill();
+
+			let photoDrawn = false;
+			const photoRequest = this.canvasPhotoRequests.get(node.id);
+			if (photoRequest && this.admittedCanvasPhotoKeys.has(photoRequest.cacheKey)) {
+				const state = this.photoThumbnailCache.get(photoRequest);
+				if (state.status === "ready") {
+					ctx.save();
+					try {
+						ctx.beginPath();
+						ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+						ctx.clip();
+						ctx.drawImage(state.thumbnail.source, point.x - radius, point.y - radius, radius * 2, radius * 2);
+						photoDrawn = true;
+					} catch {
+						// A released or browser-rejected source remains a deterministic initials fallback.
+					} finally {
+						ctx.restore();
+					}
+				}
+			}
+
 			ctx.strokeStyle = selected || node.isCenter ? accent : node.kind === "ghost" ? muted : border;
 			ctx.lineWidth = (selected || node.isCenter ? 3 : 2) / this.camera.scale;
 			ctx.setLineDash(node.kind === "ghost" ? [4, 4] : []);
 			ctx.stroke();
 			ctx.setLineDash([]);
 
-			ctx.fillStyle = node.kind === "ghost" ? muted : foreground;
-			ctx.font = `${Math.max(10, 13 / this.camera.scale)}px sans-serif`;
-			ctx.textAlign = "center";
-			ctx.textBaseline = "middle";
-			ctx.fillText(initials(node.label), point.x, point.y);
+			if (!photoDrawn) {
+				ctx.fillStyle = node.kind === "ghost" ? muted : foreground;
+				ctx.font = `${Math.max(10, 13 / this.camera.scale)}px sans-serif`;
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				ctx.fillText(personPhotoInitials(node.label), point.x, point.y);
+			}
 
 			if (this.getSettings().showLabels) {
 				ctx.fillStyle = node.kind === "ghost" ? muted : foreground;
 				ctx.font = `${Math.max(9, 11 / this.camera.scale)}px sans-serif`;
+				ctx.textAlign = "center";
 				ctx.textBaseline = "top";
 				ctx.fillText(node.label, point.x, point.y + radius + 8 / this.camera.scale);
 			}
@@ -431,9 +705,60 @@ export class AtlasRenderer {
 		ctx.restore();
 	}
 
+	private reconcileCanvasPhotoRequests(): void {
+		const previousKeys = new Set([...this.canvasPhotoRequests.values()].map((request) => request.cacheKey));
+		const nextRequests = new Map<NodeId, CanvasPhotoRequest>();
+		for (const node of this.snapshot.nodes) {
+			if (!isResolvedAtlasPersonNode(node) || !node.photoPath || !this.callbacks.resolvePersonPhoto) continue;
+			try {
+				const resolution = this.callbacks.resolvePersonPhoto(node.photoPath);
+				if (resolution.status !== "ready") continue;
+				const resourceUrl = safeLocalPhotoResourceUrl(resolution.resourceUrl, node.photoPath);
+				if (!resourceUrl || !resolution.cacheKey.trim()) continue;
+				nextRequests.set(node.id, {
+					cacheKey: resolution.cacheKey,
+					resourceUrl,
+				});
+			} catch {
+				// Resolver failures are contained as initials fallback.
+			}
+		}
+		const nextKeys = new Set([...nextRequests.values()].map((request) => request.cacheKey));
+		this.photoThumbnailCache.invalidate([...previousKeys].filter((cacheKey) => !nextKeys.has(cacheKey)));
+		this.canvasPhotoRequests = nextRequests;
+		this.reconcileCanvasPhotoAdmission();
+	}
+
+	private reconcileCanvasPhotoAdmission(): void {
+		const orderedNodes = [...this.snapshot.nodes].sort((left, right) => {
+			const leftSelected = left.id === this.selectedId ? 1 : 0;
+			const rightSelected = right.id === this.selectedId ? 1 : 0;
+			if (leftSelected !== rightSelected) return rightSelected - leftSelected;
+			const leftCenter = left.isCenter ? 1 : 0;
+			const rightCenter = right.isCenter ? 1 : 0;
+			return rightCenter - leftCenter;
+		});
+		const nextKeys = new Set<string>();
+		for (const node of orderedNodes) {
+			const request = this.canvasPhotoRequests.get(node.id);
+			if (!request || nextKeys.has(request.cacheKey)) continue;
+			nextKeys.add(request.cacheKey);
+			if (nextKeys.size >= PERSON_PHOTO_THUMBNAIL_MAX_READY) break;
+		}
+		this.photoThumbnailCache.invalidate(
+			[...this.admittedCanvasPhotoKeys].filter((cacheKey) => !nextKeys.has(cacheKey)),
+		);
+		this.admittedCanvasPhotoKeys = nextKeys;
+	}
+
 	private updateSemanticPanel(): void {
 		this.detailsButton.disabled = !this.selectedId || !this.nodeById(this.selectedId);
-		const summaryText = `${this.snapshot.nodes.length} people · ${this.snapshot.edges.length} relationships`;
+		const hiddenMomentCount = this.hiddenContactMomentCount();
+		const summaryText = `${this.snapshot.nodes.length} people · ${this.snapshot.edges.length} connections${
+			hiddenMomentCount > 0
+				? ` · ${hiddenMomentCount} contact ${hiddenMomentCount === 1 ? "moment" : "moments"} hidden`
+				: ""
+		}`;
 		if (this.summary.textContent !== summaryText) this.summary.textContent = summaryText;
 		this.emptyMessage.hidden = this.snapshot.nodes.length > 0;
 		this.peopleList.hidden = this.snapshot.nodes.length === 0;
@@ -477,12 +802,26 @@ export class AtlasRenderer {
 		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
 		const heading = this.doc.createElement("h3");
 		heading.textContent = selected?.label ?? "Selection";
+		if (selected) {
+			heading.tabIndex = -1;
+			heading.dataset.selectedPersonHeading = selected.id;
+		}
 		this.details.append(heading);
 		if (!selected) {
 			const hint = this.doc.createElement("p");
 			hint.textContent = "Select a person to review their visible relationships and actions.";
 			this.details.append(hint);
 			return;
+		}
+
+		if (isResolvedAtlasPersonNode(selected)) {
+			const profile = renderPersonProfile(this.doc, selected, {
+				contactHeadingLevel: 4,
+				resolvePhotoResource: this.callbacks.resolvePersonPhoto,
+			});
+			if (profile) this.details.append(profile);
+			const contactMoments = this.renderSelectedContactMoments(selected, 4, "details");
+			if (contactMoments) this.details.append(contactMoments);
 		}
 
 		if (isAmbiguousAtlasNode(selected)) {
@@ -499,23 +838,17 @@ export class AtlasRenderer {
 			this.details.append(unavailable);
 		}
 
-		const incidentEdges = this.snapshot.edges
-			.map((edge) => this.describeIncidentEdge(edge, selected))
-			.filter((description): description is string => description !== undefined);
-		if (incidentEdges.length === 0) {
+		const relationshipRows = buildIncidentRelationshipRows(
+			this.snapshot,
+			selected,
+			this.getSettings().relationshipRoleFormat,
+		);
+		if (relationshipRows.length === 0) {
 			const empty = this.doc.createElement("p");
-			empty.textContent = "No visible relationships";
+			empty.textContent = "No visible relationships or linked people";
 			this.details.append(empty);
 		} else {
-			const relationships = this.doc.createElement("ul");
-			relationships.className = "people-atlas-relationship-list";
-			relationships.setAttribute("aria-label", `Visible relationships for ${selected.label}`);
-			for (const description of incidentEdges) {
-				const item = this.doc.createElement("li");
-				item.textContent = description;
-				relationships.append(item);
-			}
-			this.details.append(relationships);
+			this.details.append(this.renderRelationshipGroups(relationshipRows, selected, 4));
 		}
 
 		if (isResolvedAtlasPersonNode(selected)) {
@@ -532,43 +865,101 @@ export class AtlasRenderer {
 			center.setAttribute("aria-label", "Use as center");
 			center.textContent = "Use as center";
 			actions.append(open, center);
+			if (this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
+				const logContact = this.doc.createElement("button");
+				logContact.type = "button";
+				logContact.dataset.action = "log-contact";
+				logContact.setAttribute("aria-label", "Log contact");
+				logContact.textContent = "Log contact";
+				actions.append(logContact);
+			}
 			this.details.append(actions);
 		}
 	}
 
-	private describeIncidentEdge(edge: AtlasEdge, selected: AtlasNode): string | undefined {
-		const selectedIsSource = edge.sourceId === selected.id;
-		const selectedIsTarget = edge.targetId === selected.id;
-		if (!selectedIsSource && !selectedIsTarget) return undefined;
-		const counterpartId = selectedIsSource ? edge.targetId : edge.sourceId;
-		const counterpart = this.nodeById(counterpartId);
-		if (!counterpart) return undefined;
-
-		const counterpartLabel = `${counterpart.label}${counterpart.kind === "ghost" ? " (unresolved)" : ""}`;
-		const role = selectedIsSource ? edge.fromRole : edge.toRole;
-		const relationshipDescription =
-			edge.fromRole && edge.toRole && role
-				? formatRelationshipRole(this.getSettings().relationshipRoleFormat, role, counterpartLabel)
-				: edge.direction === "undirected"
-					? `Connected to ${counterpartLabel}`
-					: selectedIsSource
-						? `Outgoing to ${counterpartLabel}`
-						: `Incoming from ${counterpartLabel}`;
-		const parts = [relationshipDescription];
-		if (edge.types.length > 0) parts.push(`Types: ${edge.types.join(", ")}`);
-		if (edge.inferred) parts.push("Contact-link connection");
-		else {
-			if (edge.status) parts.push(`Status: ${edge.status}`);
-			if (edge.since) parts.push(`Since: ${edge.since}`);
-			if (edge.lastContact) parts.push(`Last contact: ${edge.lastContact}`);
+	private renderRelationshipGroups(
+		rows: IncidentRelationshipRow[],
+		selected: AtlasNode,
+		headingLevel: 3 | 4,
+	): HTMLDivElement {
+		const groups = this.doc.createElement("div");
+		groups.className = "people-atlas-connection-groups";
+		const relationshipRows = rows.filter((row) => !row.edge.inferred);
+		const linkedPeopleRows = rows.filter((row) => row.edge.inferred);
+		if (relationshipRows.length > 0) {
+			groups.append(this.renderRelationshipGroup("Relationships", relationshipRows, selected, headingLevel));
 		}
-		return `${parts.join(". ")}.`;
+		if (linkedPeopleRows.length > 0) {
+			groups.append(this.renderRelationshipGroup("Linked people", linkedPeopleRows, selected, headingLevel));
+		}
+		return groups;
+	}
+
+	private renderRelationshipGroup(
+		label: "Relationships" | "Linked people",
+		rows: IncidentRelationshipRow[],
+		selected: AtlasNode,
+		headingLevel: 3 | 4,
+	): HTMLElement {
+		const group = this.doc.createElement("section");
+		group.className = "people-atlas-connection-group";
+		group.dataset.connectionGroup = label === "Relationships" ? "relationships" : "linked-people";
+		const heading = this.doc.createElement(`h${headingLevel}`);
+		heading.textContent = label;
+		group.append(heading, this.renderRelationshipRows(rows, selected, label));
+		return group;
+	}
+
+	private renderRelationshipRows(
+		rows: IncidentRelationshipRow[],
+		selected: AtlasNode,
+		groupLabel: "Relationships" | "Linked people",
+	): HTMLUListElement {
+		const relationships = this.doc.createElement("ul");
+		relationships.className = "people-atlas-relationship-list";
+		relationships.setAttribute("aria-label", `${groupLabel} for ${selected.label}`);
+		for (const row of rows) {
+			const item = this.doc.createElement("li");
+			item.dataset.edgeId = row.edge.id;
+			if (row.edge.filePath) item.dataset.relationshipPath = row.edge.filePath;
+			const description = this.doc.createElement("span");
+			description.textContent = row.description;
+			item.append(description);
+
+			if (row.noteBacked) {
+				const actions = this.doc.createElement("div");
+				actions.className = "people-atlas-semantic-actions";
+				if (this.callbacks.onOpenRelationship && this.callbacks.canOpenRelationship?.(row.edge) === true) {
+					actions.append(this.createRelationshipActionButton("open", row));
+				}
+				if (this.callbacks.onEditRelationship && this.callbacks.canEditRelationship?.(row.edge) === true) {
+					actions.append(this.createRelationshipActionButton("edit", row));
+				}
+				if (actions.childElementCount > 0) item.append(actions);
+			}
+			relationships.append(item);
+		}
+		return relationships;
+	}
+
+	private createRelationshipActionButton(action: RelationshipAction, row: IncidentRelationshipRow): HTMLButtonElement {
+		const label = action === "open" ? "Open relationship note" : "Edit relationship";
+		const button = this.createActionButton(label);
+		button.dataset.relationshipAction = action;
+		button.dataset.edgeId = row.edge.id;
+		if (row.edge.filePath) button.dataset.relationshipPath = row.edge.filePath;
+		button.setAttribute("aria-label", relationshipActionAccessibleName(action, row));
+		this.relationshipEdgesByButton.set(button, row.edge);
+		return button;
 	}
 
 	private selectNode(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
 		if (this.sheet.open && node?.id !== this.sheetNodeId) this.closeSheet(false);
+		const previous = this.selectedId ? this.nodeById(this.selectedId) : undefined;
+		if (previous?.personId !== node?.personId) this.expandedContactHistoryPersonId = undefined;
 		this.selectedId = node?.id;
 		if (node) this.focusedId = node.id;
+		this.reconcileCanvasPhotoAdmission();
 		this.updateSemanticPanel();
 		this.callbacks.onSelectNode(node, source);
 		this.requestDraw();
@@ -583,15 +974,20 @@ export class AtlasRenderer {
 		header.className = "people-atlas-details-sheet-header";
 		const heading = this.doc.createElement("h2");
 		heading.textContent = selected.label;
+		heading.tabIndex = -1;
+		heading.dataset.selectedPersonHeading = selected.id;
 		const close = this.createSheetActionButton("Close", "close");
 		header.append(heading, close);
 		this.sheetContent.append(header);
 
-		const metadata = personMetadata(selected);
-		if (metadata) {
-			const description = this.doc.createElement("p");
-			description.textContent = metadata;
-			this.sheetContent.append(description);
+		if (isResolvedAtlasPersonNode(selected)) {
+			const profile = renderPersonProfile(this.doc, selected, {
+				contactHeadingLevel: 3,
+				resolvePhotoResource: this.callbacks.resolvePersonPhoto,
+			});
+			if (profile) this.sheetContent.append(profile);
+			const contactMoments = this.renderSelectedContactMoments(selected, 3, "sheet");
+			if (contactMoments) this.sheetContent.append(contactMoments);
 		}
 
 		const unavailable = this.capabilityExplanation(selected);
@@ -601,23 +997,17 @@ export class AtlasRenderer {
 			this.sheetContent.append(explanation);
 		}
 
-		const incidentEdges = this.snapshot.edges
-			.map((edge) => this.describeIncidentEdge(edge, selected))
-			.filter((description): description is string => description !== undefined);
-		if (incidentEdges.length === 0) {
+		const relationshipRows = buildIncidentRelationshipRows(
+			this.snapshot,
+			selected,
+			this.getSettings().relationshipRoleFormat,
+		);
+		if (relationshipRows.length === 0) {
 			const empty = this.doc.createElement("p");
-			empty.textContent = "No visible relationships";
+			empty.textContent = "No visible relationships or linked people";
 			this.sheetContent.append(empty);
 		} else {
-			const relationships = this.doc.createElement("ul");
-			relationships.className = "people-atlas-relationship-list";
-			relationships.setAttribute("aria-label", `Visible relationships for ${selected.label}`);
-			for (const description of incidentEdges) {
-				const item = this.doc.createElement("li");
-				item.textContent = description;
-				relationships.append(item);
-			}
-			this.sheetContent.append(relationships);
+			this.sheetContent.append(this.renderRelationshipGroups(relationshipRows, selected, 3));
 		}
 
 		if (isResolvedAtlasPersonNode(selected)) {
@@ -632,6 +1022,9 @@ export class AtlasRenderer {
 			}
 			if (this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true) {
 				actions.append(this.createSheetActionButton("Create relationship", "create"));
+			}
+			if (this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
+				actions.append(this.createSheetActionButton("Log contact", "log-contact"));
 			}
 			this.sheetContent.append(actions);
 		}
@@ -650,6 +1043,379 @@ export class AtlasRenderer {
 		return button;
 	}
 
+	private renderSelectedContactMoments(
+		selected: AtlasNode,
+		headingLevel: 3 | 4,
+		surface: Extract<ContactMomentSurface, "details" | "sheet">,
+	): HTMLElement | undefined {
+		if (!selected.personId) return undefined;
+		const moments = this.contactMoments();
+		const bounded = buildSelectedPersonContactMomentPresentation(moments, selected.personId);
+		const all = buildSelectedPersonContactMomentPresentation(moments, selected.personId, moments.length).recentMoments;
+		const expanded = this.expandedContactHistoryPersonId === selected.personId;
+		const visibleMoments = expanded ? all : bounded.recentMoments;
+
+		const section = this.doc.createElement("section");
+		section.className = "people-atlas-contact-moment-history";
+		section.dataset.contactMomentPersonId = selected.personId;
+		const heading = this.doc.createElement(`h${headingLevel}`);
+		heading.textContent = "Contact moments";
+		section.append(heading);
+
+		if (bounded.earliestOpenFollowUp) {
+			const nextFollowUp = this.doc.createElement("div");
+			nextFollowUp.className = "people-atlas-next-follow-up";
+			const label = this.doc.createElement("p");
+			label.className = "people-atlas-contact-moment-label";
+			label.textContent = "Next follow-up";
+			nextFollowUp.append(
+				label,
+				this.renderContactMomentRow(bounded.earliestOpenFollowUp.moment, surface, {
+					followUpOn: bounded.earliestOpenFollowUp.followUpOn,
+					accessibleContext: "next follow-up",
+					accessiblePeers: [bounded.earliestOpenFollowUp.moment],
+				}),
+			);
+			section.append(nextFollowUp);
+		}
+
+		const history = this.doc.createElement("div");
+		history.className = "people-atlas-contact-moment-recent";
+		const label = this.doc.createElement("p");
+		label.className = "people-atlas-contact-moment-label";
+		label.textContent = expanded ? "All contact moments" : "Recent contact moments";
+		history.append(label);
+		if (visibleMoments.length === 0) {
+			const empty = this.doc.createElement("p");
+			empty.textContent = "No contact moments";
+			history.append(empty);
+		} else {
+			const list = this.doc.createElement("ul");
+			list.className = "people-atlas-contact-moment-list";
+			list.setAttribute("aria-label", `${expanded ? "All" : "Recent"} contact moments for ${selected.label}`);
+			for (const moment of visibleMoments) {
+				list.append(this.renderContactMomentRow(moment, surface, { accessiblePeers: visibleMoments }));
+			}
+			history.append(list);
+		}
+		section.append(history);
+
+		if (all.length > bounded.recentMoments.length) {
+			const toggle = this.createActionButton(expanded ? "Show recent contact moments" : "View all contact moments");
+			toggle.dataset.contactMomentToggle = selected.personId;
+			toggle.setAttribute("aria-expanded", String(expanded));
+			const actions = this.doc.createElement("div");
+			actions.className = "people-atlas-semantic-actions";
+			actions.append(toggle);
+			section.append(actions);
+		}
+		return section;
+	}
+
+	private renderFollowUps(): void {
+		const groups = groupContactMomentFollowUps(this.contactMoments(), this.localCalendarDay());
+		const rows = [...groups.overdue, ...groups.dueToday, ...groups.upcoming];
+		const accessiblePeers = rows.map((row) => row.moment);
+		const hiddenMomentCount = this.hiddenContactMomentCount();
+		this.followUpsSummary.textContent = `${rows.length} open ${rows.length === 1 ? "follow-up" : "follow-ups"}${
+			hiddenMomentCount > 0
+				? ` · ${hiddenMomentCount} contact ${hiddenMomentCount === 1 ? "moment" : "moments"} hidden`
+				: ""
+		}`;
+		this.followUpsContent.replaceChildren();
+		if (rows.length === 0) {
+			const empty = this.doc.createElement("p");
+			empty.className = "people-atlas-empty-message";
+			empty.textContent = "No open follow-ups";
+			this.followUpsContent.append(empty);
+			return;
+		}
+		const definitions: ReadonlyArray<{
+			label: "Overdue" | "Due today" | "Upcoming";
+			key: string;
+			rows: ContactMomentFollowUpRow[];
+		}> = [
+			{ label: "Overdue", key: "overdue", rows: groups.overdue },
+			{ label: "Due today", key: "due-today", rows: groups.dueToday },
+			{ label: "Upcoming", key: "upcoming", rows: groups.upcoming },
+		];
+		for (const definition of definitions) {
+			if (definition.rows.length === 0) continue;
+			const section = this.doc.createElement("section");
+			section.className = "people-atlas-follow-up-group";
+			section.dataset.followUpGroup = definition.key;
+			const heading = this.doc.createElement("h3");
+			heading.textContent = definition.label;
+			const list = this.doc.createElement("ul");
+			list.className = "people-atlas-follow-up-list";
+			list.setAttribute("aria-label", definition.label);
+			for (const row of definition.rows) {
+				list.append(
+					this.renderContactMomentRow(row.moment, "follow-ups", {
+						followUpOn: row.followUpOn,
+						accessiblePeers,
+					}),
+				);
+			}
+			section.append(heading, list);
+			this.followUpsContent.append(section);
+		}
+	}
+
+	private renderContactMomentRow(
+		moment: ContactMomentSummary,
+		surface: ContactMomentSurface,
+		options: {
+			followUpOn?: string;
+			accessibleContext?: string;
+			accessiblePeers?: readonly ContactMomentSummary[];
+		} = {},
+	): HTMLLIElement {
+		const item = this.doc.createElement("li");
+		item.className = surface === "follow-ups" ? "people-atlas-follow-up-row" : "people-atlas-contact-moment-row";
+		item.dataset.contactMomentRow = moment.id;
+		item.dataset.contactMomentId = moment.id;
+		item.dataset.contactMomentPath = moment.filePath;
+		item.tabIndex = -1;
+		if (this.pendingFollowUpMomentIdentities.has(this.contactMomentIdentity(moment))) {
+			item.setAttribute("aria-busy", "true");
+		}
+
+		const content = this.doc.createElement("div");
+		content.className = "people-atlas-contact-moment-content";
+		if (options.followUpOn) {
+			const followUp = this.doc.createElement("p");
+			const prefix = this.doc.createElement("span");
+			prefix.textContent = "Follow up ";
+			const date = this.doc.createElement("time");
+			date.dateTime = options.followUpOn;
+			date.textContent = options.followUpOn;
+			followUp.append(prefix, date);
+			content.append(followUp);
+		}
+		if (surface === "follow-ups") {
+			const people = this.doc.createElement("p");
+			people.textContent = this.contactMomentPeopleLabel(moment);
+			content.append(people);
+		}
+		const occurred = this.doc.createElement("p");
+		const occurredPrefix = this.doc.createElement("span");
+		occurredPrefix.textContent = "Contact ";
+		const occurredDate = this.doc.createElement("time");
+		occurredDate.dateTime = moment.occurredOn;
+		occurredDate.textContent = moment.occurredOn;
+		occurred.append(occurredPrefix, occurredDate);
+		content.append(occurred);
+		if (moment.channel) {
+			const channel = this.doc.createElement("p");
+			channel.textContent = `Channel: ${moment.channel}`;
+			content.append(channel);
+		}
+		if (moment.summary) {
+			const summary = this.doc.createElement("p");
+			summary.textContent = moment.summary;
+			content.append(summary);
+		}
+		const relationship = this.contactMomentRelationshipLabel(moment);
+		if (relationship) {
+			const relationshipText = this.doc.createElement("p");
+			relationshipText.textContent = relationship;
+			content.append(relationshipText);
+		}
+		item.append(content);
+
+		const actions = this.doc.createElement("div");
+		actions.className = "people-atlas-semantic-actions people-atlas-contact-moment-actions";
+		const accessiblePeers = options.accessiblePeers ?? [moment];
+		const open = this.createContactMomentActionButton(
+			"open",
+			moment,
+			surface,
+			options.followUpOn,
+			accessiblePeers,
+			options.accessibleContext,
+		);
+		if (open) actions.append(open);
+		const edit = this.createContactMomentActionButton(
+			"edit",
+			moment,
+			surface,
+			options.followUpOn,
+			accessiblePeers,
+			options.accessibleContext,
+		);
+		if (edit) actions.append(edit);
+		if (surface === "follow-ups" && options.followUpOn) {
+			const done = this.createContactMomentActionButton(
+				"done",
+				moment,
+				surface,
+				options.followUpOn,
+				accessiblePeers,
+				options.accessibleContext,
+			);
+			if (done) actions.append(done);
+			const dismiss = this.createContactMomentActionButton(
+				"dismiss",
+				moment,
+				surface,
+				options.followUpOn,
+				accessiblePeers,
+				options.accessibleContext,
+			);
+			if (dismiss) actions.append(dismiss);
+		}
+		if (actions.childElementCount > 0) item.append(actions);
+		return item;
+	}
+
+	private createContactMomentActionButton(
+		action: ContactMomentAction,
+		moment: ContactMomentSummary,
+		surface: ContactMomentSurface,
+		followUpOn?: string,
+		accessiblePeers: readonly ContactMomentSummary[] = [moment],
+		accessibleContext?: string,
+	): HTMLButtonElement | undefined {
+		if (!this.canUseContactMomentAction(action, moment)) return undefined;
+		const people = this.contactMomentPeopleLabel(moment);
+		const actionLabels: Record<ContactMomentAction, string> = {
+			open: "Open contact moment",
+			edit: "Edit contact moment",
+			done: "Mark follow-up done",
+			dismiss: "Dismiss follow-up",
+		};
+		const button = this.createActionButton(actionLabels[action]);
+		button.dataset.contactMomentAction = action;
+		button.dataset.contactMomentId = moment.id;
+		button.dataset.contactMomentPath = moment.filePath;
+		button.dataset.contactMomentSurface = surface;
+		const dateContext =
+			action === "done" || action === "dismiss"
+				? `due ${followUpOn ?? moment.followUpOn ?? "unknown date"}`
+				: moment.occurredOn;
+		const discriminator = this.contactMomentActionDiscriminator(moment, action, accessiblePeers);
+		const accessibleName = [
+			`${actionLabels[action]} for ${people}, ${dateContext}`,
+			discriminator.visible,
+			discriminator.ordinal,
+			accessibleContext,
+		]
+			.filter((part): part is string => Boolean(part))
+			.join(", ");
+		button.setAttribute("aria-label", accessibleName);
+		if (
+			(action === "done" || action === "dismiss") &&
+			this.pendingFollowUpMomentIdentities.has(this.contactMomentIdentity(moment))
+		) {
+			button.setAttribute("aria-disabled", "true");
+		}
+		this.contactMomentsByButton.set(button, moment);
+		return button;
+	}
+
+	private contactMomentActionDiscriminator(
+		moment: ContactMomentSummary,
+		action: ContactMomentAction,
+		peers: readonly ContactMomentSummary[],
+	): { visible: string | undefined; ordinal: string | undefined } {
+		const visible = this.contactMomentVisibleDiscriminator(moment);
+		const collisionKey = this.contactMomentActionCollisionKey(moment, action, visible);
+		const collisions = [
+			...peers.filter(
+				(candidate) =>
+					this.contactMomentActionCollisionKey(candidate, action, this.contactMomentVisibleDiscriminator(candidate)) ===
+					collisionKey,
+			),
+		].sort((left, right) => {
+			if (left.id !== right.id) return left.id < right.id ? -1 : 1;
+			if (left.filePath === right.filePath) return 0;
+			return left.filePath < right.filePath ? -1 : 1;
+		});
+		if (collisions.length < 2) return { visible, ordinal: undefined };
+		const index = collisions.findIndex(
+			(candidate) => candidate.id === moment.id && candidate.filePath === moment.filePath,
+		);
+		return {
+			visible,
+			ordinal: `contact ${Math.max(0, index) + 1} of ${collisions.length}`,
+		};
+	}
+
+	private contactMomentActionCollisionKey(
+		moment: ContactMomentSummary,
+		action: ContactMomentAction,
+		visible: string | undefined,
+	): string {
+		const date = action === "done" || action === "dismiss" ? (moment.followUpOn ?? "unknown date") : moment.occurredOn;
+		return [this.contactMomentPeopleLabel(moment), date, visible ?? ""].join("\u0000");
+	}
+
+	private contactMomentVisibleDiscriminator(moment: ContactMomentSummary): string | undefined {
+		for (const candidate of [moment.summary, moment.channel]) {
+			const normalized = candidate?.replace(/\s+/g, " ").trim();
+			if (normalized) return normalized.length > 80 ? `${normalized.slice(0, 79)}…` : normalized;
+		}
+		return undefined;
+	}
+
+	private contactMomentIdentity(moment: Pick<ContactMomentSummary, "id" | "filePath">): string {
+		return `${moment.id}\u0000${moment.filePath}`;
+	}
+
+	private canUseContactMomentAction(action: ContactMomentAction, moment: ContactMomentSummary): boolean {
+		try {
+			if (action === "open")
+				return Boolean(this.callbacks.onOpenContactMoment && this.callbacks.canOpenContactMoment?.(moment) === true);
+			if (action === "edit")
+				return Boolean(this.callbacks.onEditContactMoment && this.callbacks.canEditContactMoment?.(moment) === true);
+			const status = this.followUpStatusForAction(action);
+			return Boolean(
+				status && this.callbacks.onUpdateFollowUp && this.callbacks.canUpdateFollowUp?.(moment, status) === true,
+			);
+		} catch {
+			return false;
+		}
+	}
+
+	private followUpStatusForAction(action: ContactMomentAction): TerminalFollowUpStatus | undefined {
+		if (action === "done") return "done";
+		if (action === "dismiss") return "dismissed";
+		return undefined;
+	}
+
+	private contactMomentPeopleLabel(moment: ContactMomentSummary): string {
+		const labels = moment.personIds.map((personId) => {
+			const person = this.snapshot.nodes.find(
+				(node) =>
+					!isAmbiguousAtlasNode(node) &&
+					node.kind === "person" &&
+					(node.personId === personId || (!node.personId && node.id === personId)),
+			);
+			return person?.label ?? "Unavailable person";
+		});
+		return labels.join(", ");
+	}
+
+	private contactMomentRelationshipLabel(moment: ContactMomentSummary): string | undefined {
+		if (!moment.relationshipId) return undefined;
+		const edge = this.snapshot.edges.find((candidate) => candidate.id === moment.relationshipId && !candidate.inferred);
+		if (!edge) return undefined;
+		const source = this.nodeById(edge.sourceId);
+		const target = this.nodeById(edge.targetId);
+		if (!source || !target) return undefined;
+		const kind = edge.types.length > 0 ? edge.types.join(", ") : "relationship";
+		return `Relationship: ${source.label} and ${target.label} · ${kind}`;
+	}
+
+	private contactMoments(): readonly ContactMomentSummary[] {
+		return this.snapshot.contactMoments;
+	}
+
+	private hiddenContactMomentCount(): number {
+		return Math.max(0, this.snapshot.hiddenContactMomentCount);
+	}
+
 	private openSheet(invoker: SheetInvoker): void {
 		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
 		if (!selected || this.mode !== "graph" || !this.sheet.isConnected) return;
@@ -657,6 +1423,8 @@ export class AtlasRenderer {
 		this.sheetInvoker = invoker;
 		this.renderSheet();
 		if (!this.sheet.open) {
+			const activeElement = this.doc.activeElement;
+			this.sheetReturnFocusElement = activeElement instanceof this.win.HTMLElement ? activeElement : undefined;
 			try {
 				this.sheet.showModal();
 			} catch {
@@ -669,6 +1437,7 @@ export class AtlasRenderer {
 				}
 				this.sheetNodeId = undefined;
 				this.sheetInvoker = undefined;
+				this.sheetReturnFocusElement = undefined;
 				this.sheetContent.replaceChildren();
 				return;
 			}
@@ -680,16 +1449,33 @@ export class AtlasRenderer {
 		if (!this.sheet.open) {
 			this.sheetNodeId = undefined;
 			this.sheetInvoker = undefined;
+			this.sheetReturnFocusElement = undefined;
 			return;
 		}
 		const invoker = this.sheetInvoker;
 		this.sheet.close();
 		this.sheetNodeId = undefined;
 		this.sheetInvoker = undefined;
+		this.sheetReturnFocusElement = undefined;
 		if (!restoreFocus || this.destroyed) return;
 		if (invoker === "details" && !this.detailsButton.disabled && this.detailsButton.isConnected)
 			this.detailsButton.focus();
 		else if (invoker === "canvas" && this.canvas.isConnected && this.mode === "graph") this.canvas.focus();
+	}
+
+	private closeSheetForExternalAction(): void {
+		const returnFocusElement = this.sheetReturnFocusElement;
+		if (!returnFocusElement) {
+			this.closeSheet(false);
+			return;
+		}
+		const wasInert = returnFocusElement.inert;
+		returnFocusElement.inert = true;
+		try {
+			this.closeSheet(false);
+		} finally {
+			returnFocusElement.inert = wasInert;
+		}
 	}
 
 	private nodeById(nodeId: NodeId | string): AtlasNode | undefined {
@@ -719,8 +1505,102 @@ export class AtlasRenderer {
 		return target.closest<HTMLButtonElement>("button[data-sheet-action]") ?? undefined;
 	}
 
+	private relationshipActionButtonFrom(target: EventTarget | Element | null): HTMLButtonElement | undefined {
+		if (!(target instanceof this.win.Element)) return undefined;
+		return target.closest<HTMLButtonElement>("button[data-relationship-action]") ?? undefined;
+	}
+
+	private contactMomentActionButtonFrom(target: EventTarget | Element | null): HTMLButtonElement | undefined {
+		if (!(target instanceof this.win.Element)) return undefined;
+		return target.closest<HTMLButtonElement>("button[data-contact-moment-action]") ?? undefined;
+	}
+
+	private relationshipActionFocusFrom(target: EventTarget | Element | null): RelationshipActionFocus | undefined {
+		const button = this.relationshipActionButtonFrom(target);
+		const action = button?.dataset.relationshipAction;
+		const edgeId = button?.dataset.edgeId;
+		if ((action !== "open" && action !== "edit") || !edgeId) return undefined;
+		return {
+			action,
+			edgeId,
+			filePath: button.dataset.relationshipPath,
+		};
+	}
+
+	private contactMomentActionFocusFrom(target: EventTarget | Element | null): ContactMomentActionFocus | undefined {
+		const button = this.contactMomentActionButtonFrom(target);
+		const action = button?.dataset.contactMomentAction;
+		const momentId = button?.dataset.contactMomentId;
+		const filePath = button?.dataset.contactMomentPath;
+		const surface = button?.dataset.contactMomentSurface;
+		if (
+			(action !== "open" && action !== "edit" && action !== "done" && action !== "dismiss") ||
+			!momentId ||
+			!filePath ||
+			(surface !== "details" && surface !== "sheet" && surface !== "follow-ups")
+		) {
+			return undefined;
+		}
+		return { action, momentId, filePath, surface };
+	}
+
 	private focusSelectedAction(action: SelectedAction): void {
 		this.details.querySelector<HTMLButtonElement>(`button[data-action="${action}"]`)?.focus();
+	}
+
+	private focusRelationshipAction(container: ParentNode, focus: RelationshipActionFocus): boolean {
+		const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button[data-relationship-action]")).find(
+			(candidate) =>
+				candidate.dataset.relationshipAction === focus.action &&
+				candidate.dataset.edgeId === focus.edgeId &&
+				candidate.dataset.relationshipPath === focus.filePath,
+		);
+		button?.focus();
+		return Boolean(button && this.doc.activeElement === button);
+	}
+
+	private focusContactMomentAction(focus: ContactMomentActionFocus): boolean {
+		const container =
+			focus.surface === "follow-ups" ? this.followUpsPanel : focus.surface === "sheet" ? this.sheet : this.details;
+		const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button[data-contact-moment-action]")).find(
+			(candidate) =>
+				candidate.dataset.contactMomentAction === focus.action &&
+				candidate.dataset.contactMomentId === focus.momentId &&
+				candidate.dataset.contactMomentPath === focus.filePath &&
+				candidate.dataset.contactMomentSurface === focus.surface,
+		);
+		button?.focus();
+		return Boolean(button && this.doc.activeElement === button);
+	}
+
+	private contactMomentRow(momentId: string, filePath?: string): HTMLLIElement | undefined {
+		return Array.from(this.followUpsPanel.querySelectorAll<HTMLLIElement>("[data-contact-moment-row]")).find(
+			(candidate) =>
+				candidate.dataset.contactMomentId === momentId &&
+				(filePath === undefined || candidate.dataset.contactMomentPath === filePath),
+		);
+	}
+
+	private focusFollowUpAfterRemoval(previousOrder: readonly string[], removedMomentId: string): void {
+		const removedIndex = previousOrder.indexOf(removedMomentId);
+		const later = removedIndex >= 0 ? previousOrder.slice(removedIndex + 1) : [];
+		const earlier = removedIndex > 0 ? previousOrder.slice(0, removedIndex).reverse() : [];
+		for (const momentId of [...later, ...earlier]) {
+			const row = this.contactMomentRow(momentId);
+			if (!row) continue;
+			const action = row.querySelector<HTMLButtonElement>("button:not(:disabled)");
+			(action ?? row).focus();
+			if (this.doc.activeElement === (action ?? row)) return;
+		}
+		this.followUpsHeading.focus();
+	}
+
+	private focusSelectedDetailsHeading(container: ParentNode): boolean {
+		const heading = Array.from(container.querySelectorAll<HTMLElement>("[data-selected-person-heading]")).find(
+			(candidate) => candidate.dataset.selectedPersonHeading === this.selectedId,
+		);
+		heading?.focus();
+		return Boolean(heading && this.doc.activeElement === heading);
 	}
 
 	private focusSheetAction(action: SheetAction): boolean {
@@ -824,12 +1704,48 @@ export class AtlasRenderer {
 		for (const pointerId of this.touchGesture.cancel()) this.releasePointer(pointerId);
 	}
 
+	private localCalendarDay(): string {
+		const now = new this.win.Date();
+		const year = String(now.getFullYear()).padStart(4, "0");
+		const month = String(now.getMonth() + 1).padStart(2, "0");
+		const day = String(now.getDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	}
+
+	private followUpMomentOrder(): string[] {
+		const groups = groupContactMomentFollowUps(this.contactMoments(), this.localCalendarDay());
+		return [...groups.overdue, ...groups.dueToday, ...groups.upcoming].map((row) => row.moment.id);
+	}
+
+	private scheduleFollowUpDayRefresh(): void {
+		if (this.destroyed || this.mode !== "follow-ups" || this.followUpDayTimer !== undefined) return;
+		const now = new this.win.Date();
+		const nextDay = new this.win.Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+		const delay = Math.max(1, nextDay.getTime() - now.getTime() + 25);
+		this.followUpDayTimer = this.win.setTimeout(() => {
+			this.followUpDayTimer = undefined;
+			if (this.destroyed || this.mode !== "follow-ups") return;
+			this.renderFollowUps();
+			this.scheduleFollowUpDayRefresh();
+		}, delay);
+	}
+
+	private cancelFollowUpDayRefresh(): void {
+		if (this.followUpDayTimer === undefined) return;
+		this.win.clearTimeout(this.followUpDayTimer);
+		this.followUpDayTimer = undefined;
+	}
+
 	private readonly onGraphMode = (): void => {
 		this.setMode("graph");
 	};
 
 	private readonly onListMode = (): void => {
 		this.setMode("list");
+	};
+
+	private readonly onFollowUpsMode = (): void => {
+		this.setMode("follow-ups");
 	};
 
 	private readonly onZoomOut = (): void => {
@@ -900,14 +1816,48 @@ export class AtlasRenderer {
 
 	private readonly onDetailsClick = (event: MouseEvent): void => {
 		if (!(event.target instanceof this.win.Element)) return;
+		const contactMomentAction = this.contactMomentActionButtonFrom(event.target);
+		if (contactMomentAction) {
+			void this.invokeContactMomentAction(contactMomentAction);
+			return;
+		}
+		const contactMomentToggle = event.target.closest<HTMLButtonElement>("button[data-contact-moment-toggle]");
+		if (contactMomentToggle) {
+			this.toggleSelectedContactMomentHistory(contactMomentToggle, "details");
+			return;
+		}
+		const relationshipAction = this.relationshipActionButtonFrom(event.target);
+		if (relationshipAction) {
+			void this.invokeRelationshipAction(relationshipAction, false);
+			return;
+		}
 		const action = this.actionButtonFrom(event.target)?.dataset.action;
 		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
 		if (!isResolvedAtlasPersonNode(selected)) return;
 		if (action === "open") this.callbacks.onOpenNode(selected);
 		if (action === "center") this.callbacks.onCenterNode(selected);
+		if (action === "log-contact" && this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
+			this.callbacks.onLogContact(selected);
+		}
 	};
 
 	private readonly onSheetClick = (event: MouseEvent): void => {
+		if (!(event.target instanceof this.win.Element)) return;
+		const contactMomentAction = this.contactMomentActionButtonFrom(event.target);
+		if (contactMomentAction) {
+			void this.invokeContactMomentAction(contactMomentAction);
+			return;
+		}
+		const contactMomentToggle = event.target.closest<HTMLButtonElement>("button[data-contact-moment-toggle]");
+		if (contactMomentToggle) {
+			this.toggleSelectedContactMomentHistory(contactMomentToggle, "sheet");
+			return;
+		}
+		const relationshipAction = this.relationshipActionButtonFrom(event.target);
+		if (relationshipAction) {
+			void this.invokeRelationshipAction(relationshipAction, true);
+			return;
+		}
 		const action = this.sheetActionButtonFrom(event.target)?.dataset.sheetAction as SheetAction | undefined;
 		if (!action) return;
 		if (action === "close") {
@@ -925,6 +1875,8 @@ export class AtlasRenderer {
 			this.callbacks.canCreateRelationship?.(selected) === true;
 		const canEdit =
 			action === "edit" && this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true;
+		const canLogContact =
+			action === "log-contact" && this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true;
 		if (action === "edit" && !canEdit) {
 			this.renderSheet();
 			this.focusSheetAction("close");
@@ -935,12 +1887,122 @@ export class AtlasRenderer {
 			this.focusSheetAction("close");
 			return;
 		}
+		if (action === "log-contact" && !canLogContact) {
+			this.renderSheet();
+			this.focusSheetAction("close");
+			return;
+		}
 		this.closeSheet(false);
 		if (action === "open") this.callbacks.onOpenNode(selected);
 		else if (action === "center") this.callbacks.onCenterNode(selected);
 		else if (canEdit) this.callbacks.onEditPerson?.(selected);
 		else if (canCreate) this.callbacks.onCreateRelationship?.(selected);
+		else if (canLogContact) this.callbacks.onLogContact?.(selected);
 	};
+
+	private readonly onFollowUpsClick = (event: MouseEvent): void => {
+		const button = this.contactMomentActionButtonFrom(event.target);
+		if (button) void this.invokeContactMomentAction(button);
+	};
+
+	private toggleSelectedContactMomentHistory(
+		button: HTMLButtonElement,
+		surface: Extract<ContactMomentSurface, "details" | "sheet">,
+	): void {
+		const personId = button.dataset.contactMomentToggle;
+		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
+		if (!personId || selected?.personId !== personId) return;
+		this.expandedContactHistoryPersonId = this.expandedContactHistoryPersonId === personId ? undefined : personId;
+		this.renderSelectedDetails();
+		if (this.sheet.open) this.renderSheet();
+		const container = surface === "sheet" ? this.sheet : this.details;
+		container
+			.querySelector<HTMLButtonElement>(`button[data-contact-moment-toggle="${this.win.CSS.escape(personId)}"]`)
+			?.focus();
+	}
+
+	private async invokeRelationshipAction(button: HTMLButtonElement, closeSheet: boolean): Promise<void> {
+		const edge = this.relationshipEdgesByButton.get(button);
+		const action = button.dataset.relationshipAction;
+		if (!edge || (action !== "open" && action !== "edit")) return;
+		if (closeSheet) this.closeSheetForExternalAction();
+		if (action === "open") await this.callbacks.onOpenRelationship?.(edge, button);
+		else await this.callbacks.onEditRelationship?.(edge, button);
+	}
+
+	private async invokeContactMomentAction(button: HTMLButtonElement): Promise<void> {
+		const renderedMoment = this.contactMomentsByButton.get(button);
+		const focus = this.contactMomentActionFocusFrom(button);
+		if (!renderedMoment || !focus) return;
+		const moment = this.contactMoments().find(
+			(candidate) => candidate.id === renderedMoment.id && candidate.filePath === renderedMoment.filePath,
+		);
+		if (!moment || !this.canUseContactMomentAction(focus.action, moment)) {
+			try {
+				this.callbacks.onContactMomentActionUnavailable?.(moment ?? renderedMoment, focus.action, button);
+			} catch {
+				// The stale action still fails closed and refreshes even if user feedback cannot be shown.
+			}
+			this.refreshContactMomentSurface(focus.surface);
+			this.restoreContactMomentActionFocus(button);
+			return;
+		}
+		if (focus.surface === "sheet") this.closeSheetForExternalAction();
+		if (focus.action === "open") {
+			await this.callbacks.onOpenContactMoment?.(moment, button);
+			return;
+		}
+		if (focus.action === "edit") {
+			await this.callbacks.onEditContactMoment?.(moment, button);
+			return;
+		}
+		const status = this.followUpStatusForAction(focus.action);
+		const identity = this.contactMomentIdentity(moment);
+		if (!status || this.pendingFollowUpMomentIdentities.has(identity)) return;
+		this.pendingFollowUpMomentIdentities.add(identity);
+		this.setFollowUpMomentBusy(focus.momentId, focus.filePath, true);
+		let accepted = false;
+		try {
+			accepted = (await this.callbacks.onUpdateFollowUp?.(moment, status, button)) === true;
+		} catch {
+			accepted = false;
+		} finally {
+			this.pendingFollowUpMomentIdentities.delete(identity);
+			if (!this.destroyed) {
+				this.setFollowUpMomentBusy(focus.momentId, focus.filePath, false);
+				const activeElement = this.doc.activeElement;
+				if (!activeElement || !this.root.contains(activeElement) || activeElement === this.doc.body) {
+					this.restoreContactMomentActionFocus(button);
+				} else if (!accepted && this.focusContactMomentAction(focus)) {
+					// A rejected stale/no-write result keeps focus on its still-current action when available.
+				}
+			}
+		}
+	}
+
+	private setFollowUpMomentBusy(momentId: string, filePath: string, busy: boolean): void {
+		const row = this.contactMomentRow(momentId, filePath);
+		if (!row) return;
+		if (busy) row.setAttribute("aria-busy", "true");
+		else row.removeAttribute("aria-busy");
+		for (const button of Array.from(
+			row.querySelectorAll<HTMLButtonElement>(
+				'button[data-contact-moment-action="done"], button[data-contact-moment-action="dismiss"]',
+			),
+		)) {
+			if (busy) button.setAttribute("aria-disabled", "true");
+			else button.removeAttribute("aria-disabled");
+		}
+	}
+
+	private refreshContactMomentSurface(surface: ContactMomentSurface): void {
+		if (surface === "follow-ups") {
+			if (this.mode === "follow-ups") this.renderFollowUps();
+			return;
+		}
+		this.renderSelectedDetails();
+		if (surface === "sheet" && this.sheet.open) this.renderSheet();
+	}
 
 	private readonly onSheetCancel = (event: Event): void => {
 		event.preventDefault();
@@ -1092,14 +2154,4 @@ function personAccessibleName(node: AtlasNode): string {
 	if (isAmbiguousAtlasNode(node)) return `${node.label}, ambiguous person`;
 	if (node.kind === "ghost") return `${node.label}, unresolved person`;
 	return node.organisations.length > 0 ? `${node.label}, ${node.organisations.join(", ")}` : node.label;
-}
-
-function initials(label: string): string {
-	const words = label.trim().split(/\s+/).filter(Boolean);
-	return (
-		words
-			.slice(0, 2)
-			.map((word) => word[0]?.toUpperCase() ?? "")
-			.join("") || "?"
-	);
 }

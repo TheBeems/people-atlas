@@ -140,4 +140,44 @@ describe("view-state write coordination", () => {
 		expect(last.showLabels).toBe(false);
 		expect(last.viewStates.standalone?.centerMode).toBe("none");
 	});
+
+	it("rejects person-owned property collisions before persisting settings", async () => {
+		const plugin = createPlugin();
+		plugin.saveData = vi.fn(async () => undefined);
+		const originalEmailsProperty = plugin.settings.emailsProperty;
+
+		await expect(plugin.updateSetting("emailsProperty", plugin.settings.nameProperty)).resolves.toBe(false);
+
+		expect(plugin.settings.emailsProperty).toBe(originalEmailsProperty);
+		expect(plugin.saveData).not.toHaveBeenCalled();
+		expect(notices.at(-1)).toContain("Person property mappings are invalid");
+	});
+
+	it.each([
+		{
+			key: "contactMomentPeopleProperty" as const,
+			value: "contact_moment_id",
+			message: "Contact-moment property mappings are invalid",
+		},
+		{
+			key: "contactMomentTypeValue" as const,
+			value: "relationship",
+			message: "Note type values are invalid",
+		},
+		{
+			key: "contactMomentsFolder" as const,
+			value: "../Contact moments",
+			message: "must stay inside the vault",
+		},
+	])("rejects unsafe contact-moment setting $key before persistence", async ({ key, value, message }) => {
+		const plugin = createPlugin();
+		plugin.saveData = vi.fn(async () => undefined);
+		const originalValue = plugin.settings[key];
+
+		await expect(plugin.updateSetting(key, value)).resolves.toBe(false);
+
+		expect(plugin.settings[key]).toBe(originalValue);
+		expect(plugin.saveData).not.toHaveBeenCalled();
+		expect(notices.at(-1)).toContain(message);
+	});
 });

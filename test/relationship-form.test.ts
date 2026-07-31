@@ -4,13 +4,16 @@ import type { PersonRecord, RelationshipRecord } from "../src/domain/types";
 import {
 	RelationshipFormSession,
 	applyRelationshipPreset,
+	buildRelationshipCreatePrefill,
 	buildRelationshipCreateInput,
 	buildRelationshipUpdates,
 	createRelationshipFormValues,
 	detachRelationshipPreset,
 	editRelationshipFormValues,
+	getRelationshipFormPresentation,
 	getRelationshipPresetState,
 	proposeRelationshipPath,
+	resolveCanonicalPersonByPath,
 	type RelationshipMutationPort,
 } from "../src/editor/relationship-form";
 
@@ -21,6 +24,8 @@ const people: PersonRecord[] = [
 		name: "Alice / Admin",
 		aliases: [],
 		organisations: [],
+		emails: [],
+		phones: [],
 		contacts: [],
 	},
 	{
@@ -29,6 +34,18 @@ const people: PersonRecord[] = [
 		name: "Bob",
 		aliases: [],
 		organisations: [],
+		emails: [],
+		phones: [],
+		contacts: [],
+	},
+	{
+		id: "person-mathijs",
+		filePath: "People/Mathijs.md",
+		name: "Mathijs",
+		aliases: [],
+		organisations: [],
+		emails: [],
+		phones: [],
 		contacts: [],
 	},
 ];
@@ -38,7 +55,6 @@ const relationship: RelationshipRecord = {
 	filePath: "People/Relationships/Alice - Bob.md",
 	from: { raw: "[[People/Alice]]", target: "People/Alice" },
 	to: { raw: "person-bob", target: "person-bob" },
-	direction: "undirected",
 	types: ["friend"],
 	closeness: 4,
 	since: "2020-01-02",
@@ -55,13 +71,123 @@ function mutations(overrides: Partial<RelationshipMutationPort> = {}): Relations
 }
 
 describe("relationship form contract", () => {
-	it("prefills Person A and proposes a safe People/Relationships path", () => {
+	it("prefills fixed endpoint slots and proposes a safe People/Relationships path", () => {
 		const values = createRelationshipFormValues(people, "People/Alice.md");
 		values.toPath = "People/Bob.md";
 
 		expect(values.fromPath).toBe("People/Alice.md");
-		expect(values.direction).toBe("undirected");
+		expect(values).not.toHaveProperty("direction");
 		expect(proposeRelationshipPath(values, people)).toBe("People/Relationships/Alice - Admin - Bob.md");
+	});
+
+	it.each([
+		{
+			name: "global create with My person",
+			selectedPath: undefined,
+			myPersonId: "person-mathijs",
+			expected: {
+				fromPersonPath: "People/Mathijs.md",
+				myPersonPath: "People/Mathijs.md",
+			},
+		},
+		{
+			name: "another selected person with My person",
+			selectedPath: "People/Alice.md",
+			myPersonId: "person-mathijs",
+			expected: {
+				fromPersonPath: "People/Mathijs.md",
+				toPersonPath: "People/Alice.md",
+				myPersonPath: "People/Mathijs.md",
+			},
+		},
+		{
+			name: "My person selected",
+			selectedPath: "People/Mathijs.md",
+			myPersonId: "person-mathijs",
+			expected: {
+				fromPersonPath: "People/Mathijs.md",
+				myPersonPath: "People/Mathijs.md",
+			},
+		},
+		{
+			name: "selected person without My person",
+			selectedPath: "People/Alice.md",
+			myPersonId: "",
+			expected: { fromPersonPath: "People/Alice.md" },
+		},
+		{
+			name: "global create without My person",
+			selectedPath: undefined,
+			myPersonId: "",
+			expected: {},
+		},
+		{
+			name: "global create with missing My person",
+			selectedPath: undefined,
+			myPersonId: "person-missing",
+			expected: {},
+		},
+		{
+			name: "selected person with missing My person",
+			selectedPath: "People/Alice.md",
+			myPersonId: "person-missing",
+			expected: { fromPersonPath: "People/Alice.md" },
+		},
+	])("uses the self-first prefill contract for $name", ({ selectedPath, myPersonId, expected }) => {
+		expect(buildRelationshipCreatePrefill(people, selectedPath, myPersonId)).toEqual(expected);
+	});
+
+	it("does not prefill ambiguous My person or an identity-ambiguous selected path", () => {
+		const alice = people.find((person) => person.id === "person-alice");
+		expect(alice).toBeDefined();
+		if (!alice) throw new Error("Alice fixture is required.");
+		const duplicateAlice: PersonRecord = {
+			...alice,
+			filePath: "People/Alice duplicate.md",
+		};
+		const ambiguousPeople = [...people, duplicateAlice];
+
+		expect(buildRelationshipCreatePrefill(ambiguousPeople, undefined, "person-alice")).toEqual({});
+		expect(buildRelationshipCreatePrefill(ambiguousPeople, "People/Alice.md", undefined)).toEqual({});
+		expect(resolveCanonicalPersonByPath(ambiguousPeople, "People/Alice.md")).toBeUndefined();
+	});
+
+	it("provides dynamic person and role labels without changing fixed endpoint slots", () => {
+		const values = {
+			...createRelationshipFormValues(people, "People/Mathijs.md", "People/Alice.md"),
+			fromRole: "colleague",
+			toRole: "manager",
+		};
+
+		expect(getRelationshipFormPresentation(values, people, "People/Mathijs.md")).toEqual({
+			fromPersonLabel: "First person — Mathijs",
+			toPersonLabel: "Second person — Alice / Admin",
+			fromRoleLabel: "My role",
+			toRoleLabel: "Alice / Admin's role",
+			rolePreview: "In this relationship, Mathijs's role is colleague and Alice / Admin's role is manager.",
+		});
+		expect(values).toMatchObject({
+			fromPath: "People/Mathijs.md",
+			toPath: "People/Alice.md",
+		});
+	});
+
+	it("uses actual names for both roles without My person and neutral labels for blank slots", () => {
+		const thirdParty = {
+			...createRelationshipFormValues(people, "People/Alice.md", "People/Bob.md"),
+			fromRole: "mentor",
+			toRole: "mentee",
+		};
+		expect(getRelationshipFormPresentation(thirdParty, people, "People/Mathijs.md")).toMatchObject({
+			fromRoleLabel: "Alice / Admin's role",
+			toRoleLabel: "Bob's role",
+		});
+		expect(getRelationshipFormPresentation(createRelationshipFormValues(people), people)).toEqual({
+			fromPersonLabel: "First person",
+			toPersonLabel: "Second person",
+			fromRoleLabel: "First person's role",
+			toRoleLabel: "Second person's role",
+		});
 	});
 
 	it("maps canonical endpoint paths and optional fields to a create input", () => {
@@ -90,7 +216,6 @@ describe("relationship form contract", () => {
 			types: ["friend", "colleague"],
 			fromRole: "Friend",
 			toRole: "Friend",
-			direction: "undirected",
 			closeness: 5,
 			since: "2020-01-02",
 			lastContact: "2026-07-24",
@@ -103,13 +228,22 @@ describe("relationship form contract", () => {
 			id: "sibling",
 			name: "Sibling",
 			types: ["sibling"],
-			direction: "undirected" as const,
 			fromRole: "Brother",
 			toRole: "Sister",
 		};
 		const applied = applyRelationshipPreset(createRelationshipFormValues(people), preset);
+		const withEndpoints = applyRelationshipPreset(
+			createRelationshipFormValues(people, "People/Alice.md", "People/Bob.md"),
+			preset,
+		);
 
 		expect(getRelationshipPresetState(applied, [preset])).toBe("up-to-date");
+		expect(withEndpoints).toMatchObject({
+			fromPath: "People/Alice.md",
+			toPath: "People/Bob.md",
+			fromRole: "Brother",
+			toRole: "Sister",
+		});
 		const customized = { ...applied, fromRole: "Sibling" };
 		expect(getRelationshipPresetState(customized, [preset])).toBe("modified");
 		expect(getRelationshipPresetState(customized, [])).toBe("missing");
@@ -122,7 +256,7 @@ describe("relationship form contract", () => {
 	});
 
 	it("resolves edit endpoints by canonical path or unique stable ID", () => {
-		const values = editRelationshipFormValues(relationship, "explicit-relationship-id", people, (target) =>
+		const values = editRelationshipFormValues(relationship, people, (target) =>
 			target === "People/Alice" ? "People/Alice.md" : undefined,
 		);
 
@@ -130,20 +264,53 @@ describe("relationship form contract", () => {
 			path: relationship.filePath,
 			fromPath: "People/Alice.md",
 			toPath: "People/Bob.md",
-			relationshipId: "explicit-relationship-id",
+			relationshipId: "relationship-1",
 			types: "friend",
 			closeness: "4",
 			status: "active",
 		});
 	});
 
+	it("does not turn an identity-ambiguous edit endpoint into a selected canonical path", () => {
+		const alice = people.find((person) => person.id === "person-alice");
+		expect(alice).toBeDefined();
+		if (!alice) throw new Error("Alice fixture is required.");
+		const ambiguousPeople = [...people, { ...alice, filePath: "People/Alice duplicate.md" }];
+		const stored: RelationshipRecord = {
+			...relationship,
+			from: { raw: "person-alice", target: "person-alice" },
+		};
+
+		const values = editRelationshipFormValues(stored, ambiguousPeople, () => "People/Alice.md");
+
+		expect(values.fromPath).toBe("person-alice");
+	});
+
+	it("preserves stored endpoint and role order while My person is second", () => {
+		const stored: RelationshipRecord = {
+			...relationship,
+			from: { raw: "person-alice", target: "person-alice" },
+			to: { raw: "person-mathijs", target: "person-mathijs" },
+			fromRole: "manager",
+			toRole: "colleague",
+		};
+
+		const values = editRelationshipFormValues(stored, people, () => undefined);
+
+		expect(values).toMatchObject({
+			fromPath: "People/Alice.md",
+			toPath: "People/Mathijs.md",
+			fromRole: "manager",
+			toRole: "colleague",
+		});
+		expect(getRelationshipFormPresentation(values, people, "People/Mathijs.md")).toMatchObject({
+			fromRoleLabel: "Alice / Admin's role",
+			toRoleLabel: "My role",
+		});
+	});
+
 	it("emits only changed edit fields and uses null to clear an optional value", () => {
-		const original = editRelationshipFormValues(
-			relationship,
-			"explicit-relationship-id",
-			people,
-			() => "People/Alice.md",
-		);
+		const original = editRelationshipFormValues(relationship, people, () => "People/Alice.md");
 		original.toPath = "People/Bob.md";
 		const changed = { ...original, status: "ended" as const, lastContact: "" };
 
@@ -161,7 +328,24 @@ describe("relationship form contract", () => {
 			toPath: "Unknown",
 		};
 
-		expect(() => buildRelationshipCreateInput(values, people)).toThrow("Person B must be selected");
+		expect(() => buildRelationshipCreateInput(values, people)).toThrow("Second person must be selected");
+	});
+
+	it("allows a third-party relationship when My person is not an endpoint", async () => {
+		const port = mutations();
+		const session = new RelationshipFormSession({ kind: "create" }, people, port);
+		const values = {
+			...createRelationshipFormValues(people, "People/Alice.md", "People/Bob.md"),
+			path: "People/Relationships/Alice - Bob.md",
+		};
+
+		await expect(session.submit(values)).resolves.toMatchObject({ status: "success" });
+		expect(port.createRelationship).toHaveBeenCalledWith(
+			expect.objectContaining({
+				from: "[[People/Alice]]",
+				to: "[[People/Bob]]",
+			}),
+		);
 	});
 
 	it("cancels without invoking a mutation", async () => {
@@ -193,10 +377,57 @@ describe("relationship form contract", () => {
 		if (result.status === "success") expect(result.createdFile?.path).toBe(values.path);
 	});
 
+	it.each([
+		{
+			change: "deleted",
+			currentPeople: people.filter((person) => person.filePath !== "People/Bob.md"),
+		},
+		{
+			change: "renamed",
+			currentPeople: people.map((person) =>
+				person.filePath === "People/Bob.md" ? { ...person, filePath: "People/Robert.md" } : person,
+			),
+		},
+		{
+			change: "made identity-ambiguous",
+			currentPeople: [
+				...people,
+				{
+					id: "person-bob",
+					filePath: "People/Bob duplicate.md",
+					name: "Bob duplicate",
+					aliases: [],
+					organisations: [],
+					emails: [],
+					phones: [],
+					contacts: [],
+				},
+			],
+		},
+	])("rejects a create when an endpoint is $change after the form opens", async ({ currentPeople }) => {
+		const port = mutations();
+		let livePeople = people;
+		const session = new RelationshipFormSession({ kind: "create" }, people, port, () => livePeople);
+		const values = {
+			...createRelationshipFormValues(people),
+			path: "People/Relationships/Alice - Bob.md",
+			fromPath: "People/Alice.md",
+			toPath: "People/Bob.md",
+		};
+		livePeople = currentPeople;
+
+		await expect(session.submit(values)).resolves.toEqual({
+			status: "error",
+			message: "Second person must be selected from indexed people.",
+		});
+		expect(port.createRelationship).not.toHaveBeenCalled();
+		expect(port.updateRelationship).not.toHaveBeenCalled();
+	});
+
 	it("maps edit submit to changed fields only", async () => {
 		const port = mutations();
 		const file = { path: relationship.filePath } as TFile;
-		const original = editRelationshipFormValues(relationship, undefined, people, (target) =>
+		const original = editRelationshipFormValues(relationship, people, (target) =>
 			target === "People/Alice" ? "People/Alice.md" : undefined,
 		);
 		original.toPath = "People/Bob.md";
@@ -209,10 +440,50 @@ describe("relationship form contract", () => {
 		expect(port.createRelationship).not.toHaveBeenCalled();
 	});
 
+	it("validates only changed edit endpoints so historical unresolved people do not block metadata edits", async () => {
+		const port = mutations();
+		const file = { path: relationship.filePath } as TFile;
+		const original = {
+			...editRelationshipFormValues(relationship, people, () => undefined),
+			fromPath: "People/Historical Alice.md",
+			toPath: "People/Historical Bob.md",
+		};
+		const session = new RelationshipFormSession({ kind: "edit", file, original }, people, port, () => []);
+
+		const result = await session.submit({ ...original, closeness: "3" });
+
+		expect(result.status).toBe("success");
+		expect(port.updateRelationship).toHaveBeenCalledWith(file, { closeness: 3 });
+	});
+
+	it("revalidates a changed edit endpoint while allowing the unchanged endpoint to remain historical", async () => {
+		const port = mutations();
+		const file = { path: relationship.filePath } as TFile;
+		const original = {
+			...editRelationshipFormValues(relationship, people, () => undefined),
+			fromPath: "People/Historical Alice.md",
+			toPath: "People/Bob.md",
+		};
+		const currentPeople = people.filter((person) => person.filePath === "People/Mathijs.md");
+		const session = new RelationshipFormSession({ kind: "edit", file, original }, people, port, () => currentPeople);
+
+		const result = await session.submit({
+			...original,
+			toPath: "People/Mathijs.md",
+			closeness: "3",
+		});
+
+		expect(result.status).toBe("success");
+		expect(port.updateRelationship).toHaveBeenCalledWith(file, {
+			to: "[[People/Mathijs]]",
+			closeness: 3,
+		});
+	});
+
 	it("closes an unchanged edit without rewriting the relationship note", async () => {
 		const port = mutations();
 		const file = { path: relationship.filePath } as TFile;
-		const original = editRelationshipFormValues(relationship, undefined, people, (target) =>
+		const original = editRelationshipFormValues(relationship, people, (target) =>
 			target === "People/Alice" ? "People/Alice.md" : undefined,
 		);
 		original.toPath = "People/Bob.md";

@@ -7,7 +7,6 @@ interface RelationshipPresetDraft {
 	id: string;
 	name: string;
 	types: string;
-	direction: RelationshipPreset["direction"];
 	fromRole: string;
 	toRole: string;
 }
@@ -33,20 +32,25 @@ export class RelationshipPresetModal extends Modal {
 						id: mode.preset.id,
 						name: mode.preset.name,
 						types: mode.preset.types.join(", "),
-						direction: mode.preset.direction,
 						fromRole: mode.preset.fromRole,
 						toRole: mode.preset.toRole,
 					}
-				: { id: "", name: "", types: "", direction: "undirected", fromRole: "", toRole: "" };
+				: { id: "", name: "", types: "", fromRole: "", toRole: "" };
 	}
 
 	override onOpen(): void {
-		this.titleEl.textContent = this.mode.kind === "create" ? "Add relationship preset" : "Edit relationship preset";
+		this.titleEl.textContent =
+			this.mode.kind === "create" ? "Create relationship template" : "Edit relationship template";
 		this.contentEl.replaceChildren();
 		const document = this.contentEl.ownerDocument;
+		const description = document.createElement("p");
+		description.id = `people-atlas-template-description-${++presetModalSequence}`;
+		description.textContent =
+			"Templates copy relationship types, the first-person role and the second-person role into a relationship form; they are not live links. New relationships normally place My person first when it resolves, but templates also work for relationships between any two people. Roles always map to the first and second selected people.";
 		const form = document.createElement("form");
 		form.className = "people-atlas-relationship-form";
-		const idInput = this.addInput(form, "Preset ID", this.draft.id, (value) => {
+		form.setAttribute("aria-describedby", description.id);
+		const idInput = this.addInput(form, "Template ID", this.draft.id, (value) => {
 			this.draft.id = value;
 			this.idManuallyEdited = true;
 		});
@@ -61,13 +65,12 @@ export class RelationshipPresetModal extends Modal {
 		this.addInput(form, "Relationship types", this.draft.types, (value) => {
 			this.draft.types = value;
 		});
-		this.addInput(form, "Person A role", this.draft.fromRole, (value) => {
+		this.addInput(form, "First-person role", this.draft.fromRole, (value) => {
 			this.draft.fromRole = value;
 		});
-		this.addInput(form, "Person B role", this.draft.toRole, (value) => {
+		this.addInput(form, "Second-person role", this.draft.toRole, (value) => {
 			this.draft.toRole = value;
 		});
-		this.addSelect(form);
 		this.errorEl = document.createElement("div");
 		this.errorEl.className = "people-atlas-form-error";
 		this.errorEl.setAttribute("role", "alert");
@@ -88,7 +91,7 @@ export class RelationshipPresetModal extends Modal {
 			void this.submit();
 		});
 		form.append(this.errorEl, actions);
-		this.contentEl.append(form);
+		this.contentEl.append(description, form);
 		nameInput.focus();
 	}
 
@@ -110,7 +113,16 @@ export class RelationshipPresetModal extends Modal {
 		this.saveButton.disabled = true;
 		this.saveButton.setAttribute("aria-busy", "true");
 		try {
-			if (await this.onSave(preset)) this.close();
+			if (await this.onSave(preset)) {
+				this.close();
+			} else if (this.errorEl) {
+				this.errorEl.textContent =
+					"The relationship template could not be saved. People Atlas settings may have become read-only or invalid; review the settings and try again.";
+			}
+		} catch (error) {
+			if (this.errorEl) {
+				this.errorEl.textContent = `The relationship template could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+			}
 		} finally {
 			if (this.saveButton) {
 				this.saveButton.disabled = false;
@@ -127,7 +139,6 @@ export class RelationshipPresetModal extends Modal {
 				.split(",")
 				.map((type) => type.trim())
 				.filter(Boolean),
-			direction: this.draft.direction,
 			fromRole: this.draft.fromRole.trim(),
 			toRole: this.draft.toRole.trim(),
 		};
@@ -154,32 +165,5 @@ export class RelationshipPresetModal extends Modal {
 		row.append(label, input);
 		form.append(row);
 		return input;
-	}
-
-	private addSelect(form: HTMLFormElement): void {
-		const document = form.ownerDocument;
-		const row = document.createElement("div");
-		row.className = "people-atlas-form-field";
-		const id = `people-atlas-preset-${++presetModalSequence}`;
-		const label = document.createElement("label");
-		label.htmlFor = id;
-		label.textContent = "Direction";
-		const select = document.createElement("select");
-		select.id = id;
-		for (const [value, text] of [
-			["undirected", "Undirected"],
-			["source-to-target", "Person A to Person B"],
-		] as const) {
-			const option = document.createElement("option");
-			option.value = value;
-			option.textContent = text;
-			option.selected = value === this.draft.direction;
-			select.append(option);
-		}
-		select.addEventListener("change", () => {
-			this.draft.direction = select.value === "source-to-target" ? "source-to-target" : "undirected";
-		});
-		row.append(label, select);
-		form.append(row);
 	}
 }

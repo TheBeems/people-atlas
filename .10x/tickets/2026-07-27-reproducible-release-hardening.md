@@ -18,7 +18,7 @@ outcome:
 3. preserve strict TypeScript while making format, lint, type, test, build,
    release-contract and dependency-audit gates independently observable;
 4. minify production output, use a separate development sourcemap and enforce
-   the 204,800-byte `main.js` budget;
+   the 409,600-byte `main.js` budget;
 5. implement and test fail-closed metadata, tag, asset and bundle validation;
 6. verify two same-input production builds have identical SHA-256 digests;
 7. change CI/release installation to `npm ci`, add dependency review and
@@ -59,7 +59,7 @@ outcome:
       inputs, with focused positive and negative automated tests.
 - [x] Current Obsidian API `1.13.1`, minimum `1.13.0`, plugin version `0.1.0`
       and `versions.json` mapping remain coherent.
-- [x] A production `main.js` at or below 204,800 bytes passes; an oversized
+- [x] A production `main.js` at or below 409,600 bytes passes; an oversized
       fixture fails with observed and allowed sizes.
 - [x] Dependency review uses the lockfile and fails on high/critical audit
       findings in both CI and release workflows.
@@ -107,8 +107,9 @@ outcome:
 - User-ratified: People Atlas supports only Obsidian 1.13+, with compile-time
   API 1.13.1 and minimum application version 1.13.0.
 - User-ratified: Biome is the single lint/format tool.
-- User-ratified: the uncompressed production `main.js` limit is 200 KiB
-  (204,800 bytes).
+- User-ratified: the uncompressed production `main.js` limit was originally
+  200 KiB (204,800 bytes) and was explicitly amended to 400 KiB
+  (409,600 bytes) on 2026-07-31 after the fresh-vault cleanup measurement.
 - User-ratified: P8 validates Community-submission readiness only; actual
   publication and submission remain outside P8.
 - Record-backed: P7a-P7c automated Node/integration/generated/Chromium coverage
@@ -131,8 +132,10 @@ outcome:
   lint/format, minification, budget, metadata/tag, dependency-review,
   reproducibility and current attestation gaps. Findings are recorded in
   `.10x/research/2026-07-27-p8-release-hardening-gap-analysis.md`.
-- 2026-07-27: The user ratified Biome as the one lint/format tool, the 200 KiB
-  uncompressed production bundle budget and submission-readiness-only scope.
+- 2026-07-27: The user ratified Biome as the one lint/format tool, the original
+  200 KiB uncompressed production bundle budget and submission-readiness-only
+  scope. On 2026-07-31 the user explicitly raised only that bundle budget to
+  400 KiB.
 - 2026-07-27: A read-only npm registry query resolved the exact selected Biome
   version to `2.5.5`.
 - 2026-07-27: The active governing specification and this single executable

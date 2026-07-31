@@ -68,6 +68,7 @@
 .people-atlas-graph-actions button,
 .people-atlas-person-button,
 .people-atlas-semantic-actions button,
+.people-atlas-follow-ups-panel button,
 .people-atlas-details-sheet button {
 	min-width: 24px;
 	min-height: 24px;
@@ -77,6 +78,8 @@
 .people-atlas-graph-actions button:focus-visible,
 .people-atlas-person-button:focus-visible,
 .people-atlas-semantic-actions button:focus-visible,
+.people-atlas-follow-ups-panel button:focus-visible,
+.people-atlas-follow-up-row:focus-visible,
 .people-atlas-details-sheet button:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
@@ -189,7 +192,8 @@
 	color: var(--text-warning);
 }
 
-.people-atlas-semantic-panel {
+.people-atlas-semantic-panel,
+.people-atlas-follow-ups-panel {
 	min-width: 0;
 	min-height: 0;
 	padding: var(--size-4-3, 12px);
@@ -203,8 +207,19 @@
 	color: var(--text-muted);
 }
 
+.people-atlas-follow-ups-panel > h2 {
+	margin-block: 0 var(--size-4-2, 8px);
+}
+
+.people-atlas-follow-ups-summary {
+	margin-block: 0 var(--size-4-4, 16px);
+	color: var(--text-muted);
+}
+
 .people-atlas-people-list,
-.people-atlas-relationship-list {
+.people-atlas-relationship-list,
+.people-atlas-contact-moment-list,
+.people-atlas-follow-up-list {
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -231,6 +246,175 @@
 	margin-top: var(--size-4-4, 16px);
 	padding-top: var(--size-4-3, 12px);
 	border-top: 1px solid var(--background-modifier-border);
+}
+
+.people-atlas-profile,
+.people-atlas-contact-details,
+.people-atlas-connection-groups,
+.people-atlas-connection-group,
+.people-atlas-contact-moment-history,
+.people-atlas-contact-moment-recent,
+.people-atlas-next-follow-up,
+.people-atlas-follow-ups-content,
+.people-atlas-follow-up-group {
+	display: grid;
+	min-width: 0;
+	gap: var(--size-4-2, 8px);
+}
+
+.people-atlas-profile {
+	margin-block: var(--size-4-2, 8px) var(--size-4-3, 12px);
+}
+
+.people-atlas-profile-photo {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	min-width: 0;
+	gap: var(--size-4-2, 8px);
+}
+
+.people-atlas-profile-photo-frame {
+	display: grid;
+	flex: 0 0 64px;
+	place-items: center;
+	inline-size: 64px;
+	block-size: 64px;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	background: var(--background-secondary);
+}
+
+.people-atlas-profile-photo-image,
+.people-atlas-profile-photo-fallback {
+	grid-area: 1 / 1;
+	inline-size: 100%;
+	block-size: 100%;
+}
+
+.people-atlas-profile-photo-image {
+	display: block;
+	object-fit: cover;
+	object-position: center;
+}
+
+.people-atlas-profile-photo-fallback {
+	display: grid;
+	place-items: center;
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+	font-size: var(--font-ui-large);
+}
+
+.people-atlas-profile-photo-explanation {
+	flex: 1;
+	min-width: min(14rem, 100%);
+	margin: 0;
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-profile-photo-image[hidden],
+.people-atlas-profile-photo-fallback[hidden],
+.people-atlas-profile-photo-explanation[hidden] {
+	display: none;
+}
+
+.people-atlas-profile-fields,
+.people-atlas-contact-fields {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	margin: 0;
+	gap: var(--size-4-1, 4px) var(--size-4-3, 12px);
+}
+
+.people-atlas-profile-fields dt,
+.people-atlas-contact-fields dt {
+	color: var(--text-muted);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-profile-fields dd,
+.people-atlas-contact-fields dd {
+	min-width: 0;
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-profile-fields ul,
+.people-atlas-contact-fields ul {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	gap: var(--size-4-1, 4px);
+	list-style: none;
+}
+
+.people-atlas-contact-details,
+.people-atlas-connection-groups,
+.people-atlas-contact-moment-history {
+	margin-block-start: var(--size-4-2, 8px);
+}
+
+.people-atlas-contact-details > :is(h3, h4),
+.people-atlas-connection-group > :is(h3, h4),
+.people-atlas-contact-moment-history > :is(h3, h4),
+.people-atlas-follow-up-group > h3 {
+	margin-block: 0;
+	font-size: var(--font-ui-medium);
+}
+
+.people-atlas-contact-moment-label {
+	margin: 0;
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-contact-moment-list,
+.people-atlas-follow-up-list {
+	display: grid;
+	gap: var(--size-4-2, 8px);
+}
+
+.people-atlas-contact-moment-row,
+.people-atlas-follow-up-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: start;
+	gap: var(--size-4-3, 12px);
+	min-width: 0;
+	padding: var(--size-4-3, 12px);
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 6px);
+}
+
+.people-atlas-contact-moment-content {
+	display: grid;
+	min-width: 0;
+	gap: var(--size-4-1, 4px);
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-contact-moment-content p {
+	margin: 0;
+}
+
+.people-atlas-contact-moment-actions {
+	justify-content: flex-end;
+	margin-top: 0;
+}
+
+.people-atlas-follow-up-row[aria-busy="true"] {
+	opacity: 0.75;
+}
+
+.people-atlas-follow-up-row button[aria-disabled="true"] {
+	cursor: progress;
+}
+
+.people-atlas-selected-details {
+	min-width: 0;
 }
 
 .people-atlas-relationship-list {
@@ -265,14 +449,172 @@
 }
 
 .people-atlas-relationship-form,
-.people-atlas-person-form {
+.people-atlas-person-form,
+.people-atlas-contact-moment-form {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: var(--size-4-3);
+	min-width: 0;
+}
+
+.people-atlas-relationship-modal {
+	max-inline-size: 100%;
+	overflow-x: hidden;
+}
+
+.people-atlas-person-modal {
+	max-inline-size: 100%;
+	overflow-x: hidden;
+}
+
+.people-atlas-contact-moment-modal {
+	max-inline-size: 100%;
+	overflow-x: hidden;
+}
+
+.people-atlas-contact-moment-section {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-inline-size: 0;
+	margin: 0;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	gap: var(--size-4-3);
+}
+
+.people-atlas-contact-moment-section legend {
+	padding-inline: var(--size-4-1);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-contact-moment-advanced {
+	min-inline-size: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.people-atlas-contact-moment-advanced summary {
+	padding: var(--size-4-3);
+	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.people-atlas-contact-moment-advanced-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	padding: 0 var(--size-4-3) var(--size-4-3);
+	gap: var(--size-4-3);
+}
+
+.people-atlas-contact-moment-advance {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-contact-moment-advance[hidden] {
+	display: none;
+}
+
+.people-atlas-contact-moment-advance input {
+	flex: 0 0 auto;
+	margin-top: var(--size-4-1);
+}
+
+.people-atlas-contact-moment-result {
+	margin: 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	border-inline-start: 3px solid var(--interactive-accent);
+	background: var(--background-secondary);
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-relationship-section {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-inline-size: 0;
+	margin: 0;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	gap: var(--size-4-3);
+}
+
+.people-atlas-relationship-section legend {
+	padding-inline: var(--size-4-1);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-relationship-advanced {
+	min-inline-size: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.people-atlas-relationship-advanced summary {
+	padding: var(--size-4-3);
+	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.people-atlas-relationship-advanced-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	padding: 0 var(--size-4-3) var(--size-4-3);
+	gap: var(--size-4-3);
+}
+
+.people-atlas-template-empty-state {
+	display: grid;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	gap: var(--size-4-1);
+}
+
+.people-atlas-template-empty-state[hidden] {
+	display: none;
+}
+
+.people-atlas-template-empty-state h3,
+.people-atlas-template-empty-state p {
+	margin: 0;
+}
+
+.people-atlas-template-creation {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-template-creation small {
+	min-width: min(100%, 20rem);
+	flex: 1;
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-role-preview {
+	margin: 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	border-inline-start: 3px solid var(--interactive-accent);
+	background: var(--background-secondary);
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-role-preview.is-placeholder {
+	border-inline-start-color: var(--background-modifier-border);
+	color: var(--text-muted);
 }
 
 .people-atlas-preset-state {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	gap: var(--size-4-2);
 }
@@ -303,55 +645,200 @@
 
 .people-atlas-form-field {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-width: 0;
 	gap: var(--size-4-1);
 }
 
 .people-atlas-form-field label {
 	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
 }
 
 .people-atlas-form-field small {
 	color: var(--text-muted);
+	overflow-wrap: anywhere;
 }
 
 .people-atlas-form-field input,
 .people-atlas-form-field select,
 .people-atlas-form-field textarea {
+	box-sizing: border-box;
 	width: 100%;
+	max-width: 100%;
+	min-width: 0;
 }
 
-.people-atlas-person-contacts {
+.people-atlas-person-section {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-inline-size: 0;
 	margin: 0;
 	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	gap: var(--size-4-3);
+}
+
+.people-atlas-person-section > legend,
+.people-atlas-person-birth-date > legend {
+	padding-inline: var(--size-4-1);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-person-photo {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	min-inline-size: 0;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-photo-preview {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	justify-items: center;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-photo-frame {
+	display: grid;
+	inline-size: min(100%, 12rem);
+	aspect-ratio: 1;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 50%;
+	background: var(--background-secondary);
+}
+
+.people-atlas-person-photo-frame > * {
+	grid-area: 1 / 1;
+}
+
+.people-atlas-person-photo-initials {
+	display: grid;
+	place-items: center;
+	color: var(--text-muted);
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-person-photo-image {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: center;
+}
+
+.people-atlas-person-photo-status {
+	margin: 0;
+	color: var(--text-muted);
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-person-photo-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-advanced {
+	min-inline-size: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.people-atlas-person-advanced summary {
+	padding: var(--size-4-3);
+	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.people-atlas-person-advanced-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	padding: 0 var(--size-4-3) var(--size-4-3);
+	gap: var(--size-4-3);
+}
+
+.people-atlas-person-birth-date {
+	display: grid;
+	min-inline-size: 0;
+	margin: 0;
+	padding: var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	gap: var(--size-4-2);
 }
 
-.people-atlas-person-contacts small {
+.people-atlas-person-birth-date > small,
+.people-atlas-person-profile-list > small,
+.people-atlas-person-section > small {
 	color: var(--text-muted);
+	overflow-wrap: anywhere;
 }
 
-.people-atlas-person-contact-list {
+.people-atlas-person-birth-date-controls {
 	display: grid;
-	margin: 0;
-	padding: 0;
-	gap: var(--size-4-1);
-	list-style: none;
-}
-
-.people-atlas-person-contact-list li,
-.people-atlas-person-contact-controls {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: var(--size-4-2);
 }
 
-.people-atlas-person-contact-controls input {
+.people-atlas-person-profile-list {
+	display: grid;
+	min-inline-size: 0;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-profile-list h3 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+}
+
+.people-atlas-person-profile-list-entries,
+.people-atlas-person-linked-list {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	gap: var(--size-4-2);
+	list-style: none;
+}
+
+.people-atlas-person-profile-list-row,
+.people-atlas-person-linked-list li,
+.people-atlas-person-linked-controls {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-person-profile-list-row label {
+	min-width: min(10rem, 100%);
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-person-profile-list-row input,
+.people-atlas-person-linked-controls input {
 	min-width: 0;
 	flex: 1;
+}
+
+.people-atlas-person-linked-list li {
+	justify-content: space-between;
+}
+
+.people-atlas-person-linked-controls label {
+	flex-basis: 100%;
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-profile-entry-error {
+	min-height: 1.25em;
+	margin: 0;
+	color: var(--text-error);
+	overflow-wrap: anywhere;
 }
 
 .people-atlas-person-rename-confirmation {
@@ -378,6 +865,7 @@
 
 .people-atlas-form-actions {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: flex-end;
 	gap: var(--size-4-2);
 }
@@ -393,11 +881,57 @@
 		border-left: 0;
 		border-top: 1px solid var(--background-modifier-border);
 	}
+
+	.people-atlas-preset-state,
+	.people-atlas-template-creation {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.people-atlas-person-birth-date-controls {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.people-atlas-person-profile-list-row,
+	.people-atlas-person-linked-controls {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.people-atlas-form-actions > button {
+		min-width: min(100%, 8rem);
+		flex: 1;
+	}
+
+	.people-atlas-profile-fields,
+	.people-atlas-contact-fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.people-atlas-view-modes {
+		flex-wrap: wrap;
+	}
+
+	.people-atlas-contact-moment-row,
+	.people-atlas-follow-up-row {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.people-atlas-contact-moment-actions {
+		justify-content: flex-start;
+	}
+
+	.people-atlas-contact-moment-actions > button {
+		min-width: min(100%, 11rem);
+		flex: 1;
+	}
 }
 
 @media (max-width: 700px), (pointer: coarse) {
 	.people-atlas-view-modes button,
 	.people-atlas-graph-actions button,
+	.people-atlas-follow-ups-panel button,
+	.people-atlas-contact-moment-actions button,
 	.people-atlas-details-sheet button {
 		min-width: 44px;
 		min-height: 44px;

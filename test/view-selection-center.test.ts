@@ -13,6 +13,8 @@ const alice: AtlasNode = {
 	label: "Alice",
 	filePath: "People/Alice.md",
 	organisations: [],
+	emails: [],
+	phones: [],
 	isCenter: false,
 };
 
@@ -21,6 +23,8 @@ const ghost: AtlasNode = {
 	kind: "ghost",
 	label: "Missing",
 	organisations: [],
+	emails: [],
+	phones: [],
 	isCenter: false,
 };
 
@@ -31,15 +35,19 @@ const ambiguous: AtlasNode = {
 	label: "Duplicate",
 	filePath: "People/Duplicate.md",
 	organisations: [],
+	emails: [],
+	phones: [],
 	isCenter: false,
 };
 
 const fullSnapshot: AtlasSnapshot = {
 	nodes: [alice, ghost, ambiguous],
 	edges: [],
+	contactMoments: [],
 	diagnostics: [],
 	hiddenNodeCount: 0,
 	hiddenEdgeCount: 0,
+	hiddenContactMomentCount: 0,
 	generatedAt: 1,
 };
 
@@ -55,6 +63,7 @@ interface StandaloneHarness {
 	renderer: { setGraph: ReturnType<typeof vi.fn> };
 	handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void;
 	canCreateRelationship(node: AtlasNode | undefined): boolean;
+	canLogContact(node: AtlasNode | undefined): boolean;
 }
 
 interface BasesHarness {
@@ -63,6 +72,7 @@ interface BasesHarness {
 	plugin: { index: { getSnapshot(): { people: Array<{ id: string; filePath: string }> } } };
 	handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void;
 	canCreateRelationship(node: AtlasNode | undefined): boolean;
+	canLogContact(node: AtlasNode | undefined): boolean;
 	renderSelectionActions: ReturnType<typeof vi.fn>;
 	readCenterMode: ReturnType<typeof vi.fn>;
 	onDataUpdated: ReturnType<typeof vi.fn>;
@@ -149,10 +159,15 @@ describe("owning-view selected-node center", () => {
 		const staleSameId: AtlasNode = { ...alice, filePath: "People/Alice moved.md" };
 		for (const view of [standaloneHarness(), basesHarness()]) {
 			expect(view.canCreateRelationship(alice)).toBe(true);
+			expect(view.canLogContact(alice)).toBe(true);
 			expect(view.canCreateRelationship(staleSamePath)).toBe(false);
+			expect(view.canLogContact(staleSamePath)).toBe(false);
 			expect(view.canCreateRelationship(staleSameId)).toBe(false);
+			expect(view.canLogContact(staleSameId)).toBe(false);
 			expect(view.canCreateRelationship(ghost)).toBe(false);
+			expect(view.canLogContact(ghost)).toBe(false);
 			expect(view.canCreateRelationship(ambiguous)).toBe(false);
+			expect(view.canLogContact(ambiguous)).toBe(false);
 		}
 	});
 });

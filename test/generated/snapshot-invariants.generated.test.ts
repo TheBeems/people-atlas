@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ContactMomentRecord } from "../../src/domain/types";
 import { buildGraphSnapshot } from "../../src/graph/graph-source";
 import { generatedSnapshotCase, GENERATED_SEEDS } from "./generated-cases";
 
@@ -13,6 +14,74 @@ describe("generated graph snapshot invariants", () => {
 			const nodeIds = snapshot.nodes.map((node) => node.id);
 			const edgeIds = snapshot.edges.map((edge) => edge.id);
 			const nodeIdSet = new Set(nodeIds);
+
+			const moment = (
+				id: string,
+				filePath: string,
+				personIds: string[],
+				overrides: Partial<ContactMomentRecord> = {},
+			): ContactMomentRecord => ({
+				id,
+				filePath,
+				people: personIds.map((target) => ({ raw: target, target })),
+				occurredOn: "2026-07-30",
+				personIds,
+				actionable: true,
+				followUpActionable: false,
+				...overrides,
+			});
+			const visibleMoment = moment(
+				`visible-${seed}`,
+				`Moments/${seed}/Visible.md`,
+				[generated.ids.alpha, generated.ids.beta],
+				{
+					relationship: { raw: generated.ids.richRelationship, target: generated.ids.richRelationship },
+					relationshipId: generated.ids.richRelationship,
+				},
+			);
+			const hiddenMulti = moment(`hidden-multi-${seed}`, `Moments/${seed}/Hidden multi.md`, [
+				generated.ids.alpha,
+				generated.ids.hidden,
+			]);
+			const filteredRelationship = generated.canonical.relationships.find(
+				(relationship) =>
+					relationship.from.target === generated.ids.alpha && relationship.to.target === generated.ids.hidden,
+			);
+			if (!filteredRelationship) throw new Error("Generated filtered relationship is missing.");
+			const hiddenRelationship = moment(
+				`hidden-relationship-${seed}`,
+				`Moments/${seed}/Hidden relationship.md`,
+				[generated.ids.alpha],
+				{
+					relationship: { raw: filteredRelationship.id, target: filteredRelationship.id },
+					relationshipId: filteredRelationship.id,
+				},
+			);
+			const duplicateA = moment(`duplicate-moment-${seed}`, `Moments/${seed}/Duplicate A.md`, [generated.ids.alpha]);
+			const duplicateB = moment(`duplicate-moment-${seed}`, `Moments/${seed}/Duplicate B.md`, [generated.ids.alpha]);
+			const projectedMoments = buildGraphSnapshot(
+				{
+					canonical: {
+						...generated.canonical,
+						contactMoments: [
+							visibleMoment,
+							hiddenMulti,
+							hiddenRelationship,
+							duplicateA,
+							duplicateB,
+							moment(`invalid-${seed}`, `Moments/${seed}/Invalid.md`, [generated.ids.alpha], {
+								actionable: false,
+							}),
+						],
+					},
+					visible: generated.visible,
+				},
+				generated.resolveLink,
+			);
+			expect(projectedMoments.contactMoments.map((entry) => entry.id)).toEqual([visibleMoment.id]);
+			expect(projectedMoments.hiddenContactMomentCount).toBe(2);
+			expect(projectedMoments.nodes).toEqual(snapshot.nodes);
+			expect(projectedMoments.edges).toEqual(snapshot.edges);
 
 			expect(nodeIdSet.size, `family=snapshot seed=${seed} unique nodes`).toBe(nodeIds.length);
 			expect(new Set(edgeIds).size, `family=snapshot seed=${seed} unique edges`).toBe(edgeIds.length);
@@ -72,13 +141,13 @@ describe("generated graph snapshot invariants", () => {
 				fromRole: richRecord?.fromRole,
 				toRole: richRecord?.toRole,
 				closeness: richRecord?.closeness,
-				direction: richRecord?.direction,
 				since: richRecord?.since,
 				lastContact: richRecord?.lastContact,
 				status: richRecord?.status,
 				filePath: richRecord?.filePath,
 				inferred: false,
 			});
+			expect(rich).not.toHaveProperty("direction");
 			expect(
 				snapshot.edges.filter(
 					(edge) => !edge.inferred && edge.sourceId === generated.ids.alpha && edge.targetId === generated.ids.beta,
@@ -98,10 +167,10 @@ describe("generated graph snapshot invariants", () => {
 				const record = duplicateRelationships.find((item) => item.filePath === edge.filePath);
 				expect(edge.id).toMatch(new RegExp(`^${generated.ids.duplicateRelationship}:`));
 				expect(edge).toMatchObject({
-					direction: record?.direction,
 					types: record?.types,
 					filePath: record?.filePath,
 				});
+				expect(edge).not.toHaveProperty("direction");
 			}
 			expect(snapshot.diagnostics.some((item) => item.code === "self-relationship")).toBe(true);
 			expect(snapshot.diagnostics.some((item) => item.code === "unresolved-relationship-endpoint")).toBe(true);

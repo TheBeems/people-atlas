@@ -1,4 +1,5 @@
-import type { RelationshipDirection, RelationshipStatus } from "../domain/types";
+import type { RelationshipStatus } from "../domain/types";
+import { parsePersonBirthDate, validatePersonEmails, validatePersonPhones } from "../domain/person-profile";
 import type { PeopleAtlasSettings } from "../settings/types";
 
 export interface PersonMutationInput {
@@ -8,6 +9,12 @@ export interface PersonMutationInput {
 	organisations?: string[];
 	photo?: string;
 	contacts?: string[];
+	birthDate?: string;
+	pronouns?: string;
+	gender?: string;
+	emails?: string[];
+	phones?: string[];
+	jobTitle?: string;
 }
 
 export interface RelationshipMutationInput {
@@ -19,7 +26,6 @@ export interface RelationshipMutationInput {
 	types?: string[];
 	fromRole?: string;
 	toRole?: string;
-	direction?: RelationshipDirection;
 	closeness?: number;
 	since?: string;
 	lastContact?: string;
@@ -33,6 +39,12 @@ export interface PersonUpdates {
 	organisations?: string[] | null;
 	photo?: string | null;
 	contacts?: string[] | null;
+	birthDate?: string | null;
+	pronouns?: string | null;
+	gender?: string | null;
+	emails?: string[] | null;
+	phones?: string[] | null;
+	jobTitle?: string | null;
 }
 
 export interface RelationshipUpdates {
@@ -43,7 +55,6 @@ export interface RelationshipUpdates {
 	types?: string[] | null;
 	fromRole?: string | null;
 	toRole?: string | null;
-	direction?: RelationshipDirection | null;
 	closeness?: number | null;
 	since?: string | null;
 	lastContact?: string | null;
@@ -85,14 +96,66 @@ export function validatePersonInput(input: PersonMutationInput, settings: People
 	const errors: string[] = [];
 	if (!input.name.trim()) errors.push("A person name is required.");
 	if (input.personId !== undefined && !input.personId.trim()) errors.push("person_id cannot be empty when provided.");
-	if (
-		settings.typeProperty === settings.personIdProperty ||
-		settings.typeProperty === settings.nameProperty ||
-		settings.personIdProperty === settings.nameProperty
-	) {
-		errors.push("Person type, ID and name properties must be distinct.");
-	}
+	validatePersonProfileValues(input, errors);
+	const keys = [
+		settings.typeProperty,
+		settings.personIdProperty,
+		settings.nameProperty,
+		settings.aliasesProperty,
+		settings.organisationsProperty,
+		settings.photoProperty,
+		settings.contactsProperty,
+		settings.birthDateProperty,
+		settings.pronounsProperty,
+		settings.genderProperty,
+		settings.emailsProperty,
+		settings.phonesProperty,
+		settings.jobTitleProperty,
+	];
+	if (new Set(keys).size !== keys.length)
+		errors.push("Person type, identity, name and profile properties must be distinct.");
 	return errors;
+}
+
+export function validatePersonUpdates(updates: PersonUpdates): string[] {
+	const errors: string[] = [];
+	validatePersonProfileValues(updates, errors);
+	return errors;
+}
+
+function validatePersonProfileValues(
+	values: {
+		birthDate?: string | null;
+		pronouns?: string | null;
+		gender?: string | null;
+		emails?: string[] | null;
+		phones?: string[] | null;
+		jobTitle?: string | null;
+	},
+	errors: string[],
+): void {
+	if (values.birthDate !== undefined && values.birthDate !== null && !parsePersonBirthDate(values.birthDate).valid) {
+		errors.push("Birth date must be a calendar-valid YYYY-MM-DD or --MM-DD value.");
+	}
+	for (const [label, value] of [
+		["Pronouns", values.pronouns],
+		["Gender", values.gender],
+		["Job title", values.jobTitle],
+	] as const) {
+		if (value !== undefined && value !== null && !value.trim()) {
+			errors.push(`${label} cannot be blank when provided.`);
+		}
+	}
+	if (values.emails !== undefined && values.emails !== null) {
+		for (const issue of validatePersonEmails(values.emails).issues) {
+			errors.push(`Email address ${issue.index + 1}: ${issue.message}`);
+		}
+	}
+	if (values.phones !== undefined && values.phones !== null) {
+		for (const issue of validatePersonPhones(values.phones).issues) {
+			errors.push(`Phone number ${issue.index + 1}: ${issue.message}`);
+		}
+	}
 }
 
 function validDate(value: string): boolean {
@@ -117,8 +180,6 @@ export function validateRelationshipInput(input: RelationshipMutationInput, sett
 	const fromRole = input.fromRole?.trim();
 	const toRole = input.toRole?.trim();
 	if (Boolean(fromRole) !== Boolean(toRole)) errors.push("Both endpoint roles must be provided or both omitted.");
-	if (input.direction !== undefined && input.direction !== "undirected" && input.direction !== "source-to-target")
-		errors.push("Relationship direction is invalid.");
 	if (input.status !== undefined && input.status !== "active" && input.status !== "dormant" && input.status !== "ended")
 		errors.push("Relationship status is invalid.");
 	if (
@@ -137,10 +198,9 @@ export function validateRelationshipInput(input: RelationshipMutationInput, sett
 		settings.relationshipPresetProperty,
 		settings.relationshipFromRoleProperty,
 		settings.relationshipToRoleProperty,
-		settings.directionProperty,
 	];
 	if (new Set(keys).size !== keys.length)
-		errors.push("Relationship identity, endpoint, type, preset, role and direction properties must be distinct.");
+		errors.push("Relationship identity, endpoint, type, preset and role properties must be distinct.");
 	return errors;
 }
 

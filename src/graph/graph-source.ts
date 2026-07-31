@@ -1,5 +1,5 @@
 import type { AtlasDiagnostic, AtlasSnapshot, RawIndexSnapshot } from "../domain/types";
-import { buildAtlasSnapshot, type LinkResolver } from "./build-snapshot";
+import { buildAtlasSnapshot, filterContactMomentDiagnostics, type LinkResolver } from "./build-snapshot";
 
 export interface GraphSourceInput {
 	visible: RawIndexSnapshot;
@@ -15,11 +15,22 @@ function mergeDiagnostics(...snapshots: RawIndexSnapshot[]): AtlasDiagnostic[] {
 }
 
 export function buildGraphSnapshot(source: GraphSourceInput, resolveLink: LinkResolver): AtlasSnapshot {
+	const visiblePersonPaths = new Set(source.visible.people.map((person) => person.filePath));
+	const contactMoments = source.canonical.contactMoments ?? [];
+	const diagnostics = filterContactMomentDiagnostics(
+		mergeDiagnostics(source.canonical, source.visible),
+		contactMoments,
+		source.canonical.relationships,
+		source.canonical.people,
+		visiblePersonPaths,
+		resolveLink,
+	);
 	return buildAtlasSnapshot(
 		{
 			people: source.visible.people,
 			relationships: source.canonical.relationships,
-			diagnostics: mergeDiagnostics(source.canonical, source.visible),
+			contactMoments,
+			diagnostics,
 		},
 		resolveLink,
 		{ resolutionPeople: source.canonical.people },

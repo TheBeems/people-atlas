@@ -6,6 +6,7 @@ import {
 	relationshipPresetSlug,
 	validateRelationshipPreset,
 	validateRelationshipRoleFormat,
+	validateStoredRelationshipPresets,
 	type RelationshipPreset,
 } from "../src/settings/relationship-presets";
 import {
@@ -17,7 +18,6 @@ const preset: RelationshipPreset = {
 	id: "parent-child",
 	name: "Parent and child",
 	types: ["parent-child"],
-	direction: "source-to-target",
 	fromRole: "Child",
 	toRole: "Father",
 };
@@ -30,7 +30,6 @@ function relationship(overrides: Partial<RelationshipRecord> = {}): Relationship
 		to: { raw: "[[Cor]]", target: "Cor" },
 		presetId: preset.id,
 		types: ["parent-child"],
-		direction: "source-to-target",
 		fromRole: "Child",
 		toRole: "Father",
 		...overrides,
@@ -49,12 +48,15 @@ describe("relationship presets", () => {
 		expect(validateRelationshipPreset(preset)).toEqual([]);
 		expect(validateRelationshipPreset({ ...preset, id: "Bad ID", toRole: "" }, [preset.id])).toEqual(
 			expect.arrayContaining([
-				"The preset ID must be a lowercase slug containing only letters, numbers and hyphens.",
+				"The template ID must be a lowercase slug containing only letters, numbers and hyphens.",
 				"Both endpoint roles are required.",
 			]),
 		);
 		expect(validateRelationshipPreset({ ...preset, types: ["family", "Family"] })).toContain(
-			"Relationship types in a preset must be unique.",
+			"Relationship types in a template must be unique.",
+		);
+		expect(validateStoredRelationshipPresets([{ ...preset, direction: "undirected" }])).toContain(
+			"Template direction is not supported.",
 		);
 	});
 
@@ -71,11 +73,9 @@ describe("relationship presets", () => {
 			},
 		]);
 		expect(relationshipPresetUpdates(preset)).toEqual({
-			presetId: "parent-child",
 			types: ["parent-child"],
 			fromRole: "Child",
 			toRole: "Father",
-			direction: "source-to-target",
 		});
 	});
 });

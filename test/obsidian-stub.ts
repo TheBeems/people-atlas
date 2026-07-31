@@ -26,6 +26,10 @@ class ControlledEventSource {
 		for (const callback of [...(this.handlers.get(name) ?? [])]) callback(...args);
 	}
 
+	offref(ref: EventRef): void {
+		ref.unload();
+	}
+
 	listenerCount(name?: string): number {
 		if (name) return this.handlers.get(name)?.size ?? 0;
 		return [...this.handlers.values()].reduce((total, callbacks) => total + callbacks.size, 0);
@@ -33,13 +37,53 @@ class ControlledEventSource {
 }
 
 export function getAllTags(cache: { tags?: Array<{ tag: string }> } | null): string[] {
-	return cache?.tags?.map((tag) => tag.tag) ?? [];
+	const inlineTags = cache?.tags?.map((tag) => tag.tag) ?? [];
+	const frontmatterTags = parseFrontMatterTags((cache as { frontmatter?: unknown } | null)?.frontmatter) ?? [];
+	return [...inlineTags, ...frontmatterTags];
+}
+
+export function parseFrontMatterTags(frontmatter: unknown): string[] | null {
+	if (!frontmatter || typeof frontmatter !== "object") return null;
+	const value = (frontmatter as Record<string, unknown>).tags ?? (frontmatter as Record<string, unknown>).tag;
+	if (Array.isArray(value)) return value.map(String);
+	if (typeof value === "string") {
+		const tags = value
+			.replace(/^\[|\]$/g, "")
+			.split(/[\s,]+/)
+			.map((tag) => tag.replace(/^['"]|['"]$/g, ""))
+			.filter(Boolean);
+		return tags.length > 0 ? tags : null;
+	}
+	return null;
+}
+
+export function parseYaml(yaml: string): Record<string, unknown> {
+	const frontmatter: Record<string, unknown> = {};
+	const lines = yaml.split(/\r?\n/);
+	for (let index = 0; index < lines.length; index += 1) {
+		const match = /^([A-Za-z0-9_-]+):(?:\s*(.*))?$/.exec(lines[index] ?? "");
+		if (!match?.[1]) continue;
+		const key = match[1];
+		const raw = match[2]?.trim() ?? "";
+		if (raw) {
+			frontmatter[key] = raw.replace(/^['"]|['"]$/g, "");
+			continue;
+		}
+		const values: string[] = [];
+		while (/^\s+-\s+/.test(lines[index + 1] ?? "")) {
+			index += 1;
+			values.push((lines[index] ?? "").replace(/^\s+-\s+/, "").replace(/^['"]|['"]$/g, ""));
+		}
+		frontmatter[key] = values;
+	}
+	return frontmatter;
 }
 
 export class TFile {
 	path = "";
 	extension = "md";
 	basename = "";
+	stat = { ctime: 0, mtime: 0, size: 0 };
 
 	constructor(path = "") {
 		if (path) this.setPath(path);
@@ -364,12 +408,27 @@ export class ControlledValue {
 	}
 }
 
+export class StringValue extends ControlledValue {}
+
+export class NumberValue extends ControlledValue {
+	constructor(value: number) {
+		super(String(value));
+	}
+}
+
+export class DateValue extends ControlledValue {
+	static parseFromString(input: string): DateValue | null {
+		return input ? new DateValue(input) : null;
+	}
+}
+
 export class ListValue extends ControlledValue {
 	private readonly values: ControlledValue[];
 
-	constructor(values: string[] = []) {
-		super(values.join(", "));
-		this.values = values.map((value) => new ControlledValue(value));
+	constructor(values: Array<string | ControlledValue> = []) {
+		const normalized = values.map((value) => (typeof value === "string" ? new StringValue(value) : value));
+		super(normalized.map((value) => value.toString()).join(", "));
+		this.values = normalized;
 	}
 
 	length(): number {
@@ -391,7 +450,7 @@ export class ControlledBasesEntry {
 		values: Record<string, string | string[]>,
 	) {
 		for (const [key, value] of Object.entries(values)) {
-			this.values.set(key, Array.isArray(value) ? new ListValue(value) : new ControlledValue(value));
+			this.values.set(key, Array.isArray(value) ? new ListValue(value) : new StringValue(value));
 		}
 	}
 
@@ -427,6 +486,10 @@ class ControlledVault extends ControlledEventSource {
 	readonly files = new Map<string, TFile>();
 	markdownScanCount = 0;
 
+	getFiles(): TFile[] {
+		return [...this.files.values()];
+	}
+
 	getMarkdownFiles(): TFile[] {
 		this.markdownScanCount += 1;
 		return [...this.files.values()].filter((file) => file.extension === "md");
@@ -434,6 +497,10 @@ class ControlledVault extends ControlledEventSource {
 
 	getAbstractFileByPath(path: string): TFile | undefined {
 		return this.files.get(path);
+	}
+
+	getResourcePath(file: TFile): string {
+		return `data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==#${file.stat.mtime}:${file.stat.size}`;
 	}
 }
 
@@ -610,6 +677,12 @@ export class ControlledObsidianRuntime {
 		const file = this.requireFile(path);
 		this.metadataCache.caches.set(path, { frontmatter: structuredClone(frontmatter) });
 		this.metadataCache.emit("changed", file, "", this.metadataCache.getFileCache(file));
+	}
+
+	modifyFile(path: string): void {
+		const file = this.requireFile(path);
+		file.stat.mtime += 1;
+		this.vault.emit("modify", file);
 	}
 
 	resolveLink(sourcePath: string, target: string, targetPath: string): void {

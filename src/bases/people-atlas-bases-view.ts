@@ -1,6 +1,7 @@
 import { BasesView, type BasesPropertyId, type QueryController } from "obsidian";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS } from "../constants";
 import type {
+	AtlasEdge,
 	AtlasNode,
 	AtlasSnapshot,
 	IndexDelta,
@@ -8,11 +9,13 @@ import type {
 	ProjectionMode,
 	RawIndexSnapshot,
 } from "../domain/types";
+import { normalizePathIdentity } from "../domain/identity";
 import { isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { buildGraphSnapshot } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
 import type PeopleAtlasPlugin from "../main";
+import { resolvePersonPhotoResource } from "../person-photo-resource";
 import { AtlasRenderer, type AtlasSelectionSource } from "../render/atlas-renderer";
 import { adaptBasesEntries, type BasesFieldMapping } from "./entry-adapter";
 import { BASES_OPTION_KEYS } from "./options";
@@ -31,6 +34,10 @@ export class PeopleAtlasBasesView extends BasesView {
 	private selectedCenterPath: string | undefined;
 	private activePath: string | undefined;
 	private selectionActionsEl: HTMLElement | undefined;
+	private readonly initialMyPersonSettingId: string;
+	private initialMyPersonFilePath: string | undefined;
+	private initialMyPersonCenterId: string | undefined;
+	private awaitingInitialMyPersonCenter: boolean;
 
 	constructor(
 		controller: QueryController,
@@ -41,6 +48,14 @@ export class PeopleAtlasBasesView extends BasesView {
 		this.root = parent.ownerDocument.createElement("div");
 		this.root.className = "people-atlas-graph people-atlas-bases-view";
 		parent.append(this.root);
+		this.initialMyPersonSettingId = plugin.settings.myPersonId.trim();
+		const navigationCenter = this.readExplicitNavigationCenterId(plugin.getViewState(this.viewConfigurationKey()));
+		const initialMyPerson = navigationCenter ? undefined : plugin.resolveMyPerson();
+		this.initialMyPersonFilePath = initialMyPerson?.filePath;
+		this.initialMyPersonCenterId = initialMyPerson?.id;
+		this.awaitingInitialMyPersonCenter = Boolean(
+			!navigationCenter && !this.initialMyPersonCenterId && this.initialMyPersonSettingId,
+		);
 	}
 
 	override onload(): void {
@@ -72,7 +87,29 @@ export class PeopleAtlasBasesView extends BasesView {
 				onCreateRelationship: (node) => {
 					if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
 				},
+				canLogContact: (node) => this.canLogContact(node),
+				onLogContact: (node) => {
+					if (this.canLogContact(node)) this.plugin.openLogContact(node.filePath);
+				},
+				canOpenContactMoment: (moment) => this.plugin.canOpenContactMomentSummary(moment),
+				onOpenContactMoment: async (moment) => {
+					await this.plugin.openContactMomentSummary(moment);
+				},
+				canEditContactMoment: (moment) => this.plugin.canEditContactMomentSummary(moment),
+				onEditContactMoment: (moment, invoker) => {
+					this.plugin.openEditContactMomentSummary(moment, () =>
+						this.renderer?.restoreContactMomentActionFocus(invoker),
+					);
+				},
+				canUpdateFollowUp: (moment) => this.plugin.canUpdateContactMomentFollowUp(moment),
+				onUpdateFollowUp: (moment, status) => this.plugin.updateContactMomentFollowUp(moment, status),
+				onContactMomentActionUnavailable: () => this.plugin.noticeContactMomentActionUnavailable(),
+				canOpenRelationship: (edge) => this.canOpenRelationship(edge),
+				onOpenRelationship: (edge) => this.openRelationship(edge),
+				canEditRelationship: (edge) => this.canEditRelationship(edge),
+				onEditRelationship: (edge, invoker) => this.editRelationship(edge, invoker),
 				onLayoutChanged: (layout) => this.persistLayout(layout),
+				resolvePersonPhoto: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
 			},
 		);
 		this.selectionActionsEl = this.root.ownerDocument.createElement("div");
@@ -87,6 +124,8 @@ export class PeopleAtlasBasesView extends BasesView {
 		);
 		this.unsubscribeIndex = this.plugin.index.subscribe((snapshot, delta) => {
 			this.canonicalSnapshot = snapshot;
+			this.refreshInitialMyPersonPath(snapshot);
+			this.initializeDeferredMyPersonCenter(delta !== undefined);
 			this.updateData(delta);
 		});
 	}
@@ -115,8 +154,28 @@ export class PeopleAtlasBasesView extends BasesView {
 	private updateData(delta?: IndexDelta): void {
 		if (!this.renderer) return;
 		const visible = adaptBasesEntries(this.app, this.data.data, this.readMapping());
+		this.mapInitialMyPersonToVisibleCenter(visible);
 		const nextVisiblePaths = new Set(visible.people.map((person) => person.filePath));
-		const canApplyDelta = Boolean(delta && this.fullSnapshot && setsEqual(this.visiblePaths, nextVisiblePaths));
+		const visiblePhotoPaths = new Set(
+			[
+				...visible.people.map((person) => person.photoPath),
+				...(this.fullSnapshot?.nodes.map((node) => node.photoPath) ?? []),
+			]
+				.filter((path): path is string => Boolean(path))
+				.map(normalizePathIdentity),
+		);
+		const mappedPhotoAssetMayHaveChanged = Boolean(
+			delta?.changedPaths.some((path) => visiblePhotoPaths.has(normalizePathIdentity(path))),
+		);
+		const visiblePersonDataMayHaveChanged = Boolean(
+			delta &&
+				(mappedPhotoAssetMayHaveChanged ||
+					delta.changedPaths.some((path) => nextVisiblePaths.has(path)) ||
+					delta.affectedPeople.some((person) => nextVisiblePaths.has(person.filePath))),
+		);
+		const canApplyDelta = Boolean(
+			delta && this.fullSnapshot && setsEqual(this.visiblePaths, nextVisiblePaths) && !visiblePersonDataMayHaveChanged,
+		);
 		const full = canApplyDelta
 			? applyGraphDelta(
 					this.fullSnapshot as AtlasSnapshot,
@@ -125,6 +184,8 @@ export class PeopleAtlasBasesView extends BasesView {
 					{
 						resolutionPeople: this.canonicalSnapshot.people,
 						visiblePaths: nextVisiblePaths,
+						relationships: this.canonicalSnapshot.relationships,
+						contactMoments: this.canonicalSnapshot.contactMoments ?? [],
 					},
 				)
 			: buildGraphSnapshot(
@@ -153,8 +214,7 @@ export class PeopleAtlasBasesView extends BasesView {
 				maxNodes,
 			});
 		}
-		const center = this.config.get(BASES_OPTION_KEYS.centerPersonId);
-		const centerId = typeof center === "string" && center ? center : state.centerHistory[0];
+		const centerId = this.readConfiguredCenterId(state);
 		const centerPath =
 			centerMode === "active-note"
 				? this.activePath
@@ -202,6 +262,24 @@ export class PeopleAtlasBasesView extends BasesView {
 			contacts:
 				this.config.getAsPropertyId(BASES_OPTION_KEYS.contactsProperty) ??
 				(`note.${settings.contactsProperty}` as BasesPropertyId),
+			birthDate:
+				this.config.getAsPropertyId(BASES_OPTION_KEYS.birthDateProperty) ??
+				(`note.${settings.birthDateProperty}` as BasesPropertyId),
+			pronouns:
+				this.config.getAsPropertyId(BASES_OPTION_KEYS.pronounsProperty) ??
+				(`note.${settings.pronounsProperty}` as BasesPropertyId),
+			gender:
+				this.config.getAsPropertyId(BASES_OPTION_KEYS.genderProperty) ??
+				(`note.${settings.genderProperty}` as BasesPropertyId),
+			emails:
+				this.config.getAsPropertyId(BASES_OPTION_KEYS.emailsProperty) ??
+				(`note.${settings.emailsProperty}` as BasesPropertyId),
+			phones:
+				this.config.getAsPropertyId(BASES_OPTION_KEYS.phonesProperty) ??
+				(`note.${settings.phonesProperty}` as BasesPropertyId),
+			jobTitle:
+				this.config.getAsPropertyId(BASES_OPTION_KEYS.jobTitleProperty) ??
+				(`note.${settings.jobTitleProperty}` as BasesPropertyId),
 		};
 	}
 
@@ -239,6 +317,54 @@ export class PeopleAtlasBasesView extends BasesView {
 		return this.plugin.getViewState(this.viewConfigurationKey());
 	}
 
+	private readConfiguredCenterId(state: AtlasViewState): string | undefined {
+		return this.readExplicitNavigationCenterId(state) ?? this.initialMyPersonCenterId;
+	}
+
+	private readExplicitNavigationCenterId(state: AtlasViewState): string | undefined {
+		const center = this.config.get(BASES_OPTION_KEYS.centerPersonId);
+		return (
+			(typeof center === "string" && center.trim() ? center.trim() : undefined) ??
+			state.centerHistory[0] ??
+			(this.plugin.settings.defaultCenterPersonId || undefined)
+		);
+	}
+
+	private initializeDeferredMyPersonCenter(indexPublished: boolean): void {
+		if (!this.awaitingInitialMyPersonCenter) return;
+		const state = this.getViewState();
+		const myPerson = this.plugin.resolveMyPerson();
+		if (
+			myPerson &&
+			!this.readExplicitNavigationCenterId(state) &&
+			this.plugin.settings.myPersonId.trim() === this.initialMyPersonSettingId
+		) {
+			this.initialMyPersonFilePath = myPerson.filePath;
+			this.initialMyPersonCenterId = myPerson.id;
+			this.awaitingInitialMyPersonCenter = false;
+			return;
+		}
+		if (indexPublished) this.awaitingInitialMyPersonCenter = false;
+	}
+
+	private mapInitialMyPersonToVisibleCenter(visible: RawIndexSnapshot): void {
+		if (!this.initialMyPersonFilePath || this.plugin.settings.myPersonId.trim() !== this.initialMyPersonSettingId) {
+			return;
+		}
+		const myPerson = this.plugin.resolveMyPerson();
+		if (!myPerson || myPerson.filePath !== this.initialMyPersonFilePath) return;
+		const matches = visible.people.filter((person) => person.filePath === myPerson.filePath);
+		if (matches.length === 1) this.initialMyPersonCenterId = matches[0]?.id;
+	}
+
+	private refreshInitialMyPersonPath(snapshot: RawIndexSnapshot): void {
+		if (!this.initialMyPersonSettingId || this.plugin.settings.myPersonId.trim() !== this.initialMyPersonSettingId) {
+			return;
+		}
+		const matches = snapshot.people.filter((person) => person.id === this.initialMyPersonSettingId);
+		this.initialMyPersonFilePath = matches.length === 1 ? matches[0]?.filePath : undefined;
+	}
+
 	private persistViewState(centerPersonId?: string): void {
 		const key = this.viewConfigurationKey();
 		const state = this.getViewState();
@@ -255,8 +381,7 @@ export class PeopleAtlasBasesView extends BasesView {
 		if (!this.renderer) return;
 		const viewConfigurationKey = this.viewConfigurationKey();
 		const state = this.getViewState();
-		const center = this.config.get(BASES_OPTION_KEYS.centerPersonId);
-		const centerId = typeof center === "string" && center ? center : state.centerHistory[0];
+		const centerId = this.readConfiguredCenterId(state);
 		const centerMode = this.readCenterMode(state.centerMode);
 		const projectionMode = this.readProjectionMode(state.projectionMode);
 		const hops = this.readInteger(BASES_OPTION_KEYS.hops, state.hops, 0);
@@ -298,6 +423,28 @@ export class PeopleAtlasBasesView extends BasesView {
 		return this.canCreateRelationship(node);
 	}
 
+	private canLogContact(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
+		return this.canCreateRelationship(node);
+	}
+
+	private canOpenRelationship(edge: AtlasEdge): boolean {
+		return !edge.inferred && Boolean(edge.filePath && this.plugin.canOpenRelationship(edge.filePath));
+	}
+
+	private canEditRelationship(edge: AtlasEdge): boolean {
+		return this.canOpenRelationship(edge);
+	}
+
+	private async openRelationship(edge: AtlasEdge): Promise<void> {
+		if (edge.inferred || !edge.filePath) return;
+		await this.plugin.openRelationship(edge.filePath);
+	}
+
+	private editRelationship(edge: AtlasEdge, invoker: HTMLButtonElement): void {
+		if (edge.inferred || !edge.filePath) return;
+		this.plugin.openEditRelationship(edge.filePath, () => this.renderer?.restoreRelationshipActionFocus(invoker));
+	}
+
 	private renderSelectionActions(node: AtlasNode | undefined): void {
 		if (!this.selectionActionsEl) return;
 		this.selectionActionsEl.replaceChildren();
@@ -313,7 +460,11 @@ export class PeopleAtlasBasesView extends BasesView {
 		relationshipButton.type = "button";
 		relationshipButton.textContent = `Create relationship with ${node.label}`;
 		relationshipButton.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
-		this.selectionActionsEl.append(editButton, relationshipButton);
+		const logContactButton = this.selectionActionsEl.ownerDocument.createElement("button");
+		logContactButton.type = "button";
+		logContactButton.textContent = `Log contact with ${node.label}`;
+		logContactButton.addEventListener("click", () => this.plugin.openLogContact(node.filePath));
+		this.selectionActionsEl.append(editButton, relationshipButton, logContactButton);
 		this.selectionActionsEl.hidden = false;
 	}
 }

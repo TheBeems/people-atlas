@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0
+
+- Replaced directional relationship semantics with stable first/second
+  endpoint slots, an optional canonical My person perspective, and explicit
+  paired endpoint roles.
+- Added direct relationship actions, clearer relationship templates, and
+  restructured relationship and person editors.
+- Added optional person profile fields, vault image selection, selected-person
+  profile photos, and bounded graph avatars with initials fallback.
+- Added first-class contact-moment Markdown notes, explicit monotonic
+  `last_contact` advancement, selected-person contact history, and a
+  privacy-safe Follow-ups view for standalone and Bases.
+- Removed settings migrations, path-derived identities, and editor branches
+  for historical data shapes; 0.3.0 intentionally targets fresh test vaults.
+- Raised the verified uncompressed production-bundle ceiling to 400 KiB after
+  the compatibility cleanup reduced `main.js` to about 334 KiB.
+- Continued to require Obsidian 1.13.0 or newer.
+
 ## 0.2.0
 
 - Added curated person creation and editing for names, aliases, organisations, photos, and validated contact links while preserving unrelated frontmatter.

@@ -1,15 +1,19 @@
+import { normalizePathIdentity } from "../domain/identity";
 import { referenceKey } from "../domain/wikilink";
 import type {
 	AtlasDiagnostic,
 	AtlasEdge,
 	AtlasNode,
 	AtlasSnapshot,
+	ContactMomentRecord,
+	ContactMomentSummary,
 	NodeId,
 	PersonId,
 	PersonRecord,
 	PersonReference,
 	RawIndexSnapshot,
 	RelationshipRecord,
+	RelationshipReference,
 } from "../domain/types";
 import { stableHash } from "../utils/hash";
 import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-elements";
@@ -26,6 +30,45 @@ interface ResolutionContext {
 	outputNodeIdByPath: Map<string, NodeId>;
 	resolveLink: LinkResolver;
 }
+
+interface ContactMomentResolutionContext {
+	peopleById: Map<string, PersonRecord[]>;
+	peopleByPath: Map<string, PersonRecord[]>;
+	relationshipsById: Map<string, RelationshipRecord[]>;
+	relationshipsByPath: Map<string, RelationshipRecord[]>;
+	resolveLink: LinkResolver;
+}
+
+interface ResolvedContactMomentReferences {
+	personPaths: string[];
+	relationshipEndpointPaths: string[];
+	relationship?: RelationshipRecord | undefined;
+}
+
+interface ValidatedContactMoment {
+	record: ContactMomentRecord;
+	summary: ContactMomentSummary;
+	references: ResolvedContactMomentReferences;
+}
+
+export interface ContactMomentProjection {
+	contactMoments: ContactMomentSummary[];
+	hiddenContactMomentCount: number;
+}
+
+const CONTACT_MOMENT_DIAGNOSTIC_CODES = new Set<AtlasDiagnostic["code"]>([
+	"duplicate-contact-moment-id",
+	"invalid-contact-moment-people",
+	"duplicate-contact-moment-person",
+	"unresolved-contact-moment-person",
+	"ambiguous-contact-moment-person",
+	"unresolved-contact-moment-relationship",
+	"ambiguous-contact-moment-relationship",
+	"contact-moment-relationship-person-mismatch",
+	"invalid-contact-moment-occurred-on",
+	"invalid-contact-moment-follow-up-date",
+	"invalid-contact-moment-follow-up-status",
+]);
 
 function ghostId(reference: PersonReference): NodeId {
 	return `ghost:${stableHash(referenceKey(reference))}`;
@@ -136,6 +179,275 @@ function nodeIdForOutputPerson(person: PersonRecord, duplicateIds: Set<PersonId>
 	return `ambiguous:${stableHash(`${person.id}:${person.filePath}`)}`;
 }
 
+function pathIdentities(path: string): string[] {
+	const normalized = normalizePathIdentity(path);
+	if (!normalized) return [];
+	const identities = new Set([normalized]);
+	if (normalized.endsWith(".md")) {
+		const extensionless = normalized.slice(0, -3);
+		if (extensionless) identities.add(extensionless);
+	} else {
+		identities.add(`${normalized}.md`);
+	}
+	return [...identities];
+}
+
+function addRecordByPath<T extends { filePath: string }>(index: Map<string, T[]>, record: T): void {
+	for (const identity of pathIdentities(record.filePath)) {
+		const records = index.get(identity) ?? [];
+		if (!records.some((candidate) => candidate.filePath === record.filePath)) records.push(record);
+		index.set(identity, records);
+	}
+}
+
+function buildContactMomentResolutionContext(
+	people: readonly PersonRecord[],
+	relationships: readonly RelationshipRecord[],
+	resolveLink: LinkResolver,
+): ContactMomentResolutionContext {
+	const peopleById = new Map<string, PersonRecord[]>();
+	const peopleByPath = new Map<string, PersonRecord[]>();
+	for (const person of people) {
+		const idMatches = peopleById.get(person.id) ?? [];
+		idMatches.push(person);
+		peopleById.set(person.id, idMatches);
+		addRecordByPath(peopleByPath, person);
+	}
+
+	const relationshipsById = new Map<string, RelationshipRecord[]>();
+	const relationshipsByPath = new Map<string, RelationshipRecord[]>();
+	for (const relationship of relationships) {
+		const idMatches = relationshipsById.get(relationship.id) ?? [];
+		idMatches.push(relationship);
+		relationshipsById.set(relationship.id, idMatches);
+		addRecordByPath(relationshipsByPath, relationship);
+	}
+	return { peopleById, peopleByPath, relationshipsById, relationshipsByPath, resolveLink };
+}
+
+function resolveUniqueRecord<T extends { filePath: string }>(
+	reference: PersonReference | RelationshipReference,
+	sourcePath: string,
+	byId: Map<string, T[]>,
+	byPath: Map<string, T[]>,
+	resolveLink: LinkResolver,
+): T | undefined {
+	const candidates = new Map<string, T>();
+	for (const record of byId.get(reference.target) ?? []) candidates.set(record.filePath, record);
+	const candidatePaths = new Set(pathIdentities(reference.target));
+	if (reference.resolvedPath) {
+		for (const identity of pathIdentities(reference.resolvedPath)) candidatePaths.add(identity);
+	}
+	const linkedPath = resolveLink(reference.target, sourcePath);
+	if (linkedPath) {
+		for (const identity of pathIdentities(linkedPath)) candidatePaths.add(identity);
+	}
+	for (const identity of candidatePaths) {
+		for (const record of byPath.get(identity) ?? []) candidates.set(record.filePath, record);
+	}
+	return candidates.size === 1 ? candidates.values().next().value : undefined;
+}
+
+function resolveContactMomentReferences(
+	record: ContactMomentRecord,
+	context: ContactMomentResolutionContext,
+): ResolvedContactMomentReferences | undefined {
+	if (record.people.length === 0 || record.people.length !== record.personIds.length) return undefined;
+	const resolvedPeople = record.people.map((reference) =>
+		resolveUniqueRecord(reference, record.filePath, context.peopleById, context.peopleByPath, context.resolveLink),
+	);
+	if (resolvedPeople.some((person) => person === undefined)) return undefined;
+	const people = resolvedPeople.filter((person): person is PersonRecord => person !== undefined);
+	const resolvedIds = people.map((person) => person.id);
+	if (
+		new Set(resolvedIds).size !== resolvedIds.length ||
+		resolvedIds.some((id, index) => id !== record.personIds[index])
+	) {
+		return undefined;
+	}
+
+	if (!record.relationship && !record.relationshipId) {
+		return { personPaths: people.map((person) => person.filePath), relationshipEndpointPaths: [] };
+	}
+	if (!record.relationship || !record.relationshipId) return undefined;
+	const relationship = resolveUniqueRecord(
+		record.relationship,
+		record.filePath,
+		context.relationshipsById,
+		context.relationshipsByPath,
+		context.resolveLink,
+	);
+	if (!relationship || relationship.id !== record.relationshipId) return undefined;
+	const endpointPeople = [relationship.from, relationship.to].map((reference) =>
+		resolveUniqueRecord(
+			reference,
+			relationship.filePath,
+			context.peopleById,
+			context.peopleByPath,
+			context.resolveLink,
+		),
+	);
+	if (endpointPeople.some((person) => person === undefined)) return undefined;
+	const endpoints = endpointPeople.filter((person): person is PersonRecord => person !== undefined);
+	if (
+		endpoints.length !== 2 ||
+		endpoints[0]?.filePath === endpoints[1]?.filePath ||
+		!endpoints.some((person) => record.personIds.includes(person.id))
+	) {
+		return undefined;
+	}
+	return {
+		personPaths: people.map((person) => person.filePath),
+		relationshipEndpointPaths: endpoints.map((person) => person.filePath),
+		relationship,
+	};
+}
+
+function isFullCalendarDate(value: string): boolean {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	if (!match) return false;
+	const date = new Date(`${value}T00:00:00Z`);
+	return (
+		date.getUTCFullYear() === Number(match[1]) &&
+		date.getUTCMonth() + 1 === Number(match[2]) &&
+		date.getUTCDate() === Number(match[3])
+	);
+}
+
+function trimmedOptional(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	return trimmed ? trimmed : undefined;
+}
+
+function contactMomentSummary(record: ContactMomentRecord): ContactMomentSummary {
+	const summary: ContactMomentSummary = {
+		id: record.id,
+		filePath: record.filePath,
+		personIds: [...record.personIds],
+		occurredOn: record.occurredOn,
+	};
+	if (record.relationshipId) summary.relationshipId = record.relationshipId;
+	const channel = trimmedOptional(record.channel);
+	if (channel) summary.channel = channel;
+	const text = trimmedOptional(record.summary);
+	if (text) summary.summary = text;
+
+	const validFollowUpDate = record.followUpOn && isFullCalendarDate(record.followUpOn);
+	const terminal = record.followUpStatus === "done" || record.followUpStatus === "dismissed";
+	const open = record.followUpStatus === undefined || record.followUpStatus === "open";
+	if (validFollowUpDate && (terminal || (open && record.followUpActionable))) {
+		summary.followUpOn = record.followUpOn;
+		if (record.followUpStatus) summary.followUpStatus = record.followUpStatus;
+	}
+	return summary;
+}
+
+function validatedContactMoments(
+	contactMoments: readonly ContactMomentRecord[],
+	relationships: readonly RelationshipRecord[],
+	resolutionPeople: readonly PersonRecord[],
+	resolveLink: LinkResolver,
+): ValidatedContactMoment[] {
+	const momentsById = new Map<string, ContactMomentRecord[]>();
+	for (const record of contactMoments) {
+		const matches = momentsById.get(record.id) ?? [];
+		matches.push(record);
+		momentsById.set(record.id, matches);
+	}
+	const context = buildContactMomentResolutionContext(resolutionPeople, relationships, resolveLink);
+	const validated: ValidatedContactMoment[] = [];
+	for (const matches of momentsById.values()) {
+		if (matches.length !== 1) continue;
+		const record = matches[0];
+		if (!record?.actionable || !isFullCalendarDate(record.occurredOn)) continue;
+		const references = resolveContactMomentReferences(record, context);
+		if (!references) continue;
+		validated.push({ record, references, summary: contactMomentSummary(record) });
+	}
+	return validated.sort(
+		(left, right) =>
+			left.summary.id.localeCompare(right.summary.id) || left.summary.filePath.localeCompare(right.summary.filePath),
+	);
+}
+
+export function projectContactMomentSummaries(
+	contactMoments: readonly ContactMomentRecord[],
+	relationships: readonly RelationshipRecord[],
+	resolutionPeople: readonly PersonRecord[],
+	visiblePersonPaths: ReadonlySet<string>,
+	resolveLink: LinkResolver,
+): ContactMomentProjection {
+	const projected: ContactMomentSummary[] = [];
+	let hiddenContactMomentCount = 0;
+	for (const moment of validatedContactMoments(contactMoments, relationships, resolutionPeople, resolveLink)) {
+		const visible =
+			moment.references.personPaths.every((path) => visiblePersonPaths.has(path)) &&
+			moment.references.relationshipEndpointPaths.every((path) => visiblePersonPaths.has(path));
+		if (visible) projected.push(moment.summary);
+		else hiddenContactMomentCount += 1;
+	}
+	return { contactMoments: projected, hiddenContactMomentCount };
+}
+
+export function isContactMomentDiagnostic(diagnostic: AtlasDiagnostic): boolean {
+	return CONTACT_MOMENT_DIAGNOSTIC_CODES.has(diagnostic.code);
+}
+
+export function filterContactMomentDiagnostics(
+	diagnostics: readonly AtlasDiagnostic[],
+	contactMoments: readonly ContactMomentRecord[],
+	relationships: readonly RelationshipRecord[],
+	resolutionPeople: readonly PersonRecord[],
+	visiblePersonPaths: ReadonlySet<string>,
+	resolveLink: LinkResolver,
+): AtlasDiagnostic[] {
+	if (resolutionPeople.every((person) => visiblePersonPaths.has(person.filePath))) return [...diagnostics];
+	const context = buildContactMomentResolutionContext(resolutionPeople, relationships, resolveLink);
+	const safeMomentPaths = new Set<string>();
+	const safeRelationshipPaths = new Set<string>();
+	for (const moment of contactMoments) {
+		const references = resolveContactMomentReferences(moment, context);
+		if (!references) continue;
+		const peopleAreVisible = references.personPaths.every((path) => visiblePersonPaths.has(path));
+		const relationshipIsVisible = references.relationshipEndpointPaths.every((path) => visiblePersonPaths.has(path));
+		if (!peopleAreVisible || !relationshipIsVisible) continue;
+		safeMomentPaths.add(moment.filePath);
+		if (references.relationship) safeRelationshipPaths.add(references.relationship.filePath);
+	}
+	const visiblePersonIds = new Set(
+		resolutionPeople.filter((person) => visiblePersonPaths.has(person.filePath)).map((person) => person.id),
+	);
+	const allowedPathIdentities = new Set<string>();
+	for (const path of [...visiblePersonPaths, ...safeMomentPaths, ...safeRelationshipPaths]) {
+		for (const identity of pathIdentities(path)) allowedPathIdentities.add(identity);
+	}
+	const safeRelationshipIds = new Set(
+		relationships
+			.filter((relationship) => safeRelationshipPaths.has(relationship.filePath))
+			.map((relationship) => relationship.id),
+	);
+	return diagnostics.filter((diagnostic) => {
+		if (!isContactMomentDiagnostic(diagnostic)) return true;
+		const momentPaths = diagnostic.filePaths.filter((path) =>
+			contactMoments.some((moment) => moment.filePath === path),
+		);
+		if (momentPaths.length === 0 || momentPaths.some((path) => !safeMomentPaths.has(path))) return false;
+		if (
+			diagnostic.filePaths.some(
+				(path) => !safeMomentPaths.has(path) && !safeRelationshipPaths.has(path) && !visiblePersonPaths.has(path),
+			)
+		) {
+			return false;
+		}
+		if (!diagnostic.targetPath) return true;
+		return (
+			pathIdentities(diagnostic.targetPath).some((identity) => allowedPathIdentities.has(identity)) ||
+			visiblePersonIds.has(diagnostic.targetPath) ||
+			safeRelationshipIds.has(diagnostic.targetPath)
+		);
+	});
+}
+
 export function buildAtlasSnapshot(
 	raw: RawIndexSnapshot,
 	resolveLink: LinkResolver,
@@ -170,6 +482,12 @@ export function buildAtlasSnapshot(
 			filePath: person.filePath,
 			photoPath: person.photoPath,
 			organisations: person.organisations,
+			birthDate: person.birthDate,
+			pronouns: person.pronouns,
+			gender: person.gender,
+			emails: person.emails,
+			phones: person.phones,
+			jobTitle: person.jobTitle,
 			isCenter: false,
 		});
 	}
@@ -206,6 +524,8 @@ export function buildAtlasSnapshot(
 						kind: "ghost",
 						label: reference.label ?? reference.target,
 						organisations: [],
+						emails: [],
+						phones: [],
 						isCenter: false,
 					});
 				}
@@ -223,7 +543,6 @@ export function buildAtlasSnapshot(
 					targetId,
 					types: ["contact"],
 					filePath: person.filePath,
-					direction: "undirected",
 					inferred: true,
 				});
 				continue;
@@ -244,7 +563,6 @@ export function buildAtlasSnapshot(
 				targetId,
 				types: ["contact"],
 				filePath: person.filePath,
-				direction: "undirected",
 				inferred: true,
 			});
 		}
@@ -308,7 +626,6 @@ export function buildAtlasSnapshot(
 			types,
 			fromRole: relationship.fromRole,
 			toRole: relationship.toRole,
-			direction: relationship.direction,
 			closeness: relationship.closeness,
 			since: relationship.since,
 			lastContact: relationship.lastContact,
@@ -320,12 +637,21 @@ export function buildAtlasSnapshot(
 
 	const outputPaths = new Set(outputPeople.map((person) => person.filePath));
 	const hiddenNodeCount = resolutionPeople.filter((person) => !outputPaths.has(person.filePath)).length;
+	const contactMomentProjection = projectContactMomentSummaries(
+		raw.contactMoments ?? [],
+		raw.relationships,
+		resolutionPeople,
+		outputPaths,
+		resolveLink,
+	);
 	return {
 		nodes: [...nodes.values()],
 		edges,
+		contactMoments: contactMomentProjection.contactMoments,
 		diagnostics,
 		hiddenNodeCount,
 		hiddenEdgeCount,
+		hiddenContactMomentCount: contactMomentProjection.hiddenContactMomentCount,
 		generatedAt: Date.now(),
 	};
 }

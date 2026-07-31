@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
-import type { App, PluginManifest } from "obsidian";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { App, BasesOptions, PluginManifest } from "obsidian";
 import PeopleAtlasPlugin from "../../src/main";
 import { PeopleAtlasView } from "../../src/view/people-atlas-view";
 import { PeopleAtlasBasesView } from "../../src/bases/people-atlas-bases-view";
+import { BASES_OPTION_KEYS } from "../../src/bases/options";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "../../src/constants";
 import type { AtlasSnapshot } from "../../src/domain/types";
+import { RelationshipModal } from "../../src/editor/relationship-modal";
 import { type Component, ControlledObsidianRuntime, TFile, type ControlledBasesEntry } from "../obsidian-stub";
 import "../../styles.css";
 
@@ -86,6 +88,19 @@ function openStableNode(container: ParentNode, id: string): void {
 	open.click();
 }
 
+function createRelationshipFromStableNode(container: ParentNode, id: string, actionLabel: string): void {
+	const node = Array.from(container.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button")).find(
+		(button) => button.dataset.nodeId === id,
+	);
+	if (!node) throw new Error(`The production semantic surface has no node ${id}.`);
+	node.click();
+	const create = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+		(button) => button.textContent === actionLabel,
+	);
+	if (!create) throw new Error(`The production surface has no ${actionLabel} action for ${id}.`);
+	create.click();
+}
+
 async function waitForObservation(observation: () => boolean, message: string, timeoutMs = 1_000): Promise<void> {
 	const deadline = performance.now() + timeoutMs;
 	while (!observation()) {
@@ -112,14 +127,33 @@ describe("controlled People Atlas Obsidian integration", () => {
 
 		expect(runtime.viewRegistrations.has(VIEW_TYPE_PEOPLE_ATLAS)).toBe(true);
 		expect(runtime.basesRegistrations.has(BASES_VIEW_TYPE_PEOPLE_ATLAS)).toBe(true);
-		expect(runtime.basesRegistrations.get(BASES_VIEW_TYPE_PEOPLE_ATLAS)?.options()).toHaveLength(12);
-		expect(runtime.commands.size).toBe(5);
+		const basesOptions = (runtime.basesRegistrations.get(BASES_VIEW_TYPE_PEOPLE_ATLAS)?.options() ??
+			[]) as BasesOptions[];
+		expect(basesOptions.map((option) => option.key).sort()).toEqual(Object.values(BASES_OPTION_KEYS).sort());
+		for (const key of [
+			BASES_OPTION_KEYS.birthDateProperty,
+			BASES_OPTION_KEYS.pronounsProperty,
+			BASES_OPTION_KEYS.genderProperty,
+			BASES_OPTION_KEYS.emailsProperty,
+			BASES_OPTION_KEYS.phonesProperty,
+			BASES_OPTION_KEYS.jobTitleProperty,
+		]) {
+			expect(basesOptions.find((option) => option.key === key)).toMatchObject({ type: "property", key });
+		}
+		expect(basesOptions.find((option) => option.key === BASES_OPTION_KEYS.contactsProperty)).toMatchObject({
+			type: "property",
+			displayName: "Linked people property",
+		});
+		expect(runtime.commands.size).toBe(8);
 		expect([...runtime.commands.values()].map((command) => command.name)).toEqual([
 			"Open atlas",
+			"Open follow-ups",
 			"Create person",
 			"Edit current person",
 			"Create relationship",
 			"Edit current relationship",
+			"Log contact",
+			"Edit current contact moment",
 		]);
 		expect([...runtime.commands.values()].every((command) => !command.name.includes("People Atlas"))).toBe(true);
 		expect(runtime.ribbonItems.size).toBe(1);
@@ -127,21 +161,25 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(runtime.editorSuggests.size).toBe(1);
 		expect(runtime.workspace.pendingLayoutReadyCount).toBe(1);
 		expect(runtime.vault.markdownScanCount).toBe(0);
-		expect(plugin.index.getSnapshot()).toEqual({ people: [], relationships: [], diagnostics: [] });
+		expect(plugin.index.getSnapshot()).toEqual({
+			people: [],
+			relationships: [],
+			contactMoments: [],
+			diagnostics: [],
+		});
 
 		runtime.triggerLayoutReady();
 
 		expect(runtime.vault.markdownScanCount).toBe(1);
 		expect(pluginComponent.childCount).toBe(1);
 		expect((plugin.index as unknown as Component).isLoaded()).toBe(true);
-		expect(runtime.listenerCount("vault")).toBe(3);
+		expect(runtime.listenerCount("vault")).toBe(4);
 		expect(runtime.listenerCount("metadataCache")).toBe(2);
 		expect(plugin.index.getSnapshot().people.map((record) => record.id)).toEqual(["alice", "bob"]);
 		expect(plugin.index.getSnapshot().relationships).toEqual([
 			expect.objectContaining({
 				id: "rel-alice-bob",
 				filePath: "Relationships/Alice-Bob.md",
-				direction: "source-to-target",
 				types: ["friend"],
 				closeness: 4,
 				since: "2020-01-02",
@@ -149,6 +187,10 @@ describe("controlled People Atlas Obsidian integration", () => {
 				status: "active",
 			}),
 		]);
+		expect(plugin.index.getSnapshot().relationships[0]).not.toHaveProperty("direction");
+		expect(
+			(plugin.index.getSnapshot().diagnostics ?? []).some((diagnostic) => diagnostic.code.includes("direction")),
+		).toBe(false);
 
 		const standalone = await runtime.openStandaloneView(VIEW_TYPE_PEOPLE_ATLAS);
 		const aliceEntry = basesEntry(runtime, aliceFile, "alice", "Shared person", [unresolvedCarol]);
@@ -163,6 +205,21 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(bases.view).toBeInstanceOf(PeopleAtlasBasesView);
 		expect(stableNodeIds(standalone.leaf.contentEl)).toEqual(expect.arrayContaining(["alice", "bob"]));
 		expect(stableNodeIds(bases.parent)).toEqual(expect.arrayContaining(["alice", "bob"]));
+		plugin.settings = { ...plugin.settings, myPersonId: "alice" };
+		const openRelationshipModal = vi.spyOn(RelationshipModal.prototype, "open").mockImplementation(() => undefined);
+		createRelationshipFromStableNode(standalone.leaf.contentEl, "bob", "Create relationship");
+		createRelationshipFromStableNode(bases.parent, "bob", "Create relationship with Different person");
+		expect(openRelationshipModal).toHaveBeenCalledTimes(2);
+		for (const modal of openRelationshipModal.mock.instances as unknown as Array<{
+			values: { fromPath: string; toPath: string };
+		}>) {
+			expect(modal.values).toMatchObject({
+				fromPath: "People/Alice.md",
+				toPath: "People/Bob.md",
+			});
+		}
+		openRelationshipModal.mockRestore();
+		plugin.settings = { ...plugin.settings, myPersonId: "" };
 		for (const snapshot of [fullSnapshot(standalone.view), fullSnapshot(bases.view)]) {
 			expect(snapshot.nodes.filter((node) => node.kind === "ghost")).toEqual([
 				expect.objectContaining({ label: "Shared person" }),
@@ -383,7 +440,12 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(runtime.ribbonItems.size).toBe(0);
 		expect(runtime.settingTabs.size).toBe(0);
 		expect(runtime.editorSuggests.size).toBe(0);
-		expect(plugin.index.getSnapshot()).toEqual({ people: [], relationships: [], diagnostics: [] });
+		expect(plugin.index.getSnapshot()).toEqual({
+			people: [],
+			relationships: [],
+			contactMoments: [],
+			diagnostics: [],
+		});
 
 		const scanCountAfterTeardown = runtime.vault.markdownScanCount;
 		const savesAfterTeardown = runtime.savedPluginData.length;
@@ -398,6 +460,11 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(runtime.vault.markdownScanCount).toBe(scanCountAfterTeardown);
 		expect(runtime.savedPluginData.length).toBe(savesAfterTeardown);
 		expect(document.body.textContent).toBe(outputAfterTeardown);
-		expect(plugin.index.getSnapshot()).toEqual({ people: [], relationships: [], diagnostics: [] });
+		expect(plugin.index.getSnapshot()).toEqual({
+			people: [],
+			relationships: [],
+			contactMoments: [],
+			diagnostics: [],
+		});
 	});
 });

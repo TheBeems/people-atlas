@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-26
-Updated: 2026-07-26
+Updated: 2026-07-30
 
 # P5a — Accessible semantic renderer
 
@@ -108,13 +108,9 @@ not read vault data, parse frontmatter or write notes.
     identify endpoints.
 19. A relationship with complete endpoint roles MUST use the selected
     endpoint's role and the configured role format, substituting the
-    counterpart as plain text. It MUST NOT append Connected, Incoming or
-    Outgoing. Otherwise direction MUST use the legacy relative fallback:
-    - an `undirected` edge is `Connected to <counterpart>`;
-    - a `source-to-target` edge is `Outgoing to <counterpart>` when the
-      selected node is the source;
-    - a `source-to-target` edge is `Incoming from <counterpart>` when the
-      selected node is the target.
+    counterpart as plain text. Otherwise it MUST use the neutral
+    `Connected to <counterpart>` fallback. It MUST NOT expose Incoming,
+    Outgoing, source, target or stored endpoint order.
 20. A relationship item MUST include, when present, relationship types,
     explicit status, `since` and `last_contact`. Missing optional values MUST
     be omitted rather than replaced with guessed values.
@@ -209,16 +205,16 @@ remains selected, invokes no open callback and is described as having no note.
 
 ### Describe explicit and inferred relationships
 
-Given a selected person has a role-labelled relationship, an undirected
-legacy relationship note, a directional incoming relationship and an inferred
+Given a selected person has a role-labelled relationship, a roleless rich
+relationship note, an incomplete-role rich relationship and an inferred
 contact link
 
 When List mode renders its relationship details
 
-Then all four edges remain distinct, the endpoint role is relative to the
-selected person, legacy direction remains relative, explicit metadata is
-preserved, and the inferred edge is labelled as a contact link without an
-inferred status.
+Then all four edges remain distinct, the complete endpoint role is relative
+to the selected person, roleless and incomplete-role relationships use the
+neutral Connected fallback, explicit metadata is preserved, and the inferred
+edge is labelled as a contact link without an inferred status.
 
 ### Keep focus through graph updates
 
@@ -260,8 +256,8 @@ renderer-owned listener, observer or animation frame behind.
 - [ ] Empty, ghost and disappearing-node states remain operable and never
       guess a person or invoke unavailable callbacks.
 - [ ] Selected-node details enumerate every incident edge, preserve parallel
-      edges and accurately describe endpoint roles or legacy relative
-      direction, types, explicit status, dates and inferred contact links.
+      edges and accurately describe endpoint roles or the neutral Connected
+      fallback, types, explicit status, dates and inferred contact links.
 - [ ] Resolved people expose native Open and Center actions; existing
       canonical Create relationship actions remain reachable in standalone
       and Bases without adding a renderer vault/index dependency.
@@ -313,11 +309,11 @@ renderer-owned listener, observer or animation frame behind.
    tab stop with arrow/Home/End navigation, `Enter` to open, `Escape` to clear
    selection and explicit native Center/Create relationship actions rather
    than a custom context menu.
-3. **Relationship content.** User-ratified on 2026-07-26: use a compact people
-   list plus a selected-person relationship list containing the explicit
-   endpoint role when complete, otherwise relative direction, followed by
-   types, explicit status, `since` and `last_contact` when present; never infer
-   roles or status.
+3. **Relationship content.** The 2026-07-26 compact selected-person
+   relationship list remains, superseded on 2026-07-30 only for its fallback:
+   show the explicit endpoint role when complete, otherwise neutral
+   `Connected to <counterpart>`, followed by types, explicit status, `since`
+   and `last_contact` when present; never infer roles or status.
 4. **Identity and storage.** Record-backed: `AtlasSnapshot` stable IDs and
    explicit relationship edges are authoritative; display names are
    presentation only and rich metadata remains on relationship notes.

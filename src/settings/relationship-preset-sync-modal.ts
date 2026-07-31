@@ -16,13 +16,13 @@ export class RelationshipPresetSyncModal extends Modal {
 	}
 
 	override onOpen(): void {
-		this.titleEl.textContent = `Synchronize “${this.preset.name}”`;
+		this.titleEl.textContent = "Update linked relationships from template";
 		this.contentEl.replaceChildren();
 		const document = this.contentEl.ownerDocument;
 		const intro = document.createElement("p");
-		intro.textContent = `${this.changes.length} linked relationship note${
+		intro.textContent = `Review ${this.changes.length} relationship note${
 			this.changes.length === 1 ? "" : "s"
-		} will receive the preset’s types, direction and endpoint roles. Other fields and note content stay unchanged.`;
+		} whose stored template provenance is “${this.preset.name}”. Confirming copies this template’s relationship types, first-person role and second-person role to the exact paths below. Endpoints, paths, relationship IDs, closeness, dates, status, unrelated frontmatter and note content stay unchanged.`;
 		const list = document.createElement("ul");
 		list.className = "people-atlas-preset-sync-list";
 		for (const change of this.changes) {
@@ -47,7 +47,7 @@ export class RelationshipPresetSyncModal extends Modal {
 		this.confirmButton = document.createElement("button");
 		this.confirmButton.type = "button";
 		this.confirmButton.className = "mod-cta";
-		this.confirmButton.textContent = "Synchronize";
+		this.confirmButton.textContent = "Update linked relationships from template";
 		this.confirmButton.addEventListener("click", () => void this.confirm());
 		actions.append(cancel, this.confirmButton);
 		this.contentEl.append(intro, list, this.statusEl, actions);
@@ -67,7 +67,7 @@ export class RelationshipPresetSyncModal extends Modal {
 		try {
 			result = await this.onConfirm(this.changes.map((change) => structuredClone(change)));
 		} catch (error) {
-			this.statusEl.textContent = `Synchronization failed before completion. ${
+			this.statusEl.textContent = `Update failed before completion. ${
 				error instanceof Error ? error.message : String(error)
 			}`;
 			this.confirmButton.disabled = false;
@@ -76,11 +76,9 @@ export class RelationshipPresetSyncModal extends Modal {
 		}
 		if (result.failure) {
 			const location = result.failure.filePath ? ` at “${result.failure.filePath}”` : "";
-			this.statusEl.textContent = `Stopped${location} after ${result.completed} update${
-				result.completed === 1 ? "" : "s"
-			}. ${result.remaining} remain. ${result.failure.message}`;
+			this.statusEl.textContent = `Stopped${location}. Completed ${result.completed}; skipped ${result.skipped}; remaining ${result.remaining}. ${result.failure.message}`;
 		} else {
-			this.statusEl.textContent = `Synchronized ${result.completed}; skipped ${result.skipped}; none remain from this preview.`;
+			this.statusEl.textContent = `Updated ${result.completed}; skipped ${result.skipped}; none remain from this preview.`;
 		}
 		const closeButton = this.confirmButton.cloneNode(true) as HTMLButtonElement;
 		closeButton.removeAttribute("aria-busy");
@@ -93,6 +91,7 @@ export class RelationshipPresetSyncModal extends Modal {
 }
 
 function describe(values: RelationshipPresetSyncChange["before"]): string {
-	const roles = `${values.fromRole ?? "none"} / ${values.toRole ?? "none"}`;
-	return `types: ${values.types.join(", ") || "none"}; direction: ${values.direction}; roles: ${roles}`;
+	return `types: ${values.types.join(", ") || "none"}; first-person role: ${
+		values.fromRole ?? "none"
+	}; second-person role: ${values.toRole ?? "none"}`;
 }

@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-25
-Updated: 2026-07-25
+Updated: 2026-07-30
 
 # P3a — Safe note mutations and versioned plugin data
 
@@ -92,8 +92,8 @@ and body content remain unchanged.
 
 ### Reject invalid mutation before writing
 
-Given a relationship edit contains an invalid date, direction, status or
-identity collision
+Given a relationship edit contains an invalid date, incomplete endpoint-role
+pair, invalid status or identity collision
 When the user submits the edit
 Then validation reports the error and neither the relationship note nor any
 dependent note is changed.

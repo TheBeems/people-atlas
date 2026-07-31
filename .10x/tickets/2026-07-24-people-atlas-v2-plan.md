@@ -1,6 +1,6 @@
 Status: open
 Created: 2026-07-24
-Updated: 2026-07-27
+Updated: 2026-07-30
 
 # People Atlas v2 implementation plan
 
@@ -44,13 +44,23 @@ Tests and narrow quality checks are required inside every child ticket. P7 expan
 
 Owner: `.10x/tickets/2026-07-24-canonical-graph-source.md`
 
-Unify standalone and Bases around the canonical relationship-aware graph source. Preserve Base person property mappings while loading rich relationship records from `PersonIndex`. Add explicit/fallback relationship identity, direction, dates, status, duplicate-ID safety, parallel-edge preservation and filtered-endpoint accounting.
+Unify standalone and Bases around the canonical relationship-aware graph
+source. Preserve Base person property mappings while loading rich relationship
+records from `PersonIndex`. Retain explicit/fallback relationship identity,
+paired endpoint roles, dates, status, duplicate-ID safety, parallel-edge
+preservation and filtered-endpoint accounting under the current
+direction-free successor contract.
 
 Gate: both views use the same relationship-aware graph contract and pure tests cover the new identity and edge invariants.
 
 ### P2 — Incremental index and diagnostics
 
-Add path-, person-ID- and relationship-ID indexes, targeted create/modify/rename/delete handling, adjacency maintenance and graph deltas. Expand diagnostics for ambiguous identities, duplicate relationships, invalid dates/status/direction, missing endpoints, filtered endpoints and missing assets. Diagnostics must retain source paths and support navigation where the UI exposes them.
+Add path-, person-ID- and relationship-ID indexes, targeted create/modify/
+rename/delete handling, adjacency maintenance and graph deltas. Diagnostics
+cover ambiguous identities, duplicate relationships, invalid dates/status or
+role pairs, missing endpoints, filtered endpoints and missing assets.
+Diagnostics must retain source paths and support navigation where the UI
+exposes them.
 
 Depends on: P1 graph and relationship identity contract.
 
@@ -173,7 +183,7 @@ Gate: CI produces a reproducible, verified release from an exact source revision
 - `AGENTS.md`
 - `ARCHITECTURE.md`
 - `ROADMAP.md`
-- `.10x/decisions/canonical-graph-source.md`
+- `.10x/decisions/perspective-oriented-relationship-model.md`
 - `.10x/specs/canonical-graph-source.md`
 
 ## Assumptions
@@ -192,7 +202,9 @@ Gate: CI produces a reproducible, verified release from an exact source revision
 - 2026-07-25: P4 child ticket was implemented and closed with passing tests/build and no significant review finding; P5 is now the next priority.
 - 2026-07-25: The post-P4 audit remediation sequence closed its incremental graph, mutation identity and view-state ordering regressions with focused before/after evidence and 56 passing tests. The separate relationship-mutation UI semantics must be shaped with the user before further implementation; P5 remains the next numbered roadmap priority.
 - 2026-07-25: Relationship-editor semantics were ratified and recorded in
-  `.10x/specs/relationship-editor-ui.md`; the executable P3b follow-up is
+  `.10x/specs/relationship-editor-ui.md` (now superseded by
+  `.10x/specs/perspective-relationship-editor-templates.md`); the completed
+  historical P3b follow-up is
   `.10x/tickets/2026-07-25-relationship-editor-ui.md`. It is the immediate
   implementation candidate before resuming the numbered roadmap at P5.
 - 2026-07-25: P3b relationship-editor UI was implemented and closed with one
@@ -382,6 +394,11 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   A P7d spec and executable ticket remain blocked on authorization to update
   and verify compatible Desktop Obsidian, the named assistive technology and
   the available physical Mobile platform(s).
+- 2026-07-30: The canonical relationship contract was superseded by
+  `.10x/decisions/perspective-oriented-relationship-model.md`. Current work
+  removes direction and adds My person through the separate UX0/UX2 tickets;
+  earlier P1/P2/P3/P5 journal entries remain historical implementation
+  evidence.
 
 ## Blockers
 

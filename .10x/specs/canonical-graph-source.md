@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-24
-Updated: 2026-07-24
+Updated: 2026-07-30
 
 # Canonical graph source and relationship projection
 
@@ -17,7 +17,9 @@ Unify the domain graph consumed by the standalone and Bases views without implem
 5. A rich relationship MUST be keyed by its explicit `relationship_id` when present, otherwise by its normalized note path.
 6. Multiple rich relationships between the same people MUST remain separate graph edges.
 7. A duplicate `person_id` MUST produce a diagnostic and MUST NOT resolve references by first match.
-8. A missing relationship direction MUST mean `undirected`; a present invalid direction MUST be diagnosable rather than silently coerced.
+8. A rich relationship MUST follow the direction-free endpoint and role
+   contract in `.10x/specs/perspective-relationship-foundation.md`; stored
+   endpoint order MUST NOT change graph adjacency or projection semantics.
 9. Relationship endpoints MUST resolve by explicit person ID or resolved file path. Display names and aliases MUST NOT be authoritative identity keys.
 10. A relationship whose endpoints resolve but fall outside a Base's selected person population MUST be classified as hidden/filtered projection data, not as an unresolved endpoint.
 11. Unresolved wikilinks MUST remain ghost/diagnostic data and MUST NOT be guessed into person nodes.
@@ -28,7 +30,8 @@ Unify the domain graph consumed by the standalone and Bases views without implem
 
 Given two person notes and one rich relationship note exist in the vault
 When the standalone view and a Base containing both people build their graph
-Then both snapshots contain the same relationship edge identity, direction, types, dates, closeness and status.
+Then both snapshots contain the same relationship edge identity, endpoints,
+paired roles, types, dates, closeness and status without a direction field.
 
 ### Base query excludes relationship notes
 
@@ -64,7 +67,9 @@ Then its normalized path is used as a fallback identity and the relationship rem
 
 - [ ] A single canonical graph service/source is used by both views.
 - [ ] Bases projection combines selected person entries with relationship records from `PersonIndex`.
-- [ ] Relationship records include explicit/fallback identity, direction, types, closeness, since, last contact and status.
+- [ ] Relationship records include explicit/fallback identity, endpoints,
+      paired roles, types, closeness, since, last contact and status without a
+      direction field.
 - [ ] Duplicate person IDs do not use first-match resolution.
 - [ ] Multiple relationship entities between one pair are preserved.
 - [ ] Filtered endpoints are distinguishable from unresolved endpoints in the projection contract.
@@ -78,3 +83,8 @@ Then its normalized path is used as a fallback identity and the relationship rem
 - Web Worker physics or new layout strategies.
 - Full diagnostics navigation UI.
 - Mobile gesture expansion.
+
+## References
+
+- `.10x/decisions/perspective-oriented-relationship-model.md`
+- `.10x/specs/perspective-relationship-foundation.md`

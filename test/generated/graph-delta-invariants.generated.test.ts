@@ -24,6 +24,10 @@ function comparable(snapshot: AtlasSnapshot) {
 			.sort((left, right) => left.id.localeCompare(right.id)),
 		hiddenNodeCount: snapshot.hiddenNodeCount,
 		hiddenEdgeCount: snapshot.hiddenEdgeCount,
+		contactMoments: [...snapshot.contactMoments].sort(
+			(left, right) => left.id.localeCompare(right.id) || left.filePath.localeCompare(right.filePath),
+		),
+		hiddenContactMomentCount: snapshot.hiddenContactMomentCount,
 	};
 }
 
@@ -159,7 +163,6 @@ describe("generated graph delta invariants", () => {
 					parsed: {
 						filePath: relationshipPath,
 						relationship: relationship(relationshipId, relationshipPath, alphaId, betaId, {
-							direction: "source-to-target",
 							types: ["friend", `seed-${seed}`],
 							closeness: 1 + random.int(5),
 							since: "2021-02-03",
@@ -197,7 +200,6 @@ describe("generated graph delta invariants", () => {
 					parsed: {
 						filePath: parallelRelationshipPath,
 						relationship: relationship(parallelRelationshipId, parallelRelationshipPath, alphaId, betaId, {
-							direction: "source-to-target",
 							types: ["peer"],
 							closeness: 4,
 							status: "dormant",
@@ -222,7 +224,6 @@ describe("generated graph delta invariants", () => {
 					parsed: {
 						filePath: relationshipPath,
 						relationship: relationship(relationshipId, relationshipPath, betaId, alphaId, {
-							direction: "undirected",
 							types: ["colleague"],
 							closeness: 2,
 							status: "dormant",
@@ -262,6 +263,8 @@ describe("generated graph delta invariants", () => {
 					const delta = deltaForChange(before, raw, state, change, () => undefined);
 					incremental = applyGraphDelta(incremental, delta, () => undefined, {
 						resolutionPeople: raw.people,
+						contactMoments: raw.contactMoments ?? [],
+						relationships: raw.relationships,
 					});
 					const rebuilt = buildAtlasSnapshot(raw, () => undefined);
 					expect(comparable(incremental), `${context} full rebuild equivalence`).toEqual(comparable(rebuilt));
@@ -285,11 +288,13 @@ describe("generated graph delta invariants", () => {
 							id: parallelRelationshipId,
 							sourceId: alphaId,
 							targetId: betaId,
-							direction: "source-to-target",
 							types: ["peer"],
 							closeness: 4,
 							status: "dormant",
 						});
+						expect(incremental.edges.find((edge) => edge.filePath === parallelRelationshipPath)).not.toHaveProperty(
+							"direction",
+						);
 					}
 					if (operation.label === "duplicate-relationship-disappearance") {
 						expect(
@@ -384,6 +389,8 @@ describe("generated graph delta invariants", () => {
 				const incrementalFiltered = applyGraphDelta(previousFiltered, filteredDelta, filtered.resolveLink, {
 					resolutionPeople: filteredAfter.people,
 					visiblePaths: filtered.visiblePaths,
+					contactMoments: filteredAfter.contactMoments ?? [],
+					relationships: filteredAfter.relationships,
 				});
 				expect(comparable(incrementalFiltered), `${filteredContext} full rebuild equivalence`).toEqual(
 					comparable(rebuiltFiltered),

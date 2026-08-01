@@ -8,3 +8,5 @@ release/
 .vitest-attachments/
 test/**/__screenshots__/
 .codex-remote-attachments/
+.agents/
+skills-lock.json

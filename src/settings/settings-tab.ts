@@ -1,4 +1,10 @@
-import { Notice, PluginSettingTab, type SettingDefinitionItem } from "obsidian";
+import {
+	ConfirmationModal,
+	Notice,
+	PluginSettingTab,
+	type SettingDefinition,
+	type SettingDefinitionItem,
+} from "obsidian";
 import type PeopleAtlasPlugin from "../main";
 import { RelationshipPresetModal } from "./relationship-preset-modal";
 import { RelationshipPresetSyncModal } from "./relationship-preset-sync-modal";
@@ -24,8 +30,8 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		return this.plugin.settings[key as keyof PeopleAtlasSettings];
 	}
 
-	override setControlValue(key: string, value: unknown): void {
-		void this.plugin.updateSetting(key as keyof PeopleAtlasSettings, value);
+	override async setControlValue(key: string, value: unknown): Promise<void> {
+		await this.plugin.updateSetting(key as keyof PeopleAtlasSettings, value);
 	}
 
 	override getSettingDefinitions(): SettingDefinitionItem[] {
@@ -85,7 +91,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 			},
 		});
 
-		return [
+		const flatDefinitions: SettingDefinitionItem[] = [
 			{
 				name: "People folder",
 				desc: "Default vault folder for person notes created by People Atlas.",
@@ -315,6 +321,129 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				control: { type: "toggle", key: "showDiagnostics" },
 			},
 		];
+		const missingDefinition = (): never => {
+			throw new Error("People Atlas Settings definition is missing.");
+		};
+		const [
+			peopleFolder = missingDefinition(),
+			contactMomentsFolder = missingDefinition(),
+			personTypeValue = missingDefinition(),
+			relationshipTypeValue = missingDefinition(),
+			contactMomentTypeValue = missingDefinition(),
+			personTag = missingDefinition(),
+			typeProperty = missingDefinition(),
+			personIdProperty = missingDefinition(),
+			nameProperty = missingDefinition(),
+			aliasesProperty = missingDefinition(),
+			organisationsProperty = missingDefinition(),
+			photoProperty = missingDefinition(),
+			birthDateProperty = missingDefinition(),
+			pronounsProperty = missingDefinition(),
+			genderProperty = missingDefinition(),
+			emailsProperty = missingDefinition(),
+			phonesProperty = missingDefinition(),
+			jobTitleProperty = missingDefinition(),
+			contactsProperty = missingDefinition(),
+			relationshipIdProperty = missingDefinition(),
+			relationshipFromProperty = missingDefinition(),
+			relationshipToProperty = missingDefinition(),
+			relationshipTypesProperty = missingDefinition(),
+			relationshipPresetProperty = missingDefinition(),
+			relationshipFromRoleProperty = missingDefinition(),
+			relationshipToRoleProperty = missingDefinition(),
+			closenessProperty = missingDefinition(),
+			sinceProperty = missingDefinition(),
+			lastContactProperty = missingDefinition(),
+			statusProperty = missingDefinition(),
+			contactMomentIdProperty = missingDefinition(),
+			contactMomentPeopleProperty = missingDefinition(),
+			contactMomentRelationshipProperty = missingDefinition(),
+			contactMomentOccurredOnProperty = missingDefinition(),
+			contactMomentChannelProperty = missingDefinition(),
+			contactMomentSummaryProperty = missingDefinition(),
+			contactMomentFollowUpOnProperty = missingDefinition(),
+			contactMomentFollowUpStatusProperty = missingDefinition(),
+			relationshipRoleFormat = missingDefinition(),
+			relationshipTemplates = missingDefinition(),
+			myPerson = missingDefinition(),
+			defaultCenterPersonId = missingDefinition(),
+			enableBases = missingDefinition(),
+			showLabels = missingDefinition(),
+			showDiagnostics = missingDefinition(),
+		] = flatDefinitions;
+
+		return [
+			{
+				type: "group",
+				heading: "General",
+				items: [
+					peopleFolder as SettingDefinition,
+					contactMomentsFolder as SettingDefinition,
+					typeProperty as SettingDefinition,
+					personTypeValue as SettingDefinition,
+					relationshipTypeValue as SettingDefinition,
+					contactMomentTypeValue as SettingDefinition,
+					personTag as SettingDefinition,
+					{
+						type: "page",
+						name: "People schema",
+						items: [
+							personIdProperty,
+							nameProperty,
+							aliasesProperty,
+							organisationsProperty,
+							photoProperty,
+							birthDateProperty,
+							pronounsProperty,
+							genderProperty,
+							emailsProperty,
+							phonesProperty,
+							jobTitleProperty,
+							contactsProperty,
+							myPerson,
+						],
+					},
+					{
+						type: "page",
+						name: "Relationships",
+						items: [
+							relationshipIdProperty,
+							relationshipFromProperty,
+							relationshipToProperty,
+							relationshipTypesProperty,
+							relationshipPresetProperty,
+							relationshipFromRoleProperty,
+							relationshipToRoleProperty,
+							closenessProperty,
+							sinceProperty,
+							lastContactProperty,
+							statusProperty,
+							relationshipRoleFormat,
+							relationshipTemplates,
+						],
+					},
+					{
+						type: "page",
+						name: "Contact moments",
+						items: [
+							contactMomentIdProperty,
+							contactMomentPeopleProperty,
+							contactMomentRelationshipProperty,
+							contactMomentOccurredOnProperty,
+							contactMomentChannelProperty,
+							contactMomentSummaryProperty,
+							contactMomentFollowUpOnProperty,
+							contactMomentFollowUpStatusProperty,
+						],
+					},
+					{
+						type: "page",
+						name: "View & Bases",
+						items: [defaultCenterPersonId, enableBases, showLabels, showDiagnostics],
+					},
+				],
+			},
+		];
 	}
 
 	private myPersonSettingDefinition(): SettingDefinitionItem {
@@ -397,25 +526,45 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		if (await this.plugin.updateSetting("relationshipPresets", presets)) this.update();
 	}
 
-	private async deletePreset(index: number): Promise<void> {
+	private deletePreset(index: number): void {
 		if (!this.canManageRelationshipTemplates()) return;
 		const preset = this.plugin.settings.relationshipPresets[index];
 		if (!preset) return;
+		const deleteSelectedPreset = async (): Promise<void> => {
+			const selectedIndex = this.plugin.settings.relationshipPresets.findIndex(
+				(candidate) => candidate.id === preset.id,
+			);
+			if (selectedIndex < 0) return;
+			const presets = this.plugin.settings.relationshipPresets.filter(
+				(_, candidateIndex) => candidateIndex !== selectedIndex,
+			);
+			if (await this.plugin.updateSetting("relationshipPresets", presets)) this.update();
+		};
 		const linked = this.plugin.getRelationshipPresetLinkCount(preset.id);
-		if (linked > 0) {
-			const win = this.containerEl.ownerDocument.defaultView;
-			if (
-				!win?.confirm(
-					`Delete “${preset.name}” relationship template? ${linked} relationship note${
-						linked === 1 ? "" : "s"
-					} will keep their copied types and roles. Only their template provenance becomes unavailable.`,
-				)
-			) {
-				return;
-			}
+		if (linked === 0) {
+			void deleteSelectedPreset();
+			return;
 		}
-		const presets = this.plugin.settings.relationshipPresets.filter((_, candidateIndex) => candidateIndex !== index);
-		if (await this.plugin.updateSetting("relationshipPresets", presets)) this.update();
+
+		const modal = new ConfirmationModal(this.app)
+			.setTitle(`Delete “${preset.name}” relationship template?`)
+			.setContent(
+				`This template is linked to ${linked} relationship note${
+					linked === 1 ? "" : "s"
+				}. Those notes will keep their copied types and roles. Their template provenance will no longer refer to an existing template.`,
+			);
+		modal.addCancelButton("Cancel");
+		modal.addButton((button) =>
+			button
+				.setButtonText("Delete relationship template")
+				.setDestructive()
+				.setCta()
+				.onClick(async () => {
+					if (!this.canManageRelationshipTemplates()) return;
+					await deleteSelectedPreset();
+				}),
+		);
+		modal.open();
 	}
 
 	private canManageRelationshipTemplates(): boolean {

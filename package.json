@@ -1,6 +1,6 @@
 {
   "name": "obsidian-people-atlas",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "A Bases-native people and relationship atlas for Obsidian.",
   "main": "main.js",
@@ -18,7 +18,7 @@
     "perf:characterize": "node scripts/performance-characterize.mjs",
     "perf:graph-delta": "node scripts/graph-delta-characterize.mjs",
     "release:contract": "node scripts/release-contract.mjs",
-    "test": "vitest run",
+    "test": "vitest run --project node && vitest run --project browser && vitest run --project integration && vitest run --project browser-matrix",
     "test:browser": "vitest run --project browser",
     "test:browser-matrix": "vitest run --project browser-matrix",
     "test:generated": "vitest run --project node test/generated",

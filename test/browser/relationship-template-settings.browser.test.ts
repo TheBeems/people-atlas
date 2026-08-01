@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { ConfirmationModal, type App } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type PeopleAtlasPlugin from "../../src/main";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
@@ -15,6 +15,30 @@ const template: RelationshipPreset = {
 	fromRole: "Friend",
 	toRole: "Colleague",
 };
+
+type ControlledConfirmationModal = ConfirmationModal & {
+	buttons: Array<{ click(): Promise<unknown> }>;
+};
+
+type DeclarativeSettingDefinition = {
+	type?: string;
+	onDelete?: (index: number) => void;
+	items?: DeclarativeSettingDefinition[];
+};
+
+function relationshipTemplateList(tab: PeopleAtlasSettingTab): DeclarativeSettingDefinition | undefined {
+	const findList = (definitions: DeclarativeSettingDefinition[]): DeclarativeSettingDefinition | undefined => {
+		for (const definition of definitions) {
+			if (definition.type === "list") return definition;
+			if (definition.type === "group" || definition.type === "page") {
+				const list = findList(definition.items ?? []);
+				if (list) return list;
+			}
+		}
+		return undefined;
+	};
+	return findList(tab.getSettingDefinitions() as unknown as DeclarativeSettingDefinition[]);
+}
 
 function mountModal(modal: { titleEl: HTMLElement; contentEl: HTMLElement; onOpen(): void }): {
 	content: HTMLElement;
@@ -146,7 +170,7 @@ describe("relationship template settings", () => {
 		);
 	});
 
-	it("explains that deleting a template preserves copied values and removes only provenance", async () => {
+	it("uses a native confirmation modal that preserves copied values and removes only provenance", async () => {
 		const updateSetting = vi.fn(async () => true);
 		const plugin = {
 			app: {},
@@ -163,18 +187,22 @@ describe("relationship template settings", () => {
 		document.body.append(tab.containerEl);
 		const update = vi.fn();
 		(tab as unknown as { update: () => void }).update = update;
-		const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-		const definitions = tab.getSettingDefinitions() as unknown as Array<{
-			type?: string;
-			onDelete?: (index: number) => void;
-		}>;
-		const templates = definitions.find((definition) => definition.type === "list");
+		const nativeConfirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+		const open = vi.spyOn(ConfirmationModal.prototype, "open");
+		const templates = relationshipTemplateList(tab);
 
 		templates?.onDelete?.(0);
 
-		expect(confirm).toHaveBeenCalledWith(
-			"Delete “Friend and colleague” relationship template? 2 relationship notes will keep their copied types and roles. Only their template provenance becomes unavailable.",
-		);
+		expect(open).toHaveBeenCalledOnce();
+		expect(nativeConfirm).not.toHaveBeenCalled();
+		const modal = open.mock.instances[0] as ControlledConfirmationModal | undefined;
+		if (!modal) throw new Error("Expected a relationship-template confirmation modal.");
+		expect(modal).toBeInstanceOf(ConfirmationModal);
+		expect(modal.titleEl.textContent).toContain("Friend and colleague");
+		expect(modal.contentEl.textContent).toContain("2 relationship notes");
+		expect(modal.contentEl.textContent).toContain("copied types and roles");
+		expect(modal.contentEl.textContent).toContain("no longer refer to an existing template");
+		await modal.buttons[0]?.click();
 		await vi.waitFor(() => expect(updateSetting).toHaveBeenCalledWith("relationshipPresets", []));
 		expect(update).toHaveBeenCalledOnce();
 	});

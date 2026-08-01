@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+- Reorganized the declarative Settings tab into General, People schema,
+  Relationships, Contact moments, and View & Bases without changing saved
+  setting keys, defaults, validation, or relationship-template semantics.
+- Added an Obsidian-native confirmation dialog before deleting a relationship
+  template referenced by relationship notes; copied types and roles remain on
+  those notes when deletion is confirmed.
+- Made declarative Settings updates await the existing persistence boundary and
+  stabilized the canonical multi-project test runner without weakening tests.
+
 ## 0.4.0
 
 - Added an explicit Simple relationship selector for Parent, Child and Sibling

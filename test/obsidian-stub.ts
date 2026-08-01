@@ -472,6 +472,71 @@ export class Modal {
 
 	open(): void {}
 	close(): void {}
+
+	setTitle(title: string): this {
+		this.titleEl.textContent = title;
+		return this;
+	}
+
+	setContent(content: string): this {
+		this.contentEl.textContent = content;
+		return this;
+	}
+}
+
+export class ConfirmationButton {
+	text = "";
+	isCta = false;
+	isDestructive = false;
+	private handler: ((event: MouseEvent) => unknown | Promise<unknown>) | undefined;
+
+	constructor(private readonly closeModal?: () => void) {}
+
+	setButtonText(text: string): this {
+		this.text = text;
+		return this;
+	}
+
+	setCta(): this {
+		this.isCta = true;
+		return this;
+	}
+
+	setDestructive(): this {
+		this.isDestructive = true;
+		return this;
+	}
+
+	onClick(handler: (event: MouseEvent) => unknown | Promise<unknown>): this {
+		this.handler = handler;
+		return this;
+	}
+
+	async click(): Promise<unknown> {
+		const result = await this.handler?.({} as MouseEvent);
+		if (!result) this.closeModal?.();
+		return result;
+	}
+}
+
+export class ConfirmationModal extends Modal {
+	buttonContainerEl = {} as HTMLElement;
+	readonly buttons: ConfirmationButton[] = [];
+	cancelButton: ConfirmationButton | undefined;
+	cancelButtonText: string | undefined;
+
+	addButton(configure: (button: ConfirmationButton) => unknown): this {
+		const button = new ConfirmationButton(() => this.close());
+		configure(button);
+		this.buttons.push(button);
+		return this;
+	}
+
+	addCancelButton(text = "Cancel"): this {
+		this.cancelButtonText = text;
+		this.cancelButton = new ConfirmationButton(() => this.close()).setButtonText(text);
+		return this;
+	}
 }
 
 export const notices: string[] = [];

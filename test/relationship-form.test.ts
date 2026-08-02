@@ -213,7 +213,10 @@ describe("relationship form contract", () => {
 		const parent = applySimpleRelationshipChoice(original, "parent");
 		expect(parent).toEqual({ ...original, fromRole: "parent", toRole: "child" });
 		expect(getSimpleRelationshipChoice(parent)).toBe("parent");
-		expect(getSimpleRelationshipChoice({ ...parent, fromRole: " Parent " })).toBe("custom");
+		const partner = applySimpleRelationshipChoice(original, "partner");
+		expect(partner).toEqual({ ...original, fromRole: "partner", toRole: "partner" });
+		expect(getSimpleRelationshipChoice(partner)).toBe("partner");
+		expect(getSimpleRelationshipChoice({ ...partner, fromRole: " Partner " })).toBe("custom");
 		expect(applySimpleRelationshipChoice(original, "custom")).toBe(original);
 		expect(original).toMatchObject({ fromRole: "mentor", toRole: "mentee" });
 	});

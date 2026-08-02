@@ -26,8 +26,18 @@ import {
 import { PeopleAtlasView } from "./view/people-atlas-view";
 import { cloneViewState, DEFAULT_VIEW_STATE, type AtlasViewState } from "./settings/view-state";
 import { ViewStateWriteCoordinator } from "./settings/view-state-write-coordinator";
-import { RelationshipModal, type RelationshipTemplateCreation } from "./editor/relationship-modal";
+import {
+	RelationshipModal,
+	type RelationshipCreateSuccess,
+	type RelationshipTemplateCreation,
+} from "./editor/relationship-modal";
+import { PartnerParentConfirmationModal } from "./editor/partner-parent-confirmation-modal";
 import { buildRelationshipCreatePrefill, resolveCanonicalPersonByPath } from "./editor/relationship-form";
+import {
+	planPartnerParentConfirmation,
+	samePartnerParentCandidate,
+	type PartnerParentCandidate,
+} from "./domain/partner-parent-confirmation";
 import { ContactMomentModal } from "./editor/contact-moment-modal";
 import type { ContactMomentFormContext } from "./editor/contact-moment-form";
 import type { ContactMomentRecord, ContactMomentSummary, PersonRecord, RelationshipRecord } from "./domain/types";
@@ -468,6 +478,52 @@ export default class PeopleAtlasPlugin extends Plugin {
 		new RelationshipModal(
 			this.app,
 			{ kind: "create", ...prefill },
+			people,
+			this.mutations,
+			() => this.settings,
+			undefined,
+			this.relationshipTemplateCreation(),
+			() => this.index.getSnapshot().people,
+			(success) => this.offerPartnerParentConfirmation(success),
+		).open();
+	}
+
+	private offerPartnerParentConfirmation(success: RelationshipCreateSuccess): void {
+		const initialCandidate = this.partnerParentCandidateFor(success);
+		if (!initialCandidate) return;
+		new PartnerParentConfirmationModal(this.app, initialCandidate, () => {
+			const currentCandidate = this.partnerParentCandidateFor(success);
+			if (!currentCandidate || !samePartnerParentCandidate(initialCandidate, currentCandidate)) return;
+			this.openConfirmedPartnerParentEditor(currentCandidate);
+		}).open();
+	}
+
+	private partnerParentCandidateFor(success: RelationshipCreateSuccess) {
+		const snapshot = this.index.getSnapshot();
+		return planPartnerParentConfirmation({
+			people: snapshot.people,
+			relationships: snapshot.relationships,
+			recentCreate: {
+				kind: "create",
+				fromPersonPath: success.values.fromPath,
+				toPersonPath: success.values.toPath,
+				fromRole: success.values.fromRole.trim(),
+				toRole: success.values.toRole.trim(),
+			},
+		});
+	}
+
+	private openConfirmedPartnerParentEditor(candidate: PartnerParentCandidate) {
+		const people = this.index.getSnapshot().people;
+		new RelationshipModal(
+			this.app,
+			{
+				kind: "create",
+				fromPersonPath: candidate.partner.filePath,
+				toPersonPath: candidate.child.filePath,
+				fromRole: "parent",
+				toRole: "child",
+			},
 			people,
 			this.mutations,
 			() => this.settings,

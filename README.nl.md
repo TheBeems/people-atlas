@@ -7,6 +7,9 @@ People Atlas brengt personen, expliciete relaties en onopgeloste persoonslinks u
 > [!IMPORTANT]
 > People Atlas vereist Obsidian 1.13.0 of nieuwer. Obsidian 1.12.x en ouder worden niet ondersteund.
 
+> [!WARNING]
+> **Alpha-status:** People Atlas is een alpha-versie van de plugin. De fundamentele werking ervan kan in toekomstige versies veranderen.
+
 ## Functies
 
 - Stabiele persoonsidentiteit via een verplichte expliciete `person_id`.
@@ -137,18 +140,23 @@ relationships from template** toont eerst de exacte notitiepaden voordat
 bijgewerkte templatewaarden worden gekopieerd.
 
 In de sectie Relationship staat ook de optionele snelkeuze
-**Simple relationship**. **Parent**, **Child** en **Sibling** vullen uitsluitend
-de twee nog niet opgeslagen rollen als `parent`/`child`, `child`/`parent` of
-`sibling`/`sibling`. **Custom** laat templates en handmatige roltekst ongemoeid.
-Alleen **Save** schrijft deze neutrale rollen naar de relatienotitie.
+**Simple relationship**. **Parent**, **Child**, **Sibling** en **Partner**
+vullen uitsluitend de twee nog niet opgeslagen rollen als `parent`/`child`,
+`child`/`parent`, `sibling`/`sibling` of `partner`/`partner`. **Custom** laat
+templates en handmatige roltekst ongemoeid. **Partner** is een expliciete,
+neutrale rolsnelkeuze, geen relatietype, en impliceert niet automatisch een
+ouderrelatie. Alleen **Save** schrijft deze neutrale rollen naar de
+relatienotitie.
 
-Bij precies deze canonieke rollen mag de weergave het eigen vrijetekstveld
-`gender` van de rolhouder gebruiken. `woman` toont mother, daughter of sister;
-`man` toont father, son of brother. Hoofdletters en omliggende spaties tellen
-niet mee. Bij een ontbrekende of andere waarde blijft de term neutraal:
-parent, child of sibling. Letterlijke en aangepaste rollen veranderen niet.
-People Atlas leidt nooit een relatie af uit gender, namen, gedeelde ouders of
-de graaf. Ook siblings vereisen dus een eigen, expliciete relatienotitie.
+Bij precies de canonieke rollen parent, child en sibling mag de weergave het
+eigen vrijetekstveld `gender` van de rolhouder gebruiken. `woman` toont mother,
+daughter of sister; `man` toont father, son of brother. Hoofdletters en
+omliggende spaties tellen niet mee. Bij een ontbrekende of andere waarde blijft
+de term neutraal: parent, child of sibling. De canonieke rol `partner` blijft
+bij elke genderwaarde letterlijk partner. Letterlijke en aangepaste rollen
+veranderen niet. People Atlas leidt nooit een relatie af uit gender, namen,
+gedeelde ouders of de graaf. Ook siblings vereisen dus een eigen, expliciete
+relatienotitie.
 
 Als **My person** eenduidig beschikbaar is, staat die persoon bij een nieuwe
 relatie normaal als eerste, waardoor de eerste-persoonsrol van een template

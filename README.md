@@ -7,6 +7,9 @@ People Atlas maps people, explicit relationships, and unresolved person links st
 > [!IMPORTANT]
 > People Atlas requires Obsidian 1.13.0 or newer. Obsidian 1.12.x and older are not supported.
 
+> [!WARNING]
+> **Alpha status:** People Atlas is an alpha version of the plugin. Its fundamental behavior is subject to change in future releases.
+
 ## Features
 
 - Stable person identities through a required explicit `person_id`.
@@ -148,18 +151,21 @@ or changing the template leaves those copied values intact. The explicit
 before copying updated template values.
 
 The Relationship section also offers an optional **Simple relationship**
-shortcut. **Parent**, **Child**, and **Sibling** fill only the two unsaved roles
-as `parent`/`child`, `child`/`parent`, or `sibling`/`sibling`; **Custom** leaves
-the role fields available for templates or manual text. Only **Save** writes
-these neutral roles to the relationship note.
+shortcut. **Parent**, **Child**, **Sibling**, and **Partner** fill only the two
+unsaved roles as `parent`/`child`, `child`/`parent`, `sibling`/`sibling`, or
+`partner`/`partner`; **Custom** leaves the role fields available for templates
+or manual text. **Partner** is an explicit neutral role shortcut, not a
+relationship type, and does not automatically imply a parent relationship.
+Only **Save** writes these neutral roles to the relationship note.
 
-For those exact canonical roles, presentation may use the role holder's own
-free-text `gender`: `woman` shows mother, daughter, or sister and `man` shows
-father, son, or brother. Comparison is case-insensitive and ignores surrounding
-spaces. Missing or every other value keeps the neutral parent, child, or
-sibling term. Literal and custom roles remain unchanged. People Atlas never
-infers or creates a relationship from gender, names, shared parents, or graph
-structure; siblings still require their own explicit relationship note.
+For the exact canonical parent, child, and sibling roles, presentation may use
+the role holder's own free-text `gender`: `woman` shows mother, daughter, or
+sister and `man` shows father, son, or brother. Comparison is case-insensitive
+and ignores surrounding spaces. Missing or every other value keeps the neutral
+parent, child, or sibling term. The canonical `partner` role remains literal
+for every gender value. Literal and custom roles remain unchanged. People Atlas
+never infers or creates a relationship from gender, names, shared parents, or
+graph structure; siblings still require their own explicit relationship note.
 
 When **My person** resolves, a new relationship normally places that person
 first, so a template's first-person role normally becomes **My role**. Both

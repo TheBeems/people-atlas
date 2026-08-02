@@ -24,6 +24,8 @@ export type RelationshipModalMode =
 			kind: "create";
 			fromPersonPath?: string;
 			toPersonPath?: string;
+			fromRole?: string;
+			toRole?: string;
 			myPersonPath?: string;
 	  }
 	| {
@@ -36,6 +38,11 @@ export type RelationshipModalMode =
 export interface RelationshipTemplateCreation {
 	enabled(): boolean;
 	save(preset: RelationshipPreset): Promise<boolean>;
+}
+
+export interface RelationshipCreateSuccess {
+	createdFile: TFile;
+	values: RelationshipFormValues;
 }
 
 interface InputOptions {
@@ -103,10 +110,13 @@ export class RelationshipModal extends Modal {
 		private readonly afterClose?: () => void,
 		private readonly templateCreation?: RelationshipTemplateCreation,
 		getCurrentPeople: () => PersonRecord[] = () => people,
+		private readonly onCreateSuccess?: (success: RelationshipCreateSuccess) => void,
 	) {
 		super(app);
 		if (mode.kind === "create") {
 			this.values = createRelationshipFormValues(people, mode.fromPersonPath, mode.toPersonPath);
+			if (mode.fromRole !== undefined) this.values.fromRole = mode.fromRole;
+			if (mode.toRole !== undefined) this.values.toRole = mode.toRole;
 			this.session = new RelationshipFormSession({ kind: "create" }, people, mutations, getCurrentPeople);
 		} else {
 			this.values = editRelationshipFormValues(
@@ -187,6 +197,7 @@ export class RelationshipModal extends Modal {
 				["parent", "Parent of the second person"],
 				["child", "Child of the second person"],
 				["sibling", "Sibling of the second person"],
+				["partner", "Partner of the second person"],
 			],
 			onChange: (value) => this.selectSimpleRelationship(value),
 		});
@@ -422,10 +433,16 @@ export class RelationshipModal extends Modal {
 		this.errorEl?.replaceChildren();
 		this.saveButton.disabled = true;
 		this.saveButton.setAttribute("aria-busy", "true");
-		const result = await this.session.submit(structuredClone(this.values));
+		const submittedValues = structuredClone(this.values);
+		const result = await this.session.submit(submittedValues);
 		if (result.status === "success") {
 			this.close();
 			if (result.createdFile) {
+				try {
+					this.onCreateSuccess?.({ createdFile: result.createdFile, values: submittedValues });
+				} catch {
+					// A post-save suggestion must never make the completed explicit create appear to fail.
+				}
 				try {
 					await this.app.workspace.getLeaf("tab").openFile(result.createdFile);
 				} catch (error) {
@@ -715,7 +732,7 @@ function comparePeople(left: PersonRecord, right: PersonRecord): number {
 }
 
 function isSimpleRelationshipChoice(value: string): value is SimpleRelationshipChoice {
-	return value === "custom" || value === "parent" || value === "child" || value === "sibling";
+	return value === "custom" || value === "parent" || value === "child" || value === "sibling" || value === "partner";
 }
 
 function appendDescribedBy(control: HTMLElement, id: string): void {

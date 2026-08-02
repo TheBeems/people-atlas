@@ -177,6 +177,26 @@ describe("incident relationship rows", () => {
 		);
 	});
 
+	it("keeps canonical partner roles literal rather than deriving a gendered family term", () => {
+		const partner: AtlasEdge = {
+			id: "relationship-partner",
+			sourceId: alice.id,
+			targetId: bob.id,
+			types: [],
+			fromRole: "partner",
+			toRole: "partner",
+			filePath: "Relationships/Alice Bob partner.md",
+			inferred: false,
+		};
+
+		expect(buildIncidentRelationshipRows(snapshot([partner]), alice, "{role} of {person}")[0]?.description).toBe(
+			"partner of Bob.",
+		);
+		expect(buildIncidentRelationshipRows(snapshot([partner]), bob, "{role} of {person}")[0]?.description).toBe(
+			"partner of Alice.",
+		);
+	});
+
 	it("uses neutral canonical terms for ghost and ambiguous role holders and preserves custom roles literally", () => {
 		const parentChild: AtlasEdge = {
 			id: "relationship-ghost-child",

@@ -1,4 +1,4 @@
-export type SimpleRelationshipChoice = "custom" | "parent" | "child" | "sibling";
+export type SimpleRelationshipChoice = "custom" | "parent" | "child" | "sibling" | "partner";
 
 export interface SimpleRelationshipRoles {
 	fromRole: string;
@@ -9,6 +9,7 @@ const SIMPLE_RELATIONSHIP_ROLES: Record<Exclude<SimpleRelationshipChoice, "custo
 	parent: { fromRole: "parent", toRole: "child" },
 	child: { fromRole: "child", toRole: "parent" },
 	sibling: { fromRole: "sibling", toRole: "sibling" },
+	partner: { fromRole: "partner", toRole: "partner" },
 };
 
 const FAMILY_TERMS = {
@@ -23,6 +24,7 @@ export function deriveSimpleRelationshipChoice(fromRole: string, toRole: string)
 	if (from === "parent" && to === "child") return "parent";
 	if (from === "child" && to === "parent") return "child";
 	if (from === "sibling" && to === "sibling") return "sibling";
+	if (from === "partner" && to === "partner") return "partner";
 	return "custom";
 }
 

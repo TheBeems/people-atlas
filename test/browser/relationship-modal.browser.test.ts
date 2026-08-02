@@ -206,6 +206,7 @@ describe("relationship modal", () => {
 			["parent", "Parent of the second person"],
 			["child", "Child of the second person"],
 			["sibling", "Sibling of the second person"],
+			["partner", "Partner of the second person"],
 		]);
 		expect(simple.getAttribute("aria-describedby")).toBeTruthy();
 		expect(content.textContent).toContain("shortcut from the first person to the second person");
@@ -247,6 +248,19 @@ describe("relationship modal", () => {
 		expect(inputForLabel(content, "Charlie's role").value).toBe("sibling");
 		expect(inputForLabel(content, "Bob's role").value).toBe("sibling");
 		expect(content.textContent).toContain("Charlie's role is sister and Bob's role is brother");
+
+		choose(simple, "partner");
+		expect(document.activeElement).toBe(simple);
+		expect(inputForLabel(content, "Charlie's role").value).toBe("partner");
+		expect(inputForLabel(content, "Bob's role").value).toBe("partner");
+		expect(content.textContent).toContain("Charlie's role is partner and Bob's role is partner");
+		expect(inputForLabel(content, "Relationship types").value).toBe("family");
+		expect(inputForLabel(content, "Closeness").value).toBe("5");
+		expect(inputForLabel(content, "Relationship note path").value).toBe("People/Relationships/Keep path.md");
+		expect(selectForLabel(content, "Relationship template").value).toBe("");
+		expect(advanced.open).toBe(true);
+		expect(content.scrollTop).toBe(scrollTop);
+		expect(content.querySelector("form")).toBe(form);
 		expect(content.scrollWidth).toBeLessThanOrEqual(content.clientWidth);
 		expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth);
 		expect(createRelationship).not.toHaveBeenCalled();

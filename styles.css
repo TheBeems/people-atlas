@@ -870,6 +870,28 @@
 	gap: var(--size-4-2);
 }
 
+.people-atlas-partner-parent-confirmation {
+	display: grid;
+	gap: var(--size-4-3);
+	max-width: min(30rem, 100%);
+}
+
+.people-atlas-partner-parent-confirmation p {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-partner-parent-confirmation-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-partner-parent-confirmation-actions > button {
+	max-width: 100%;
+}
+
 @media (max-width: 700px) {
 	.people-atlas-body {
 		grid-template-columns: 1fr;

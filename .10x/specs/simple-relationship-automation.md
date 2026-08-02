@@ -1,6 +1,14 @@
 Status: active
 Created: 2026-07-31
-Updated: 2026-07-31
+Updated: 2026-08-01
+
+> **Narrow supersession — 2026-08-01.** The exclusive three-choice/role-pair
+> limits, the Partner exclusion, and clause 22's prohibition on proposing a
+> relationship are superseded only for the explicit Partner choice and post-create
+> partner-oudervraag governed by `.10x/decisions/partner-parent-confirmation.md`
+> and `.10x/specs/partner-parent-confirmation.md`. All other no-inference,
+> explicit Save, neutral-storage and sibling constraints in this specification
+> remain active.
 
 # Explicit simple relationships and derived family terms
 

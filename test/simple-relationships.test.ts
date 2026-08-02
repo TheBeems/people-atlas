@@ -10,6 +10,7 @@ describe("simple relationship contract", () => {
 		["parent", "child", "parent"],
 		["child", "parent", "child"],
 		["sibling", "sibling", "sibling"],
+		["partner", "partner", "partner"],
 	] as const)("derives %s/%s as %s", (fromRole, toRole, choice) => {
 		expect(deriveSimpleRelationshipChoice(` ${fromRole} `, ` ${toRole} `)).toBe(choice);
 	});
@@ -17,6 +18,10 @@ describe("simple relationship contract", () => {
 	it.each([
 		["", "", "custom"],
 		["Parent", "child", "custom"],
+		["Partner", "partner", "custom"],
+		["partner", "PARTNER", "custom"],
+		["partner", "", "custom"],
+		["partner", "partnerin", "custom"],
 		["mother", "daughter", "custom"],
 		["mentor", "mentee", "custom"],
 	] as const)("keeps the literal pair %s/%s custom", (fromRole, toRole, choice) => {
@@ -27,6 +32,7 @@ describe("simple relationship contract", () => {
 		expect(getSimpleRelationshipRoles("parent")).toEqual({ fromRole: "parent", toRole: "child" });
 		expect(getSimpleRelationshipRoles("child")).toEqual({ fromRole: "child", toRole: "parent" });
 		expect(getSimpleRelationshipRoles("sibling")).toEqual({ fromRole: "sibling", toRole: "sibling" });
+		expect(getSimpleRelationshipRoles("partner")).toEqual({ fromRole: "partner", toRole: "partner" });
 		expect(getSimpleRelationshipRoles("custom")).toBeUndefined();
 	});
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+- Added the explicit **Partner** simple relationship shortcut, stored as the
+  neutral `partner`/`partner` role pair without changing other relationship
+  metadata.
+- After a successful new parent-child relationship, asks once whether one
+  unique active partner is also a parent of the child; review opens the regular
+  relationship editor and only its explicit second Save writes anything.
+- Kept ambiguous, ended, multiple, stale, and already-existing candidates
+  write-free and documented this release as alpha software whose fundamental
+  behavior may change.
+
 ## 0.5.0
 
 - Reorganized the declarative Settings tab into General, People schema,

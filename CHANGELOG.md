@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+- Added native **Edit person** and **Edit relationship** buttons to current,
+  unique canonical People Atlas notes in Reading View only.
+- Each action reuses the existing path-based editor and revalidates on click, so
+  stale, missing, or ambiguous notes cannot open the wrong record or write data.
+- Kept the new contextual actions read-only until an explicit Save in an editor,
+  and documented this release as alpha software whose fundamental behavior may
+  change.
+
 ## 0.6.0
 
 - Added the explicit **Partner** simple relationship shortcut, stored as the

@@ -80,7 +80,8 @@
 .people-atlas-semantic-actions button:focus-visible,
 .people-atlas-follow-ups-panel button:focus-visible,
 .people-atlas-follow-up-row:focus-visible,
-.people-atlas-details-sheet button:focus-visible {
+.people-atlas-details-sheet button:focus-visible,
+.people-atlas-note-actions button:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
@@ -431,6 +432,19 @@
 	flex-wrap: wrap;
 	gap: var(--size-4-2, 8px);
 	margin-top: var(--size-4-3, 12px);
+}
+
+.people-atlas-note-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin-block: var(--size-4-3);
+}
+
+.people-atlas-note-actions button {
+	min-width: var(--size-4-6);
+	min-height: var(--size-4-6);
 }
 
 .people-atlas-bases-view {
@@ -957,6 +971,11 @@
 	.people-atlas-details-sheet button {
 		min-width: 44px;
 		min-height: 44px;
+	}
+
+	.people-atlas-note-actions button {
+		min-width: var(--size-4-11);
+		min-height: var(--size-4-11);
 	}
 
 	.people-atlas-details-sheet {

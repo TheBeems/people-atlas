@@ -179,6 +179,25 @@ export class Component {
 	}
 }
 
+export class MarkdownRenderChild extends Component {
+	constructor(readonly containerEl: HTMLElement) {
+		super();
+	}
+}
+
+export interface MarkdownPostProcessorContext {
+	docId: string;
+	sourcePath: string;
+	frontmatter: Record<string, unknown> | null | undefined;
+	addChild(child: MarkdownRenderChild): void;
+	getSectionInfo(_element: HTMLElement): null;
+}
+
+export interface MarkdownPostProcessor {
+	(element: HTMLElement, context: MarkdownPostProcessorContext): Promise<unknown> | void;
+	sortOrder?: number;
+}
+
 interface ControlledApp {
 	vault: ControlledVault;
 	metadataCache: ControlledMetadataCache;
@@ -253,6 +272,13 @@ export class Plugin extends Component {
 		this.app.__runtime.registerBasesView(type, registration);
 		this.register(() => this.app.__runtime.unregisterBasesView(type));
 		return true;
+	}
+
+	registerMarkdownPostProcessor(postProcessor: MarkdownPostProcessor, sortOrder?: number): MarkdownPostProcessor {
+		if (sortOrder !== undefined) postProcessor.sortOrder = sortOrder;
+		this.app.__runtime.registerMarkdownPostProcessor(postProcessor);
+		this.register(() => this.app.__runtime.unregisterMarkdownPostProcessor(postProcessor));
+		return postProcessor;
 	}
 
 	registerEditorSuggest(editorSuggest: EditorSuggest<unknown>): void {
@@ -685,6 +711,24 @@ class ControlledWorkspace extends ControlledEventSource {
 	}
 }
 
+export class ControlledMarkdownRender {
+	constructor(
+		readonly section: HTMLElement,
+		private readonly children: readonly MarkdownRenderChild[],
+	) {}
+
+	get childCount(): number {
+		return this.children.length;
+	}
+
+	async unload(): Promise<void> {
+		for (const child of [...this.children].reverse()) {
+			if (child.isLoaded()) await child.unload();
+		}
+		this.section.remove();
+	}
+}
+
 export class ControlledObsidianRuntime {
 	readonly document: Document;
 	readonly vault = new ControlledVault();
@@ -696,6 +740,7 @@ export class ControlledObsidianRuntime {
 	readonly ribbonItems = new Set<HTMLElement>();
 	readonly settingTabs = new Set<PluginSettingTab>();
 	readonly editorSuggests = new Set<EditorSuggest<unknown>>();
+	readonly markdownPostProcessors = new Set<MarkdownPostProcessor>();
 	readonly leaves: ControlledWorkspaceLeaf[] = [];
 	readonly basesViews: BasesView[] = [];
 	readonly openedPaths: string[] = [];
@@ -810,6 +855,42 @@ export class ControlledObsidianRuntime {
 
 	unregisterBasesView(type: string): void {
 		this.basesRegistrations.delete(type);
+	}
+
+	registerMarkdownPostProcessor(postProcessor: MarkdownPostProcessor): void {
+		if (this.markdownPostProcessors.has(postProcessor)) {
+			throw new Error("Markdown post processor is already registered.");
+		}
+		this.markdownPostProcessors.add(postProcessor);
+	}
+
+	unregisterMarkdownPostProcessor(postProcessor: MarkdownPostProcessor): void {
+		this.markdownPostProcessors.delete(postProcessor);
+	}
+
+	async renderMarkdown(
+		sourcePath: string,
+		docId: string,
+		section = this.document.createElement("section"),
+	): Promise<ControlledMarkdownRender> {
+		if (!section.isConnected) this.document.body.append(section);
+		const children: MarkdownRenderChild[] = [];
+		const context: MarkdownPostProcessorContext = {
+			docId,
+			sourcePath,
+			frontmatter: this.metadataCache.getFileCache(this.requireFile(sourcePath))?.frontmatter,
+			addChild: (child) => {
+				if (children.includes(child)) throw new Error("Markdown render child is already registered.");
+				if (!section.contains(child.containerEl)) {
+					throw new Error("Markdown render child must belong to its rendered section.");
+				}
+				children.push(child);
+			},
+			getSectionInfo: () => null,
+		};
+		for (const postProcessor of this.markdownPostProcessors) await postProcessor(section, context);
+		for (const child of children) await child.load();
+		return new ControlledMarkdownRender(section, children);
 	}
 
 	createStandaloneView(type: string, leaf = new ControlledWorkspaceLeaf(this.app, this.document)): ItemView {

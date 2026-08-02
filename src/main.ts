@@ -1,4 +1,12 @@
-import { Notice, Plugin, TFile, type QueryController, type WorkspaceLeaf } from "obsidian";
+import {
+	MarkdownRenderChild,
+	Notice,
+	Plugin,
+	TFile,
+	type MarkdownPostProcessorContext,
+	type QueryController,
+	type WorkspaceLeaf,
+} from "obsidian";
 import { buildBasesOptions } from "./bases/options";
 import { PeopleAtlasBasesView } from "./bases/people-atlas-bases-view";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "./constants";
@@ -68,6 +76,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
 	readonly index = new PersonIndex(this.app, () => this.settings);
 	private settingsWriteEnabled = true;
+	private readonly renderedNoteActionDocumentIds = new Set<string>();
 	private readonly viewStateWrites = new ViewStateWriteCoordinator((viewConfigurationKey, state) =>
 		this.persistViewState(viewConfigurationKey, state),
 	);
@@ -138,6 +147,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		});
 		this.addSettingTab(new PeopleAtlasSettingTab(this));
 		this.registerEditorSuggest(new PersonMentionSuggest(this.app, this.index, this.mutations, () => this.settings));
+		this.registerMarkdownPostProcessor((section, context) => this.renderNoteContextActions(section, context));
 
 		this.app.workspace.onLayoutReady(() => this.addChild(this.index));
 	}
@@ -800,6 +810,39 @@ export default class PeopleAtlasPlugin extends Plugin {
 			save: async (template) =>
 				this.updateSetting("relationshipPresets", [...this.settings.relationshipPresets, template]),
 		};
+	}
+
+	private renderNoteContextActions(section: HTMLElement, context: MarkdownPostProcessorContext): void {
+		if (this.renderedNoteActionDocumentIds.has(context.docId)) return;
+		const action = this.resolveNoteContextAction(context.sourcePath);
+		if (!action) return;
+
+		const document = section.ownerDocument;
+		const panel = document.createElement("div");
+		panel.className = "people-atlas-note-actions";
+		panel.setAttribute("aria-label", "People Atlas actions");
+		const button = document.createElement("button");
+		button.type = "button";
+		button.textContent = action === "person" ? "Edit person" : "Edit relationship";
+		button.setAttribute("aria-label", button.textContent);
+		panel.append(button);
+		section.append(panel);
+
+		const child = new MarkdownRenderChild(panel);
+		child.registerDomEvent(button, "click", () => {
+			if (action === "person") void this.openEditPerson(context.sourcePath);
+			else this.openEditRelationship(context.sourcePath);
+		});
+		context.addChild(child);
+		this.renderedNoteActionDocumentIds.add(context.docId);
+		child.register(() => this.renderedNoteActionDocumentIds.delete(context.docId));
+	}
+
+	private resolveNoteContextAction(sourcePath: string): "person" | "relationship" | undefined {
+		const person = this.resolveCanonicalPerson(sourcePath);
+		const relationship = this.resolveCanonicalRelationship(sourcePath);
+		if (Boolean(person) === Boolean(relationship)) return undefined;
+		return person ? "person" : "relationship";
 	}
 
 	private resolveCanonicalRelationship(

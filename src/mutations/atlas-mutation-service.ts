@@ -1,5 +1,13 @@
-import { getAllTags, normalizePath, type App, type CachedMetadata, type TFile } from "obsidian";
+import { getAllTags, normalizePath, TFile, type App, type CachedMetadata, type TAbstractFile } from "obsidian";
 import { normalizePathIdentity } from "../domain/identity";
+import { canonicalPersonPhotoWikilink, dossierPersonPhotoAssets } from "../domain/person-photo";
+import {
+	peopleCollectionPaths,
+	personDossierPath,
+	personDossierPathFromProfile,
+	personDossierSuffix,
+	personProfilePath,
+} from "../domain/people-paths";
 import { parsePersonReference } from "../domain/wikilink";
 import type { RelationshipPresetValues } from "../settings/relationship-presets";
 import type { PeopleAtlasSettings } from "../settings/types";
@@ -212,20 +220,61 @@ export class AtlasMutationService {
 		const settings = this.getSettings();
 		const normalizedInput = this.normalizePersonInput(input);
 		const errors = validatePersonInput(normalizedInput, settings);
-		const folder = normalizePath(settings.peopleFolder);
-		if (validateFolderPath(folder)) errors.push("The configured People folder is invalid.");
-		const fileName = sanitizeNoteName(normalizedInput.name);
-		if (!fileName) errors.push("The person name cannot produce a valid note name.");
-		const path = normalizePath(`${folder}/${fileName}.md`);
-		const personId = normalizedInput.personId?.trim() || this.generateId();
+		const reviewedPath = normalizedInput.reviewedPath?.trim() ?? "";
+		if (validateNotePath(reviewedPath)) errors.push("A safe reviewed person path is required for person create.");
+		if (normalizedInput.photo?.trim()) {
+			errors.push("Person create cannot include a photo; add it in a separate edit after the dossier exists.");
+		}
+		const folder = normalizePath(settings.peopleRootFolder);
+		if (validateFolderPath(folder)) errors.push("The configured People root folder is invalid.");
+		const personId = normalizedInput.personId?.trim() ?? "";
+		if (!personDossierSuffix(personId)) errors.push("An explicit UUID-backed person_id is required for person create.");
+		const dossierPath = personDossierPath(folder, normalizedInput.name, personId);
+		const proposedPath = personProfilePath(folder, normalizedInput.name, personId);
+		if (!dossierPath || !proposedPath)
+			errors.push("The person name and person_id cannot produce a valid dossier path.");
+		const path = proposedPath;
+		if (reviewedPath !== path) {
+			errors.push("The reviewed person path changed before Save. Review the current destination and try again.");
+		}
 		if (this.identityInUse(personId, path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
 			errors.push(`person_id “${personId}” is already in use.`);
 		}
+		if (dossierPath && this.app.vault.getAbstractFileByPath(dossierPath)) {
+			errors.push(`A dossier already exists at “${dossierPath}”.`);
+		}
 		if (this.app.vault.getAbstractFileByPath(path)) errors.push(`A note already exists at “${path}”.`);
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
-		await this.ensureFolder(folder);
+		const createdFolders = await this.ensureFolder(dossierPath);
+		const createdDossier = createdFolders.get(dossierPath);
+		if (!createdDossier || this.app.vault.getAbstractFileByPath(dossierPath) !== createdDossier) {
+			throw new MutationError(`The dossier “${dossierPath}” was not created by this transaction.`);
+		}
 		const frontmatter = this.personFrontmatter(normalizedInput, personId, settings);
-		const file = await this.app.vault.create(path, `---\n${frontmatter}---\n`);
+		let file: TFile;
+		try {
+			if (this.identityInUse(personId, path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
+				throw new MutationError(`person_id “${personId}” is already in use.`);
+			}
+			file = await this.app.vault.create(path, `---\n${frontmatter}---\n`);
+		} catch (error) {
+			const createdDossier = createdFolders.get(dossierPath);
+			const liveDossier = this.app.vault.getAbstractFileByPath(dossierPath);
+			const liveChildren = (liveDossier as { children?: unknown } | null)?.children;
+			if (
+				createdDossier &&
+				liveDossier === createdDossier &&
+				Array.isArray(liveChildren) &&
+				liveChildren.length === 0
+			) {
+				try {
+					await this.app.fileManager.trashFile(createdDossier);
+				} catch {
+					// The profile-note failure remains primary; an undeleted empty dossier is safer than masking it.
+				}
+			}
+			throw error;
+		}
 		this.rememberIdentity(this.reservedPersonIds, personId, path);
 		return file;
 	}
@@ -235,6 +284,10 @@ export class AtlasMutationService {
 		const settings = this.getSettings();
 		const path = normalizePath(input.path);
 		const errors = validateRelationshipInput({ ...input, path }, settings);
+		const relationshipsFolder = peopleCollectionPaths(settings.peopleRootFolder).relationships;
+		if (path.split("/").slice(0, -1).join("/") !== relationshipsFolder) {
+			errors.push(`New relationships must use the configured central collection “${relationshipsFolder}”.`);
+		}
 
 		const relationshipId = input.relationshipId?.trim() || this.generateId();
 		if (
@@ -268,6 +321,10 @@ export class AtlasMutationService {
 		const errors = validateContactMomentMutationInput(normalizedInput, contactSettings);
 		const relationshipFile = this.validateCanonicalContactMomentTargets(normalizedInput, settings, errors);
 		const path = normalizePath(normalizedInput.path);
+		const contactMomentsFolder = peopleCollectionPaths(settings.peopleRootFolder).contactMoments;
+		if (path.split("/").slice(0, -1).join("/") !== contactMomentsFolder) {
+			errors.push(`New contact moments must use the configured central collection “${contactMomentsFolder}”.`);
+		}
 		const contactMomentId = normalizedInput.contactMomentId ?? generatedId;
 		if (
 			this.identityInUse(
@@ -582,6 +639,10 @@ export class AtlasMutationService {
 		const personId = writeUpdates.personId === null ? undefined : (writeUpdates.personId ?? cachedPersonId);
 		const errors = [...validatePersonInput({ name, personId }, settings), ...validatePersonUpdates(writeUpdates)];
 		if (!cachedPersonId) errors.push("The person note must define a non-empty person_id before it can be edited.");
+		if (writeUpdates.photo !== undefined && writeUpdates.photo !== null) {
+			const photoError = this.explicitPersonPhotoError(writeUpdates.photo, settings, file.path, explicitPersonId ?? "");
+			if (photoError) errors.push(photoError);
+		}
 		if (
 			!expectedClassification ||
 			!this.personClassificationMatches(cache, current, settings, expectedClassification)
@@ -644,6 +705,20 @@ export class AtlasMutationService {
 					) {
 						throw new MutationError(STALE_PERSON_EDIT_MESSAGE);
 					}
+					if (writeUpdates.photo !== undefined && writeUpdates.photo !== null) {
+						const liveSettings = this.getSettings();
+						const livePhotoPersonId = normalizeStoredId(this.readString(frontmatter, liveSettings.personIdProperty));
+						const photoError = this.explicitPersonPhotoError(
+							writeUpdates.photo,
+							liveSettings,
+							file.path,
+							livePhotoPersonId,
+						);
+						if (photoError) throw new MutationError(photoError);
+						// The supported host API has no note-plus-asset transaction. A narrow
+						// residual window remains after this callback returns and before the host
+						// commits the frontmatter draft.
+					}
 					if (!propertiesChanged) throw PERSON_EDIT_GUARD_ONLY;
 					this.apply(frontmatter, settings.nameProperty, writeUpdates.name);
 					this.apply(frontmatter, settings.personIdProperty, writeUpdates.personId);
@@ -681,6 +756,39 @@ export class AtlasMutationService {
 			return { file, renamed: true };
 		}
 		return { file, renamed: false };
+	}
+
+	private explicitPersonPhotoError(
+		photo: string,
+		settings: PeopleAtlasSettings,
+		profilePath: string,
+		personId: string,
+	): string | undefined {
+		let photoPath = "";
+		if (photo.startsWith("[[") && photo.endsWith("]]")) {
+			const candidatePath = photo.slice(2, -2);
+			try {
+				if (canonicalPersonPhotoWikilink(candidatePath) === photo) photoPath = candidatePath;
+			} catch {
+				// The shared canonicalizer supplies the supported vault-path grammar.
+			}
+		}
+		if (!photoPath) return "A changed photo must be one exact canonical wikilink to a supported vault image.";
+		const dossierPath = personDossierPathFromProfile(settings.peopleRootFolder, profilePath, personId);
+		const photoFile = this.app.vault.getAbstractFileByPath(photoPath);
+		if (!(photoFile instanceof TFile) || photoFile.path !== photoPath) {
+			return `The changed photo “${photoPath}” is missing or is not a supported vault file.`;
+		}
+		if (
+			!dossierPath ||
+			dossierPersonPhotoAssets(
+				[{ path: photoFile.path, basename: photoFile.basename, extension: photoFile.extension }],
+				dossierPath,
+			).length !== 1
+		) {
+			return "A changed photo must be inside the person's current canonical dossier.";
+		}
+		return undefined;
 	}
 
 	private async updateRelationshipExclusive(file: TFile, updates: RelationshipUpdates): Promise<void> {
@@ -1635,16 +1743,18 @@ export class AtlasMutationService {
 		if (!this.canWrite()) throw new MutationError("People Atlas writes are disabled until plugin data is repaired.");
 	}
 
-	private async ensureFolder(folder: string): Promise<void> {
-		if (!folder) return;
+	private async ensureFolder(folder: string): Promise<Map<string, TAbstractFile>> {
+		const created = new Map<string, TAbstractFile>();
+		if (!folder) return created;
 		let current = "";
 		for (const part of folder.split("/")) {
 			current = current ? `${current}/${part}` : part;
 			const existing = this.app.vault.getAbstractFileByPath(current);
 			if (existing && !Array.isArray((existing as { children?: unknown }).children))
 				throw new MutationError(`The destination “${current}” is not a folder.`);
-			if (!existing) await this.app.vault.createFolder(current);
+			if (!existing) created.set(current, await this.app.vault.createFolder(current));
 		}
+		return created;
 	}
 
 	private personFrontmatter(input: PersonMutationInput, personId: string, settings: PeopleAtlasSettings): string {
@@ -1654,7 +1764,6 @@ export class AtlasMutationService {
 			`${settings.nameProperty}: ${yamlValue(input.name.trim())}`,
 			...(input.aliases?.length ? [`${settings.aliasesProperty}: ${yamlValue(input.aliases)}`] : []),
 			...(input.organisations?.length ? [`${settings.organisationsProperty}: ${yamlValue(input.organisations)}`] : []),
-			...(input.photo ? [`${settings.photoProperty}: ${yamlValue(input.photo)}`] : []),
 			...(input.contacts?.length ? [`${settings.contactsProperty}: ${yamlValue(input.contacts)}`] : []),
 			...(input.birthDate ? [`${settings.birthDateProperty}: ${yamlValue(input.birthDate)}`] : []),
 			...(input.pronouns ? [`${settings.pronounsProperty}: ${yamlValue(input.pronouns)}`] : []),

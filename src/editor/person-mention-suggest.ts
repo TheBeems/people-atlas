@@ -8,6 +8,7 @@ import {
 	type EditorSuggestTriggerInfo,
 	type TFile,
 } from "obsidian";
+import { peopleCollectionPaths, personProfilePath } from "../domain/people-paths";
 import type { PersonIndex } from "../index/person-index";
 import { type AtlasMutationService, MutationError } from "../mutations/atlas-mutation-service";
 import type { PeopleAtlasSettings } from "../settings/types";
@@ -61,7 +62,10 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 
 	override renderSuggestion(item: PersonMentionSuggestion, el: HTMLElement): void {
 		el.createDiv({
-			text: item.kind === "create" ? `Create person “${item.name}” in ${this.getSettings().peopleFolder}/` : item.name,
+			text:
+				item.kind === "create"
+					? `Create person “${item.name}” in ${peopleCollectionPaths(this.getSettings().peopleRootFolder).profiles}/`
+					: item.name,
 		});
 		if (item.kind === "person") el.createDiv({ text: item.filePath, cls: "suggestion-note" });
 	}
@@ -74,8 +78,14 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 
 	private async choose(item: PersonMentionSuggestion, context: EditorSuggestContext): Promise<void> {
 		try {
-			const targetPath =
-				item.kind === "person" ? item.filePath : (await this.mutations.createPerson({ name: item.name })).path;
+			let targetPath: string;
+			if (item.kind === "person") {
+				targetPath = item.filePath;
+			} else {
+				const personId = `person-${crypto.randomUUID()}`;
+				const reviewedPath = personProfilePath(this.getSettings().peopleRootFolder, item.name, personId);
+				targetPath = (await this.mutations.createPerson({ name: item.name, personId, reviewedPath })).path;
+			}
 			context.editor.replaceRange(
 				formatMentionLink(targetPath, item.kind === "person" ? item.name : item.name),
 				context.start,

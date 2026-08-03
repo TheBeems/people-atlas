@@ -1,3 +1,4 @@
+import { validatePeopleRootFolder } from "../domain/people-root";
 import { DEFAULT_SETTINGS } from "./defaults";
 import {
 	normalizeRelationshipPresets,
@@ -7,9 +8,10 @@ import {
 import { normalizeViewStates } from "./view-state";
 import type { PeopleAtlasSettings } from "./types";
 
+export { validatePeopleRootFolder };
+
 const STRING_KEYS: Array<keyof PeopleAtlasSettings> = [
-	"peopleFolder",
-	"contactMomentsFolder",
+	"peopleRootFolder",
 	"typeProperty",
 	"personTypeValue",
 	"relationshipTypeValue",
@@ -156,28 +158,6 @@ export function validateNoteTypeValues(settings: PeopleAtlasSettings): string | 
 		}
 		owners.set(normalized, key);
 	}
-	return undefined;
-}
-
-export function validatePeopleFolder(value: string): string | undefined {
-	const normalized = value
-		.trim()
-		.replace(/\\/g, "/")
-		.replace(/^\/+|\/+$/g, "");
-	if (!normalized) return "Enter a People folder.";
-	if (normalized.split("/").some((part) => part === ".." || part === "."))
-		return "The People folder must stay inside the vault.";
-	return undefined;
-}
-
-export function validateContactMomentsFolder(value: string): string | undefined {
-	const normalized = value.trim().replace(/\\/g, "/");
-	if (!normalized) return "Enter a Contact moments folder.";
-	if (normalized.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(normalized))
-		return "The Contact moments folder must be relative to the vault.";
-	const segments = normalized.replace(/\/+$/g, "").split("/");
-	if (segments.some((part) => part === "." || part === ".." || !part.trim()))
-		return "The Contact moments folder must stay inside the vault.";
 	return undefined;
 }
 

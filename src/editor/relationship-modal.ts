@@ -590,7 +590,7 @@ export class RelationshipModal extends Modal {
 
 	private refreshProposedPath(): void {
 		if (this.mode.kind !== "create" || this.pathManuallyEdited) return;
-		const proposed = proposeRelationshipPath(this.values, this.people);
+		const proposed = proposeRelationshipPath(this.values, this.people, this.getSettings().peopleRootFolder);
 		this.values.path = proposed;
 		if (this.pathInput) this.pathInput.value = proposed;
 		this.refreshAdvancedSummary();

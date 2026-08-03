@@ -5,6 +5,7 @@ import {
 	getSimpleRelationshipRoles,
 	type SimpleRelationshipChoice,
 } from "../domain/simple-relationships";
+import { peopleCollectionPaths } from "../domain/people-paths";
 import type { PersonRecord, PersonReference, RelationshipRecord, RelationshipStatus } from "../domain/types";
 import type { RelationshipMutationInput, RelationshipUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
@@ -173,6 +174,7 @@ export function editRelationshipFormValues(
 export function proposeRelationshipPath(
 	values: Pick<RelationshipFormValues, "fromPath" | "toPath">,
 	people: PersonRecord[],
+	peopleRootFolder: string,
 ): string {
 	const from = people.find((person) => person.filePath === values.fromPath);
 	const to = people.find((person) => person.filePath === values.toPath);
@@ -180,7 +182,7 @@ export function proposeRelationshipPath(
 	const fromName = sanitizeNoteName(from.name);
 	const toName = sanitizeNoteName(to.name);
 	if (!fromName || !toName) return "";
-	return `People/Relationships/${fromName} - ${toName}.md`;
+	return `${peopleCollectionPaths(peopleRootFolder).relationships}/${fromName} - ${toName}.md`;
 }
 
 export function applyRelationshipPreset(

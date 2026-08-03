@@ -4,6 +4,7 @@ import type PeopleAtlasPlugin from "../src/main";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { RelationshipPreset } from "../src/settings/relationship-presets";
 import { PeopleAtlasSettingTab } from "../src/settings/settings-tab";
+import { validatePeopleRootFolder } from "../src/settings/validate";
 
 const relationshipTemplate: RelationshipPreset = {
 	id: "friend-colleague",
@@ -281,6 +282,51 @@ describe("People Atlas relationship-template deletion confirmation", () => {
 });
 
 describe("People Atlas settings definitions", () => {
+	it("exposes one People root control and no independent person or contact-moment folder controls", () => {
+		const definitions = flattenedSettingDefinitions(createTab());
+		const folderDefinitions = definitions.filter((definition) =>
+			["peopleRootFolder", "peopleFolder", "contactMomentsFolder"].includes(definition.control?.key ?? ""),
+		);
+
+		expect(folderDefinitions).toHaveLength(1);
+		expect(folderDefinitions[0]).toMatchObject({
+			name: "People root folder",
+			desc: "Vault-relative root for the fixed Profiles, Relationships and Contact moments collections.",
+			control: { type: "text", key: "peopleRootFolder", placeholder: "People" },
+		});
+		const validate = folderDefinitions[0]?.control?.validate as ((value: string) => string | undefined) | undefined;
+		expect(validate?.("/People")).toContain("relative to the vault");
+	});
+
+	it("uses the central unsafe People root segment validator for the inline control", () => {
+		const definition = flattenedSettingDefinitions(createTab()).find(
+			(candidate) => candidate.control?.key === "peopleRootFolder",
+		);
+		const validate = definition?.control?.validate as ((value: string) => string | undefined) | undefined;
+
+		expect(validate).toBe(validatePeopleRootFolder);
+		expect(validate?.("Second Brain/People|Archive")).toContain("unsafe characters");
+		expect(validate?.("Second Brain/Mensen en contacten")).toBeUndefined();
+	});
+
+	it.each([
+		"People/",
+		"Second Brain/People/",
+	])("rejects the trailing-slash People root %j through the shared inline validator", (peopleRootFolder) => {
+		const definition = flattenedSettingDefinitions(createTab()).find(
+			(candidate) => candidate.control?.key === "peopleRootFolder",
+		);
+		const validate = definition?.control?.validate as ((value: string) => string | undefined) | undefined;
+
+		expect({
+			sharedValidator: validate === validatePeopleRootFolder,
+			error: validate?.(peopleRootFolder),
+		}).toEqual({
+			sharedValidator: true,
+			error: expect.stringMatching(/(?:trailing slash|must not end)/i),
+		});
+	});
+
 	it("stratifies one General root group into the ratified pages without losing declarative controls", () => {
 		const tab = createTab();
 		const definitions = tab.getSettingDefinitions() as unknown as DeclarativeSettingDefinition[];
@@ -301,8 +347,7 @@ describe("People Atlas settings definitions", () => {
 		expect(
 			rootItems.filter((definition) => definition.control !== undefined).map((definition) => definition.control?.key),
 		).toEqual([
-			"peopleFolder",
-			"contactMomentsFolder",
+			"peopleRootFolder",
 			"typeProperty",
 			"personTypeValue",
 			"relationshipTypeValue",
@@ -381,14 +426,7 @@ describe("People Atlas settings definitions", () => {
 		}));
 
 		expect(metadata).toEqual([
-			{ key: "peopleFolder", type: "text", placeholder: "People", validates: true, optionKeys: [] },
-			{
-				key: "contactMomentsFolder",
-				type: "text",
-				placeholder: "People/Contact moments",
-				validates: true,
-				optionKeys: [],
-			},
+			{ key: "peopleRootFolder", type: "text", placeholder: "People", validates: true, optionKeys: [] },
 			{ key: "typeProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
 			{ key: "personTypeValue", type: "text", placeholder: "person", validates: true, optionKeys: [] },
 			{ key: "relationshipTypeValue", type: "text", placeholder: "relationship", validates: true, optionKeys: [] },
@@ -477,7 +515,7 @@ describe("People Atlas settings definitions", () => {
 		expect(new Set(metadata.map((definition) => definition.key)).size).toBe(metadata.length);
 	});
 
-	it("exposes exactly the ten contact-moment settings with safe inline guidance", () => {
+	it("exposes exactly the nine contact-moment schema settings with safe inline guidance", () => {
 		type TextDefinition = {
 			name?: string;
 			desc?: string;
@@ -495,7 +533,6 @@ describe("People Atlas settings definitions", () => {
 
 		expect(contactMomentDefinitions.map((definition) => definition.control?.key).sort()).toEqual(
 			[
-				"contactMomentsFolder",
 				"contactMomentTypeValue",
 				"contactMomentIdProperty",
 				"contactMomentPeopleProperty",
@@ -509,11 +546,6 @@ describe("People Atlas settings definitions", () => {
 		);
 
 		const byKey = (key: string) => contactMomentDefinitions.find((definition) => definition.control?.key === key);
-		expect(byKey("contactMomentsFolder")).toMatchObject({
-			name: "Contact moments folder",
-			desc: "Default vault-relative folder for contact-moment notes created by People Atlas.",
-			control: { placeholder: "People/Contact moments" },
-		});
 		expect(byKey("contactMomentTypeValue")?.desc).toContain("person and relationship type values");
 		expect(byKey("contactMomentPeopleProperty")?.desc).toContain("Canonical person-note wikilinks");
 		expect(byKey("contactMomentRelationshipProperty")?.desc).toContain("Optional canonical relationship-note wikilink");
@@ -521,9 +553,6 @@ describe("People Atlas settings definitions", () => {
 		expect(byKey("contactMomentFollowUpOnProperty")?.desc).toContain("YYYY-MM-DD");
 		expect(byKey("contactMomentFollowUpStatusProperty")?.desc).toContain("open, done or dismissed");
 
-		expect(byKey("contactMomentsFolder")?.control?.validate?.("/People/Contact moments")).toContain(
-			"relative to the vault",
-		);
 		expect(byKey("contactMomentTypeValue")?.control?.validate?.("PERSON")).toContain("must be distinct");
 		expect(byKey("contactMomentSummaryProperty")?.control?.validate?.("channel")).toContain("must be distinct");
 		expect(byKey("contactMomentSummaryProperty")?.control?.validate?.("moment_summary")).toBeUndefined();

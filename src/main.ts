@@ -25,9 +25,8 @@ import { PeopleAtlasSettingTab } from "./settings/settings-tab";
 import type { PeopleAtlasSettings } from "./settings/types";
 import {
 	validateContactMomentPropertyMappings,
-	validateContactMomentsFolder,
 	validateNoteTypeValues,
-	validatePeopleFolder,
+	validatePeopleRootFolder,
 	validatePersonPropertyMappings,
 	validateSettings,
 } from "./settings/validate";
@@ -178,18 +177,14 @@ export default class PeopleAtlasPlugin extends Plugin {
 		const saved = await this.viewStateWrites.serialize(async () => {
 			const previous = this.settings;
 			const next = validateSettings({ ...this.settings, [key]: value });
-			if (validatePeopleFolder(next.peopleFolder)) {
-				new Notice("The People folder is invalid.");
+			const peopleRootFolderError = validatePeopleRootFolder(next.peopleRootFolder);
+			if (peopleRootFolderError) {
+				new Notice(peopleRootFolderError);
 				return false;
 			}
 			const personPropertyError = validatePersonPropertyMappings(next);
 			if (personPropertyError) {
 				new Notice(`Person property mappings are invalid: ${personPropertyError}`);
-				return false;
-			}
-			const contactMomentsFolderError = validateContactMomentsFolder(next.contactMomentsFolder);
-			if (contactMomentsFolderError) {
-				new Notice(contactMomentsFolderError);
 				return false;
 			}
 			const contactMomentPropertyError = validateContactMomentPropertyMappings(next);

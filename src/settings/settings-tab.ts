@@ -11,9 +11,8 @@ import { RelationshipPresetSyncModal } from "./relationship-preset-sync-modal";
 import type { PeopleAtlasSettings } from "./types";
 import {
 	validateContactMomentPropertyMappings,
-	validateContactMomentsFolder,
 	validateNoteTypeValues,
-	validatePeopleFolder,
+	validatePeopleRootFolder,
 	validatePropertyName,
 	validateRelationshipRoleFormatSetting,
 } from "./validate";
@@ -93,18 +92,13 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 
 		const flatDefinitions: SettingDefinitionItem[] = [
 			{
-				name: "People folder",
-				desc: "Default vault folder for person notes created by People Atlas.",
-				control: { type: "text", key: "peopleFolder", placeholder: "People", validate: validatePeopleFolder },
-			},
-			{
-				name: "Contact moments folder",
-				desc: "Default vault-relative folder for contact-moment notes created by People Atlas.",
+				name: "People root folder",
+				desc: "Vault-relative root for the fixed Profiles, Relationships and Contact moments collections.",
 				control: {
 					type: "text",
-					key: "contactMomentsFolder",
-					placeholder: "People/Contact moments",
-					validate: validateContactMomentsFolder,
+					key: "peopleRootFolder",
+					placeholder: "People",
+					validate: validatePeopleRootFolder,
 				},
 			},
 			typeValue(
@@ -325,8 +319,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 			throw new Error("People Atlas Settings definition is missing.");
 		};
 		const [
-			peopleFolder = missingDefinition(),
-			contactMomentsFolder = missingDefinition(),
+			peopleRootFolder = missingDefinition(),
 			personTypeValue = missingDefinition(),
 			relationshipTypeValue = missingDefinition(),
 			contactMomentTypeValue = missingDefinition(),
@@ -377,8 +370,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				type: "group",
 				heading: "General",
 				items: [
-					peopleFolder as SettingDefinition,
-					contactMomentsFolder as SettingDefinition,
+					peopleRootFolder as SettingDefinition,
 					typeProperty as SettingDefinition,
 					personTypeValue as SettingDefinition,
 					relationshipTypeValue as SettingDefinition,

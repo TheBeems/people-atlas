@@ -26,6 +26,11 @@ export function supportedPersonPhotoAssets(paths: readonly string[]): PersonPhot
 	});
 }
 
+export function dossierPersonPhotoAssets(assets: readonly PersonPhotoAsset[], dossierPath: string): PersonPhotoAsset[] {
+	const dossierPrefix = `${dossierPath}/`;
+	return assets.filter((asset) => isSupportedPersonPhotoPath(asset.path) && asset.path.startsWith(dossierPrefix));
+}
+
 export function filterPersonPhotoAssets(assets: readonly PersonPhotoAsset[], query: string): PersonPhotoAsset[] {
 	const normalizedQuery = query.trim().toLowerCase();
 	return assets

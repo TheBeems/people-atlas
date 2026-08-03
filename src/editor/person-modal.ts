@@ -1,6 +1,7 @@
 import { Modal, Notice, TFile, type App, type EventRef } from "obsidian";
 import {
 	canonicalPersonPhotoWikilink,
+	dossierPersonPhotoAssets,
 	filterPersonPhotoAssets,
 	isExternalPhotoReference,
 	isSupportedPersonPhotoPath,
@@ -8,6 +9,7 @@ import {
 	supportedPersonPhotoAssets,
 	type PersonPhotoAsset,
 } from "../domain/person-photo";
+import { personDossierPathFromProfile } from "../domain/people-paths";
 import type { PersonRecord } from "../domain/types";
 import { parsePersonReference } from "../domain/wikilink";
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
@@ -102,9 +104,10 @@ export class PersonModal extends Modal {
 		getCurrentPeople: () => PersonRecord[] = () => people,
 	) {
 		super(app);
-		const getCurrentPhotoAssets = () => supportedPersonPhotoAssets(app.vault.getFiles().map((file) => file.path));
+		const getCurrentPhotoAssets = () => this.currentPhotoAssets();
 		if (mode.kind === "create") {
-			this.values = createPersonFormValues(getSettings().peopleFolder);
+			const personId = `person-${crypto.randomUUID()}`;
+			this.values = createPersonFormValues(getSettings().peopleRootFolder, personId);
 			this.originalValues = undefined;
 			this.session = new PersonFormSession(
 				{ kind: "create" },
@@ -112,6 +115,7 @@ export class PersonModal extends Modal {
 				people,
 				getCurrentPeople,
 				getCurrentPhotoAssets,
+				() => getSettings().peopleRootFolder,
 			);
 		} else {
 			this.values = editPersonFormValues(
@@ -133,13 +137,14 @@ export class PersonModal extends Modal {
 				people,
 				getCurrentPeople,
 				getCurrentPhotoAssets,
+				() => getSettings().peopleRootFolder,
 			);
 		}
 	}
 
 	override onOpen(): void {
 		this.contentEl.classList.add("people-atlas-person-modal");
-		this.registerPhotoAssetListeners();
+		if (this.mode.kind === "edit") this.registerPhotoAssetListeners();
 		this.renderForm();
 	}
 
@@ -173,7 +178,14 @@ export class PersonModal extends Modal {
 				this.refreshPhotoInitials();
 			},
 		});
-		this.addPhotoControl(basic);
+		if (this.mode.kind === "create") {
+			const photoHint = document.createElement("p");
+			photoHint.className = "people-atlas-person-photo-create-hint";
+			photoHint.setAttribute("role", "note");
+			photoHint.textContent =
+				"Photo: Save this person first to create its dossier. Place an image in the person's dossier yourself. Then open Edit and choose the dossier image.";
+			basic.append(photoHint);
+		} else this.addPhotoControl(basic);
 		this.addTextarea(basic, {
 			label: "Aliases",
 			description: "Optional alternative names, one per line.",
@@ -256,11 +268,8 @@ export class PersonModal extends Modal {
 		this.pathInput.dataset.personPath = "true";
 		this.addInput(advancedBody, {
 			label: "Person ID",
-			description:
-				this.values.personIdSource === "automatic"
-					? "A stable person_id is generated when the person is saved."
-					: "Stable identity managed by People Atlas.",
-			value: this.values.personIdSource === "automatic" ? "Assigned automatically on save" : this.values.personId,
+			description: "Stable identity planned before any vault write and managed by People Atlas.",
+			value: this.values.personId,
 			readOnly: true,
 		});
 		this.advancedDetails.append(this.advancedSummary, advancedBody);
@@ -290,7 +299,7 @@ export class PersonModal extends Modal {
 		this.contentEl.append(form);
 		this.refreshPathPreview();
 		this.refreshProfileErrors();
-		this.refreshPhotoPreview();
+		if (this.mode.kind === "edit") this.refreshPhotoPreview();
 		this.restoreFocus(focusTarget);
 	}
 
@@ -320,15 +329,15 @@ export class PersonModal extends Modal {
 		this.photoInput = this.addInput(section, {
 			label: "Photo",
 			description:
-				"Stored vault path or wikilink. Use the vault picker or Clear photo to change it; unchanged authored text stays exact.",
+				"Stored vault path or wikilink. Use the dossier image picker or Clear photo to change it; unchanged authored text stays exact.",
 			value: this.values.photo,
 			readOnly: true,
 		});
 		appendDescribedBy(this.photoInput, this.photoStatusEl.id);
 
 		this.photoSearchInput = this.addInput(section, {
-			label: "Search vault images",
-			description: "Filter the supported PNG, JPG, JPEG, WebP, GIF and AVIF files currently in this vault.",
+			label: "Search dossier images",
+			description: "Filter supported PNG, JPG, JPEG, WebP, GIF and AVIF files in this person's own dossier.",
 			value: "",
 			type: "search",
 			inputMode: "search",
@@ -355,11 +364,11 @@ export class PersonModal extends Modal {
 		const selectDescriptionId = `${selectId}-description`;
 		const selectLabel = document.createElement("label");
 		selectLabel.htmlFor = selectId;
-		selectLabel.textContent = "Vault image";
+		selectLabel.textContent = "Dossier image";
 		const selectDescription = document.createElement("small");
 		selectDescription.id = selectDescriptionId;
 		selectDescription.textContent =
-			"Each choice uses its full vault-relative path, so files with the same name remain distinct.";
+			"Each choice from this person's own dossier uses its full vault-relative path, so equal filenames remain distinct.";
 		this.photoSelect = document.createElement("select");
 		this.photoSelect.id = selectId;
 		this.photoSelect.dataset.personPhotoSelect = "true";
@@ -391,7 +400,17 @@ export class PersonModal extends Modal {
 	}
 
 	private currentPhotoAssets(): PersonPhotoAsset[] {
-		return supportedPersonPhotoAssets(this.app.vault.getFiles().map((file) => file.path));
+		if (this.mode.kind !== "edit") return [];
+		const dossierPath = personDossierPathFromProfile(
+			this.getSettings().peopleRootFolder,
+			this.mode.file.path,
+			this.mode.person.id,
+		);
+		if (!dossierPath) return [];
+		return dossierPersonPhotoAssets(
+			supportedPersonPhotoAssets(this.app.vault.getFiles().map((file) => file.path)),
+			dossierPath,
+		);
 	}
 
 	private refreshPhotoPickerOptions(): void {
@@ -401,9 +420,9 @@ export class PersonModal extends Modal {
 		const document = this.photoSelect.ownerDocument;
 		const placeholder = document.createElement("option");
 		placeholder.value = "";
-		if (assets.length === 0) placeholder.textContent = "No supported vault images";
-		else if (this.filteredPhotoAssets.length === 0) placeholder.textContent = "No vault images match";
-		else placeholder.textContent = "Choose a vault image";
+		if (assets.length === 0) placeholder.textContent = "No supported dossier images";
+		else if (this.filteredPhotoAssets.length === 0) placeholder.textContent = "No dossier images match";
+		else placeholder.textContent = "Choose a dossier image";
 		this.photoSelect.replaceChildren(placeholder);
 		for (const asset of this.filteredPhotoAssets) {
 			const option = document.createElement("option");
@@ -902,7 +921,7 @@ export class PersonModal extends Modal {
 		if (!this.pathInput) return;
 		this.values.path =
 			this.mode.kind === "create"
-				? proposeCreatePersonPath(this.values.name, this.getSettings().peopleFolder)
+				? proposeCreatePersonPath(this.values.name, this.getSettings().peopleRootFolder, this.values.personId)
 				: this.mode.file.path;
 		const proposedRename =
 			this.mode.kind === "edit" ? proposePersonRenamePath(this.mode.file.path, this.values.name) : "";

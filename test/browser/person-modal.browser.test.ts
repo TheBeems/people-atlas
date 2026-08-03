@@ -7,6 +7,7 @@ import type { AtlasMutationService } from "../../src/mutations/atlas-mutation-se
 import type { PersonEditSourceBaseline } from "../../src/mutations/person-source-guard";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
 import "../../styles.css";
+import { UNSAFE_PEOPLE_ROOT_CASES } from "../people-root-fixtures";
 
 const alice: PersonRecord = {
 	id: "person-alice",
@@ -29,6 +30,19 @@ const bob: PersonRecord = {
 	phones: [],
 	contacts: [],
 };
+
+const alexPhotoPerson: PersonRecord = {
+	id: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+	filePath: "People/Profiles/alex-example--11112222/Alex Example.md",
+	name: "Alex Example",
+	aliases: [],
+	organisations: [],
+	emails: [],
+	phones: [],
+	contacts: [],
+};
+
+const alexPhotoDossier = "People/Profiles/alex-example--11112222";
 
 const tagSourceBaseline: PersonEditSourceBaseline = {
 	mtime: 1,
@@ -62,6 +76,7 @@ function mountModal(options?: {
 	getResourcePath?: ReturnType<typeof vi.fn>;
 	width?: number;
 	ownerDocument?: Document;
+	getSettings?: () => typeof DEFAULT_SETTINGS;
 }): MountedPersonModal {
 	const people = options?.people ?? [alice, bob];
 	const createPerson = options?.createPerson ?? vi.fn(async () => personFile("People/Created.md"));
@@ -116,7 +131,7 @@ function mountModal(options?: {
 		options?.mode ?? { kind: "create" },
 		people,
 		{ createPerson, updatePerson } as unknown as AtlasMutationService,
-		() => DEFAULT_SETTINGS,
+		options?.getSettings ?? (() => DEFAULT_SETTINGS),
 		options?.getCurrentPeople,
 	);
 	const ownerDocument = options?.ownerDocument ?? document;
@@ -234,8 +249,8 @@ describe("person modal", () => {
 		expect(Array.from(content.querySelectorAll("label")).map((label) => label.textContent)).toEqual([
 			"Name",
 			"Photo",
-			"Search vault images",
-			"Vault image",
+			"Search dossier images",
+			"Dossier image",
 			"Aliases",
 			"Month",
 			"Day",
@@ -263,29 +278,116 @@ describe("person modal", () => {
 		}
 	});
 
-	it("selects duplicate-named vault images by exact path from the keyboard and writes only on Save", async () => {
-		const teamPortrait = personFile("Portraits/Team/Alex.jpg");
-		const friendPortrait = personFile("Portraits/Friends/Alex.jpg");
-		const unsupported = personFile("Portraits/Alex.svg");
-		const { content, createPerson, getResourcePath } = mountModal({
-			photoFiles: [friendPortrait, unsupported, teamPortrait],
-		});
-		setInput(inputForLabel(content, "Name"), "Alex Example");
-		const select = selectForLabel(content, "Vault image");
-		expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
-			"Choose a vault image",
-			"Alex.jpg — Portraits/Friends/Alex.jpg",
-			"Alex.jpg — Portraits/Team/Alex.jpg",
-		]);
+	it("plans one stable person ID at open and reuses its dossier path through the first Save", async () => {
+		vi.spyOn(crypto, "randomUUID").mockReturnValue("7d9f4a12-6b3c-4d5e-8f90-123456789abc");
+		const createdFile = personFile("People/Profiles/alice-admin--7d9f4a12/Alice - Admin.md");
+		const createPerson = vi.fn(async (_input: unknown) => createdFile);
+		const { content, openFile, photoListenerCount } = mountModal({ createPerson });
 
-		const search = inputForLabel(content, "Search vault images");
-		setInput(search, "team");
-		expect(Array.from(select.options).map((option) => option.value)).toEqual(["", teamPortrait.path]);
+		expect(inputForLabel(content, "Person ID").value).toBe("person-7d9f4a12-6b3c-4d5e-8f90-123456789abc");
+		expect(Array.from(content.querySelectorAll("label")).map((label) => label.textContent)).not.toContain("Photo");
+		expect(content.querySelector("[data-person-photo-select]")).toBeNull();
+		expect(content.textContent).not.toContain("Search dossier images");
+		expect(photoListenerCount()).toBe(0);
+		setInput(inputForLabel(content, "Name"), "Alice / Admin");
+		expect(inputForLabel(content, "Person note path").value).toBe(createdFile.path);
+		expect(createPerson).not.toHaveBeenCalled();
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() =>
+			expect(createPerson).toHaveBeenCalledExactlyOnceWith({
+				name: "Alice / Admin",
+				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
+				reviewedPath: "People/Profiles/alice-admin--7d9f4a12/Alice - Admin.md",
+			}),
+		);
+		await vi.waitFor(() => expect(openFile).toHaveBeenCalledWith(createdFile));
+		expect(createPerson.mock.calls[0]?.[0]).not.toHaveProperty("photo");
+	});
+
+	it("explains the create photo steps accessibly and keeps Cancel and host close mutation-free", () => {
+		const cancelled = mountModal();
+		const note = cancelled.content.querySelector<HTMLElement>('[role="note"]');
+		expect(note).not.toBeNull();
+		if (!note) throw new Error("Expected the accessible create photo note.");
+		expect(note.isConnected).toBe(true);
+		expect(note.hidden).toBe(false);
+		expect(getComputedStyle(note).display).not.toBe("none");
+		expect(note.textContent).toMatch(/Save.+person.+dossier/i);
+		expect(note.textContent).toMatch(/place.+image.+dossier/i);
+		expect(note.textContent).toMatch(/Edit.+choose/i);
+		expect(note.textContent).not.toMatch(/upload|import/i);
+		expect(Array.from(cancelled.content.querySelectorAll("label")).map((label) => label.textContent)).not.toContain(
+			"Photo",
+		);
+		expect(cancelled.content.querySelector("[data-person-photo-select]")).toBeNull();
+		expect(cancelled.content.textContent).not.toContain("Search dossier images");
+		expect(cancelled.photoListenerCount()).toBe(0);
+
+		buttonWithText(cancelled.content, "Cancel").click();
+
+		expect(cancelled.createPerson).not.toHaveBeenCalled();
+		expect(cancelled.updatePerson).not.toHaveBeenCalled();
+		expect(cancelled.photoListenerCount()).toBe(0);
+
+		const hostClosed = mountModal();
+		expect(hostClosed.photoListenerCount()).toBe(0);
+
+		hostClosed.modal.onClose();
+
+		expect(hostClosed.createPerson).not.toHaveBeenCalled();
+		expect(hostClosed.updatePerson).not.toHaveBeenCalled();
+		expect(hostClosed.photoListenerCount()).toBe(0);
+		expect(hostClosed.content.childElementCount).toBe(0);
+	});
+
+	it("selects duplicate-named vault images by exact path during edit and writes only on Save", async () => {
+		const dossierPortrait = personFile(`${alexPhotoDossier}/Alex.jpg`);
+		const descendantPortrait = personFile(`${alexPhotoDossier}/Photos/Alex.jpg`);
+		const outsidePortrait = personFile("Assets/Alex.jpg");
+		const siblingPortrait = personFile("People/Profiles/alex-other--99999999/Photos/Alex.jpg");
+		const prefixLookalikePortrait = personFile("People/Profiles/alex-example--111122220/Photos/Alex.jpg");
+		const unsupported = personFile(`${alexPhotoDossier}/Alex.svg`);
+		const file = personFile(alexPhotoPerson.filePath);
+		const updatePerson = vi.fn(async (updatedFile: TFile) => ({ file: updatedFile, renamed: false }));
+		const { content, createPerson, getResourcePath } = mountModal({
+			mode: { kind: "edit", file, person: alexPhotoPerson },
+			people: [alexPhotoPerson, bob],
+			photoFiles: [
+				outsidePortrait,
+				descendantPortrait,
+				siblingPortrait,
+				unsupported,
+				prefixLookalikePortrait,
+				dossierPortrait,
+			],
+			updatePerson,
+		});
+		const select = selectForLabel(content, "Dossier image");
+		expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+			"Choose a dossier image",
+			`Alex.jpg — ${dossierPortrait.path}`,
+			`Alex.jpg — ${descendantPortrait.path}`,
+		]);
+		expect(content.textContent).toContain("this person's own dossier");
+
+		const search = inputForLabel(content, "Search dossier images");
+		setInput(search, "photos");
+		expect(Array.from(select.options).map((option) => option.value)).toEqual(["", descendantPortrait.path]);
+		pressKey(search, "ArrowDown");
+		expect(select.value).toBe(descendantPortrait.path);
+		expect(select.ownerDocument.activeElement).toBe(select);
+		expect(inputForLabel(content, "Photo").value).toBe("");
+		search.focus();
 		pressKey(search, "Enter");
 
-		expect(inputForLabel(content, "Photo").value).toBe("[[Portraits/Team/Alex.jpg]]");
+		expect(inputForLabel(content, "Photo").value).toBe(`[[${descendantPortrait.path}]]`);
 		expect(createPerson).not.toHaveBeenCalled();
-		expect(getResourcePath).toHaveBeenCalledWith(teamPortrait);
+		expect(getResourcePath).toHaveBeenCalledWith(descendantPortrait);
+		select.value = outsidePortrait.path;
+		select.dispatchEvent(new Event("change", { bubbles: true }));
+		expect(select.value).toBe("");
+		expect(inputForLabel(content, "Photo").value).toBe(`[[${descendantPortrait.path}]]`);
 		const image = content.querySelector<HTMLImageElement>(".people-atlas-person-photo-image");
 		if (!image) throw new Error("Expected a pending photo preview.");
 		expect(content.querySelector(".people-atlas-person-photo-initials")?.textContent).toBe("AE");
@@ -300,11 +402,96 @@ describe("person modal", () => {
 		expect(content.querySelector<HTMLElement>(".people-atlas-person-photo-initials")?.hidden).toBe(true);
 		buttonWithText(content, "Save").click();
 		await vi.waitFor(() =>
-			expect(createPerson).toHaveBeenCalledWith({
-				name: "Alex Example",
-				photo: "[[Portraits/Team/Alex.jpg]]",
-			}),
+			expect(updatePerson).toHaveBeenCalledWith(
+				file,
+				{ photo: `[[${descendantPortrait.path}]]` },
+				{ expectedPersonId: alexPhotoPerson.id, expectedClassification: "type" },
+			),
 		);
+		expect(createPerson).not.toHaveBeenCalled();
+	});
+
+	it("requeries the current dossier and fails a pending selection closed after People root drift", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const portrait = personFile(`${alexPhotoDossier}/Alex.jpg`);
+		const file = personFile(alexPhotoPerson.filePath);
+		const mounted = mountModal({
+			mode: { kind: "edit", file, person: alexPhotoPerson },
+			people: [alexPhotoPerson, bob],
+			photoFiles: [portrait],
+			getSettings: () => settings,
+		});
+		const select = selectForLabel(mounted.content, "Dossier image");
+		select.value = portrait.path;
+		select.dispatchEvent(new Event("change", { bubbles: true }));
+		expect(inputForLabel(mounted.content, "Photo").value).toBe(`[[${portrait.path}]]`);
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
+
+		settings.peopleRootFolder = "Archive";
+		mounted.emitVaultEvent("modify", portrait);
+
+		expect(Array.from(select.options).map((option) => option.textContent)).toEqual(["No supported dossier images"]);
+		expect(inputForLabel(mounted.content, "Photo").value).toBe(`[[${portrait.path}]]`);
+		buttonWithText(mounted.content, "Save").click();
+		await vi.waitFor(() => expect(mounted.content.textContent).toContain("no safe canonical dossier boundary"));
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
+	});
+
+	it.each(UNSAFE_PEOPLE_ROOT_CASES)("shows no dossier option for a directly injected $label People root", ({
+		root,
+	}) => {
+		const dossierPath = `${root}/Profiles/alex-example--11112222`;
+		const person = {
+			...alexPhotoPerson,
+			filePath: `${dossierPath}/Alex Example.md`,
+		};
+		const portrait = personFile(`${dossierPath}/Alex.jpg`);
+		const mounted = mountModal({
+			mode: { kind: "edit", file: personFile(person.filePath), person },
+			people: [person, bob],
+			photoFiles: [portrait],
+			getSettings: () => ({ ...DEFAULT_SETTINGS, peopleRootFolder: root }),
+		});
+		const select = selectForLabel(mounted.content, "Dossier image");
+
+		expect(Array.from(select.options).map((option) => option.textContent)).toEqual(["No supported dossier images"]);
+		select.value = portrait.path;
+		select.dispatchEvent(new Event("change", { bubbles: true }));
+		expect(inputForLabel(mounted.content, "Photo").value).toBe("");
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
+		expect(mounted.close).not.toHaveBeenCalled();
+		mounted.modal.onClose();
+	});
+
+	it.each(
+		UNSAFE_PEOPLE_ROOT_CASES,
+	)("keeps a pending direct selection Save update- and close-free after a $label People root is injected", async ({
+		root,
+	}) => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const portrait = personFile(`${alexPhotoDossier}/Alex.jpg`);
+		const file = personFile(alexPhotoPerson.filePath);
+		const mounted = mountModal({
+			mode: { kind: "edit", file, person: alexPhotoPerson },
+			people: [alexPhotoPerson, bob],
+			photoFiles: [portrait],
+			getSettings: () => settings,
+		});
+		const select = selectForLabel(mounted.content, "Dossier image");
+		select.value = portrait.path;
+		select.dispatchEvent(new Event("change", { bubbles: true }));
+		expect(inputForLabel(mounted.content, "Photo").value).toBe(`[[${portrait.path}]]`);
+
+		settings.peopleRootFolder = root;
+		mounted.emitVaultEvent("modify", portrait);
+
+		expect(Array.from(select.options).map((option) => option.textContent)).toEqual(["No supported dossier images"]);
+		expect(inputForLabel(mounted.content, "Photo").value).toBe(`[[${portrait.path}]]`);
+		buttonWithText(mounted.content, "Save").click();
+		await vi.waitFor(() => expect(mounted.content.textContent).toContain("no safe canonical dossier boundary"));
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
+		expect(mounted.close).not.toHaveBeenCalled();
+		mounted.modal.onClose();
 	});
 
 	it("keeps an unchanged authored photo byte-exact and blocks direct input editing", async () => {
@@ -435,10 +622,14 @@ describe("person modal", () => {
 	});
 
 	it("refreshes on asset events, ignores late preview events and fails a renamed selection closed", async () => {
-		const portrait = personFile("Assets/Carol.jpg");
-		const mounted = mountModal({ photoFiles: [portrait] });
-		setInput(inputForLabel(mounted.content, "Name"), "Carol");
-		const select = selectForLabel(mounted.content, "Vault image");
+		const portrait = personFile(`${alexPhotoDossier}/Carol.jpg`);
+		const file = personFile(alexPhotoPerson.filePath);
+		const mounted = mountModal({
+			mode: { kind: "edit", file, person: alexPhotoPerson },
+			people: [alexPhotoPerson, bob],
+			photoFiles: [portrait],
+		});
+		const select = selectForLabel(mounted.content, "Dossier image");
 		select.value = portrait.path;
 		select.dispatchEvent(new Event("change", { bubbles: true }));
 		const firstImage = mounted.content.querySelector<HTMLImageElement>(".people-atlas-person-photo-image");
@@ -461,16 +652,16 @@ describe("person modal", () => {
 		);
 
 		const oldPath = portrait.path;
-		portrait.path = "Assets/Renamed Carol.jpg";
+		portrait.path = `${alexPhotoDossier}/Renamed Carol.jpg`;
 		portrait.name = "Renamed Carol.jpg";
 		portrait.basename = "Renamed Carol";
 		mounted.emitVaultEvent("rename", portrait, oldPath);
 		expect(mounted.content.textContent).toContain("referenced vault image is missing");
-		expect(inputForLabel(mounted.content, "Photo").value).toBe("[[Assets/Carol.jpg]]");
+		expect(inputForLabel(mounted.content, "Photo").value).toBe(`[[${alexPhotoDossier}/Carol.jpg]]`);
 
 		buttonWithText(mounted.content, "Save").click();
 		await vi.waitFor(() => expect(mounted.content.textContent).toContain("no longer uniquely available"));
-		expect(mounted.createPerson).not.toHaveBeenCalled();
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
 
 		mounted.vaultFiles.splice(0, 1);
 		mounted.emitVaultEvent("delete", portrait);
@@ -480,6 +671,7 @@ describe("person modal", () => {
 	});
 
 	it("shows inline email feedback, focuses the invalid entry, and remains retryable after a mutation failure", async () => {
+		vi.spyOn(crypto, "randomUUID").mockReturnValue("bbbbbbbb-cccc-4ddd-8eee-ffffffffffff");
 		const createdFile = personFile("People/Carol.md");
 		const createPerson = vi.fn(async () => createdFile);
 		createPerson.mockRejectedValueOnce(new Error("The vault is temporarily busy."));
@@ -502,7 +694,12 @@ describe("person modal", () => {
 		expect(email.hasAttribute("aria-invalid")).toBe(false);
 		buttonWithText(content, "Save").click();
 		await vi.waitFor(() => expect(content.textContent).toContain("temporarily busy"));
-		expect(createPerson).toHaveBeenCalledWith({ name: "Carol", emails: ["person@example.com"] });
+		expect(createPerson).toHaveBeenCalledWith({
+			name: "Carol",
+			personId: "person-bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+			reviewedPath: "People/Profiles/carol--bbbbbbbb/Carol.md",
+			emails: ["person@example.com"],
+		});
 		expect(buttonWithText(content, "Save").disabled).toBe(false);
 		expect(close).not.toHaveBeenCalled();
 
@@ -513,6 +710,7 @@ describe("person modal", () => {
 	});
 
 	it("adds, validates and removes ordered email and phone entries without hiding their normalization", async () => {
+		vi.spyOn(crypto, "randomUUID").mockReturnValue("cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa");
 		const { content, createPerson } = mountModal();
 		setInput(inputForLabel(content, "Name"), "Carol");
 		buttonWithText(content, "Add email address").click();
@@ -543,6 +741,8 @@ describe("person modal", () => {
 		await vi.waitFor(() =>
 			expect(createPerson).toHaveBeenCalledWith({
 				name: "Carol",
+				personId: "person-cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa",
+				reviewedPath: "People/Profiles/carol--cccccccc/Carol.md",
 				emails: ["alice@example.com"],
 				phones: ["+31 (0)20 123"],
 			}),
@@ -648,14 +848,15 @@ describe("person modal", () => {
 	});
 
 	it("reflows at narrow width, keeps actions outside Advanced, and cancels without a mutation", () => {
-		const file = personFile(alice.filePath);
-		const portrait = personFile("Assets/Alice.jpg");
+		const file = personFile(alexPhotoPerson.filePath);
+		const portrait = personFile(`${alexPhotoDossier}/Alex.jpg`);
 		const { content, form, createPerson, updatePerson, close } = mountModal({
 			mode: {
 				kind: "edit",
 				file,
-				person: alice,
+				person: alexPhotoPerson,
 			},
+			people: [alexPhotoPerson, bob],
 			photoFiles: [portrait],
 			width: 320,
 		});
@@ -670,10 +871,10 @@ describe("person modal", () => {
 		const save = buttonWithText(content, "Save");
 		expect(advanced.contains(cancel)).toBe(false);
 		expect(advanced.contains(save)).toBe(false);
-		const photoSelect = selectForLabel(content, "Vault image");
+		const photoSelect = selectForLabel(content, "Dossier image");
 		photoSelect.value = portrait.path;
 		photoSelect.dispatchEvent(new Event("change", { bubbles: true }));
-		expect(inputForLabel(content, "Photo").value).toBe("[[Assets/Alice.jpg]]");
+		expect(inputForLabel(content, "Photo").value).toBe(`[[${portrait.path}]]`);
 
 		cancel.click();
 
@@ -687,15 +888,21 @@ describe("person modal", () => {
 		document.body.append(frame);
 		const frameDocument = frame.contentDocument;
 		if (!frameDocument) throw new Error("Expected an iframe document.");
-		const portrait = personFile("Assets/Popout.webp");
-		const { content } = mountModal({ ownerDocument: frameDocument, photoFiles: [portrait] });
+		const portrait = personFile(`${alexPhotoDossier}/Popout.webp`);
+		const file = personFile(alexPhotoPerson.filePath);
+		const { content } = mountModal({
+			mode: { kind: "edit", file, person: alexPhotoPerson },
+			people: [alexPhotoPerson, bob],
+			ownerDocument: frameDocument,
+			photoFiles: [portrait],
+		});
 
 		expect(Array.from(content.querySelectorAll("*")).every((element) => element.ownerDocument === frameDocument)).toBe(
 			true,
 		);
 		const name = inputForLabel(content, "Name");
 		expect(frameDocument.activeElement).toBe(name);
-		const select = selectForLabel(content, "Vault image");
+		const select = selectForLabel(content, "Dossier image");
 		select.value = portrait.path;
 		const OwnerEvent = frameDocument.defaultView?.Event ?? Event;
 		select.dispatchEvent(new OwnerEvent("change", { bubbles: true }));

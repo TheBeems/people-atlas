@@ -1,5 +1,5 @@
 import type { TFile } from "obsidian";
-import { validateFolderPath, validateNotePath } from "./validation";
+import { validateNotePath } from "./validation";
 
 export type ContactMomentFollowUpStatus = "open" | "done" | "dismissed";
 
@@ -8,7 +8,6 @@ export interface ContactMomentSettings {
 	personTypeValue: string;
 	relationshipTypeValue: string;
 	personIdProperty: string;
-	contactMomentsFolder: string;
 	contactMomentTypeValue: string;
 	contactMomentIdProperty: string;
 	contactMomentPeopleProperty: string;
@@ -231,14 +230,6 @@ export function validateContactMomentMutationInput(
 ): string[] {
 	const errors: string[] = [];
 	if (validateNotePath(input.path)) errors.push("A safe Markdown contact-moment path is required.");
-	const contactMomentsFolder = settings.contactMomentsFolder.trim().replace(/\\/g, "/");
-	if (
-		validateFolderPath(contactMomentsFolder) ||
-		contactMomentsFolder.startsWith("/") ||
-		/^[a-z][a-z0-9+.-]*:/i.test(contactMomentsFolder)
-	) {
-		errors.push("The configured contact-moment folder is invalid.");
-	}
 	if (input.contactMomentId !== undefined && !input.contactMomentId.trim()) {
 		errors.push("contact_moment_id cannot be empty when provided.");
 	}

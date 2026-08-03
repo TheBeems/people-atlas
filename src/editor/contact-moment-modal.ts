@@ -77,7 +77,7 @@ export class ContactMomentModal extends Modal {
 		if (mode.kind === "create") {
 			const contactMomentId = mode.contactMomentId?.trim() || `contact-${crypto.randomUUID()}`;
 			this.values = createContactMomentFormValues({
-				contactMomentsFolder: getSettings().contactMomentsFolder,
+				peopleRootFolder: getSettings().peopleRootFolder,
 				today: mode.occurredOn ?? localToday(),
 				contactMomentId,
 				people: context.people,
@@ -426,11 +426,7 @@ export class ContactMomentModal extends Modal {
 
 	private refreshProposedPath(): void {
 		if (this.mode.kind !== "create" || this.pathManuallyEdited) return;
-		const proposed = proposeContactMomentPath(
-			this.values,
-			this.context.people,
-			this.getSettings().contactMomentsFolder,
-		);
+		const proposed = proposeContactMomentPath(this.values, this.context.people, this.getSettings().peopleRootFolder);
 		this.values.path = proposed;
 		if (this.pathInput) this.pathInput.value = proposed;
 	}

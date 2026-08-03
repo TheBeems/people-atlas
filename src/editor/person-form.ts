@@ -6,7 +6,12 @@ import {
 	validatePersonPhones,
 	type PersonProfileListIssue,
 } from "../domain/person-profile";
-import { getPendingPersonPhotoSelectionError, type PersonPhotoAsset } from "../domain/person-photo";
+import {
+	dossierPersonPhotoAssets,
+	getPendingPersonPhotoSelectionError,
+	type PersonPhotoAsset,
+} from "../domain/person-photo";
+import { peopleCollectionPaths, personDossierPathFromProfile, personProfilePath } from "../domain/people-paths";
 import type { PersonRecord, PersonReference } from "../domain/types";
 import type { PersonMutationInput, PersonUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
@@ -81,11 +86,11 @@ export type PersonFormSessionMode =
 			sourceBaseline?: PersonEditSourceBaseline | undefined;
 	  };
 
-export function createPersonFormValues(peopleFolder: string): PersonFormValues {
+export function createPersonFormValues(peopleRootFolder: string, personId = ""): PersonFormValues {
 	return {
-		path: proposeCreatePersonPath("", peopleFolder),
+		path: proposeCreatePersonPath("", peopleRootFolder, personId),
 		name: "",
-		personId: "",
+		personId,
 		personIdSource: "automatic",
 		aliases: "",
 		organisations: "",
@@ -127,10 +132,11 @@ export function editPersonFormValues(
 	};
 }
 
-export function proposeCreatePersonPath(name: string, peopleFolder: string): string {
-	const folder = normalizeFolder(peopleFolder);
-	const fileName = sanitizeNoteName(name);
-	return fileName ? `${folder ? `${folder}/` : ""}${fileName}.md` : `${folder ? `${folder}/` : ""}<name>.md`;
+export function proposeCreatePersonPath(name: string, peopleRootFolder: string, personId = ""): string {
+	const path = personProfilePath(peopleRootFolder, name, personId);
+	if (path) return path;
+	const profiles = peopleCollectionPaths(peopleRootFolder).profiles;
+	return `${profiles}/<name>--<id>/<name>.md`;
 }
 
 export function proposePersonRenamePath(currentPath: string, name: string): string {
@@ -164,10 +170,10 @@ export function addPersonContact(
 }
 
 export function buildPersonCreateInput(values: PersonFormValues): PersonMutationInput {
-	const input: PersonMutationInput = { name: values.name.trim() };
+	const input: PersonMutationInput = { name: values.name.trim(), reviewedPath: values.path };
+	const personId = optionalString(values.personId);
 	const aliases = parseLines(values.aliases);
 	const organisations = parseLines(values.organisations);
-	const photo = optionalString(values.photo);
 	const birthDate = serializeBirthDate(values.birthDate);
 	const pronouns = optionalString(values.pronouns);
 	const gender = optionalString(values.gender);
@@ -175,9 +181,9 @@ export function buildPersonCreateInput(values: PersonFormValues): PersonMutation
 	const phones = validatedPhones(values.phones);
 	const jobTitle = optionalString(values.jobTitle);
 	const contacts = values.contacts.map((contact) => contact.raw);
+	if (personId !== undefined) input.personId = personId;
 	if (aliases.length > 0) input.aliases = aliases;
 	if (organisations.length > 0) input.organisations = organisations;
-	if (photo !== undefined) input.photo = photo;
 	if (birthDate !== undefined) input.birthDate = birthDate;
 	if (pronouns !== undefined) input.pronouns = pronouns;
 	if (gender !== undefined) input.gender = gender;
@@ -250,6 +256,7 @@ export class PersonFormSession {
 		people: PersonRecord[] = [],
 		private readonly getCurrentPeople: () => PersonRecord[] = () => people,
 		private readonly getCurrentPhotoAssets: () => readonly PersonPhotoAsset[] = () => [],
+		private readonly getPeopleRootFolder: () => string = () => "",
 	) {}
 
 	cancel(): void {
@@ -303,12 +310,26 @@ export class PersonFormSession {
 
 	private validatePhotoChange(values: PersonFormValues): void {
 		if (values.photoSelectionPath !== undefined) {
-			const error = getPendingPersonPhotoSelectionError(
-				values.photo,
-				values.photoSelectionPath,
-				this.getCurrentPhotoAssets(),
+			if (this.mode.kind === "create") {
+				throw new Error("Choose a local photo in Edit after the dossier exists.");
+			}
+			const dossierPath = personDossierPathFromProfile(
+				this.getPeopleRootFolder(),
+				this.mode.original.path,
+				this.mode.original.personId,
 			);
+			if (!dossierPath) {
+				throw new Error("The current profile note has no safe canonical dossier boundary.");
+			}
+			const currentAssets = this.getCurrentPhotoAssets();
+			const error = getPendingPersonPhotoSelectionError(values.photo, values.photoSelectionPath, currentAssets);
 			if (error) throw new Error(error);
+			if (
+				dossierPersonPhotoAssets(currentAssets, dossierPath).filter((asset) => asset.path === values.photoSelectionPath)
+					.length !== 1
+			) {
+				throw new Error("Choose a supported photo from this person's own dossier.");
+			}
 			return;
 		}
 		const originalPhoto = this.mode.kind === "edit" ? this.mode.original.photo : "";
@@ -464,13 +485,6 @@ function sameBirthDate(left: PersonBirthDateFormValue, right: PersonBirthDateFor
 
 function normalizeReferencePath(value: string): string {
 	return value.trim().replace(/\\/g, "/").replace(/^\/+/, "").toLowerCase();
-}
-
-function normalizeFolder(value: string): string {
-	return value
-		.trim()
-		.replace(/\\/g, "/")
-		.replace(/^\/+|\/+$/g, "");
 }
 
 function formatLines(values: string[]): string {

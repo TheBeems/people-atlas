@@ -165,8 +165,8 @@ describe("view-state write coordination", () => {
 			message: "Note type values are invalid",
 		},
 		{
-			key: "contactMomentsFolder" as const,
-			value: "../Contact moments",
+			key: "peopleRootFolder" as const,
+			value: "../People",
 			message: "must stay inside the vault",
 		},
 	])("rejects unsafe contact-moment setting $key before persistence", async ({ key, value, message }) => {

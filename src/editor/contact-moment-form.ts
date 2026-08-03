@@ -7,6 +7,7 @@ import type {
 	RelationshipRecord,
 	RelationshipReference,
 } from "../domain/types";
+import { peopleCollectionPaths } from "../domain/people-paths";
 import type {
 	ContactMomentMutationInput,
 	ContactMomentMutationResult,
@@ -39,7 +40,7 @@ export interface ContactMomentFormContext {
 }
 
 export interface CreateContactMomentFormOptions {
-	contactMomentsFolder: string;
+	peopleRootFolder: string;
 	contactMomentId: string;
 	today: string;
 	people: PersonRecord[];
@@ -101,7 +102,7 @@ export function createContactMomentFormValues(options: CreateContactMomentFormOp
 		followUpStatus: "",
 		advanceRelationshipLastContact: false,
 	};
-	values.path = proposeContactMomentPath(values, options.people, options.contactMomentsFolder);
+	values.path = proposeContactMomentPath(values, options.people, options.peopleRootFolder);
 	return values;
 }
 
@@ -145,18 +146,15 @@ export function editContactMomentFormValues(
 export function proposeContactMomentPath(
 	values: Pick<ContactMomentFormValues, "occurredOn" | "contactMomentId" | "peoplePaths">,
 	people: PersonRecord[],
-	contactMomentsFolder: string,
+	peopleRootFolder: string,
 ): string {
 	const primary = resolveCanonicalPersonByPath(people, values.peoplePaths[0] ?? "");
 	const label = primary ? sanitizeNoteName(primary.name) : "";
 	const occurredOn = values.occurredOn.trim();
 	const shortId = shortContactMomentId(values.contactMomentId);
 	if (!label || !occurredOn || !shortId) return "";
-	const folder = contactMomentsFolder
-		.trim()
-		.replace(/\\/g, "/")
-		.replace(/^\/+|\/+$/g, "");
-	return `${folder ? `${folder}/` : ""}${occurredOn} - ${label} - ${shortId}.md`;
+	const folder = peopleCollectionPaths(peopleRootFolder).contactMoments;
+	return `${folder}/${occurredOn} - ${label} - ${shortId}.md`;
 }
 
 export function matchingContactMomentRelationships(

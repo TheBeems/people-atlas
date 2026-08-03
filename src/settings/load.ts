@@ -3,9 +3,8 @@ import { DEFAULT_SETTINGS } from "./defaults";
 import { validateStoredRelationshipPresets } from "./relationship-presets";
 import {
 	validateContactMomentPropertyMappings,
-	validateContactMomentsFolder,
 	validateNoteTypeValues,
-	validatePeopleFolder,
+	validatePeopleRootFolder,
 	validatePersonPropertyMappings,
 	validateRelationshipRoleFormatSetting,
 	validateSettings,
@@ -83,10 +82,12 @@ export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
 		};
 	}
 	try {
+		const rawPeopleRootFolderError =
+			typeof raw.peopleRootFolder === "string" ? validatePeopleRootFolder(raw.peopleRootFolder) : undefined;
+		if (rawPeopleRootFolderError) throw new Error(`peopleRootFolder is invalid: ${rawPeopleRootFolderError}`);
 		const settings = validateSettings(raw);
-		if (validatePeopleFolder(settings.peopleFolder)) throw new Error("peopleFolder is invalid.");
-		const contactMomentsFolderError = validateContactMomentsFolder(settings.contactMomentsFolder);
-		if (contactMomentsFolderError) throw new Error(`contactMomentsFolder is invalid: ${contactMomentsFolderError}`);
+		const peopleRootFolderError = validatePeopleRootFolder(settings.peopleRootFolder);
+		if (peopleRootFolderError) throw new Error(`peopleRootFolder is invalid: ${peopleRootFolderError}`);
 		const personPropertyError = validatePersonPropertyMappings(settings);
 		if (personPropertyError) throw new Error(personPropertyError);
 		const contactMomentPropertyError = validateContactMomentPropertyMappings(settings);

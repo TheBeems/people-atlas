@@ -8,10 +8,44 @@ import {
 	validateRelationshipInput,
 } from "../src/mutations/validation";
 
+const UNSAFE_FILENAME_CHARACTERS = [
+	["U+001F", "\u001f"],
+	["U+007F", "\u007f"],
+	["backslash", "\\"],
+	["slash", "/"],
+	["colon", ":"],
+	["asterisk", "*"],
+	["question mark", "?"],
+	["double quote", '"'],
+	["less-than", "<"],
+	["greater-than", ">"],
+	["pipe", "|"],
+	["opening bracket", "["],
+	["closing bracket", "]"],
+	["hash", "#"],
+	["caret", "^"],
+] as const;
+
 describe("mutation validation", () => {
 	it("accepts a valid person and sanitizes only the filename", () => {
 		expect(validatePersonInput({ name: "Jan Jansen" }, DEFAULT_SETTINGS)).toEqual([]);
 		expect(sanitizeNoteName("Jan: Jansen? ")).toBe("Jan- Jansen");
+	});
+
+	it.each(UNSAFE_FILENAME_CHARACTERS)("sanitizes %s out of generated note filenames", (_label, character) => {
+		expect(sanitizeNoteName(`Alice${character}Admin`)).toBe("Alice-Admin");
+	});
+
+	it.each(
+		UNSAFE_FILENAME_CHARACTERS.filter(([, character]) => character !== "/"),
+	)("rejects %s when it remains raw inside a note-path segment", (_label, character) => {
+		expect(validateNotePath(`People/Profiles/Alice${character}Admin.md`)).toBeTruthy();
+	});
+
+	it("preserves safe Unicode, spaces and ampersands in filenames and note paths", () => {
+		const path = "People/Profiles/Zoë van Dijk & Co.md";
+		expect(sanitizeNoteName(" Zoë van Dijk & Co ")).toBe("Zoë van Dijk & Co");
+		expect(validateNotePath(path)).toBeUndefined();
 	});
 
 	it("validates only provided person profile values", () => {

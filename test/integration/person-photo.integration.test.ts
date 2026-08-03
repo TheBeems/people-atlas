@@ -51,6 +51,88 @@ afterEach(() => {
 });
 
 describe("person photo view integration", () => {
+	it("rejects an outside photo before frontmatter write and changes only photo for a local Edit-Save", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const profilePath = "People/Profiles/alex-example--11112222/Alex Example.md";
+		const profile = runtime.seedFile(profilePath, {
+			type: "person",
+			person_id: personId,
+			name: "Alex Example",
+			aliases: ["Alex"],
+		});
+		const localPhoto = runtime.seedFile("People/Profiles/alex-example--11112222/Photos/Alex.jpg");
+		const outsidePhoto = runtime.seedFile("Assets/Alex.jpg");
+		const siblingPhoto = runtime.seedFile("People/Profiles/alex-other--99999999/Photos/Alex.jpg");
+		profile.stat.mtime = 11;
+		profile.stat.size = 101;
+		localPhoto.stat.mtime = 17;
+		localPhoto.stat.size = 107;
+		outsidePhoto.stat.mtime = 19;
+		outsidePhoto.stat.size = 109;
+		siblingPhoto.stat.mtime = 23;
+		siblingPhoto.stat.size = 113;
+		const plugin = new PeopleAtlasPlugin(runtime.app as unknown as App, manifest);
+		const component = plugin as unknown as Component;
+		await component.load();
+		runtime.triggerLayoutReady();
+		await vi.waitFor(() => expect(plugin.index.getPeoplePathsById(personId)).toEqual([profilePath]));
+		const processFrontMatter = vi.spyOn(runtime.app.fileManager, "processFrontMatter");
+		const frontmatterBefore = structuredClone(runtime.metadataCache.getFileCache(profile)?.frontmatter ?? {});
+		const assetFrontmatterBefore = [localPhoto, outsidePhoto, siblingPhoto].map((file) =>
+			structuredClone(runtime.metadataCache.getFileCache(file)?.frontmatter ?? {}),
+		);
+		const filesBefore = runtime.vault.getFiles();
+		const fileSnapshots = filesBefore.map((file) => ({
+			file,
+			path: file.path,
+			mtime: file.stat.mtime,
+			size: file.stat.size,
+		}));
+
+		try {
+			await expect(
+				plugin.mutations.updatePerson(
+					profile as unknown as import("obsidian").TFile,
+					{ photo: `[[${outsidePhoto.path}]]` },
+					{ expectedPersonId: personId, expectedClassification: "type" },
+				),
+			).rejects.toThrow("A changed photo must be inside the person's current canonical dossier.");
+			expect(processFrontMatter).not.toHaveBeenCalled();
+			expect(runtime.metadataCache.getFileCache(profile)?.frontmatter).toEqual(frontmatterBefore);
+
+			await expect(
+				plugin.mutations.updatePerson(
+					profile as unknown as import("obsidian").TFile,
+					{ photo: `[[${localPhoto.path}]]` },
+					{ expectedPersonId: personId, expectedClassification: "type" },
+				),
+			).resolves.toEqual({ file: profile, renamed: false });
+
+			expect(processFrontMatter).toHaveBeenCalledOnce();
+			expect(processFrontMatter).toHaveBeenCalledWith(profile, expect.any(Function));
+			expect(runtime.metadataCache.getFileCache(profile)?.frontmatter).toEqual({
+				...frontmatterBefore,
+				photo: `[[${localPhoto.path}]]`,
+			});
+			for (const [index, file] of [localPhoto, outsidePhoto, siblingPhoto].entries()) {
+				expect(runtime.metadataCache.getFileCache(file)?.frontmatter).toEqual(assetFrontmatterBefore[index]);
+			}
+			const filesAfter = runtime.vault.getFiles();
+			expect(filesAfter).toHaveLength(filesBefore.length);
+			for (const [index, snapshot] of fileSnapshots.entries()) {
+				expect(filesAfter[index]).toBe(snapshot.file);
+				expect(runtime.vault.getAbstractFileByPath(snapshot.path)).toBe(snapshot.file);
+				expect(snapshot.file.path).toBe(snapshot.path);
+				expect(snapshot.file.stat.mtime).toBe(snapshot.mtime);
+				expect(snapshot.file.stat.size).toBe(snapshot.size);
+			}
+		} finally {
+			processFrontMatter.mockRestore();
+			await component.unload();
+		}
+	});
+
 	it("refreshes the standalone selected sidebar through the real vault resource seam", async () => {
 		useStaticIntegrationResizeObserver();
 		const runtime = new ControlledObsidianRuntime(document);

@@ -1,6 +1,8 @@
 import type { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+import { personProfilePath } from "../src/domain/people-paths";
 import type { PersonRecord, RelationshipRecord } from "../src/domain/types";
+import { parsePersonReference } from "../src/domain/wikilink";
 import {
 	RelationshipFormSession,
 	applyRelationshipPreset,
@@ -18,6 +20,8 @@ import {
 	resolveCanonicalPersonByPath,
 	type RelationshipMutationPort,
 } from "../src/editor/relationship-form";
+import { contactMomentWikilink } from "../src/mutations/contact-moment";
+import { validatePeopleRootFolder } from "../src/settings/validate";
 
 const people: PersonRecord[] = [
 	{
@@ -76,13 +80,43 @@ function mutations(overrides: Partial<RelationshipMutationPort> = {}): Relations
 }
 
 describe("relationship form contract", () => {
-	it("prefills fixed endpoint slots and proposes a safe People/Relationships path", () => {
+	it("derives a safe relationship path from the configured People root", () => {
 		const values = createRelationshipFormValues(people, "People/Alice.md");
 		values.toPath = "People/Bob.md";
 
 		expect(values.fromPath).toBe("People/Alice.md");
 		expect(values).not.toHaveProperty("direction");
-		expect(proposeRelationshipPath(values, people)).toBe("People/Relationships/Alice - Admin - Bob.md");
+		expect(proposeRelationshipPath(values, people, "Second Brain/People")).toBe(
+			"Second Brain/People/Relationships/Alice - Admin - Bob.md",
+		);
+	});
+
+	it("round-trips safe Unicode and spaces from a person path through relationship and contact wikilinks", () => {
+		const peopleRootFolder = "Second Brain/Mensen & contacten/Ámsterdam";
+		expect(validatePeopleRootFolder(peopleRootFolder)).toBeUndefined();
+		const filePath = personProfilePath(peopleRootFolder, "Zoë van Dijk", "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb");
+		const zoe: PersonRecord = {
+			id: "person-zoe",
+			filePath,
+			name: "Zoë van Dijk",
+			aliases: [],
+			organisations: [],
+			emails: [],
+			phones: [],
+			contacts: [],
+		};
+		const bob = people[1];
+		if (!bob) throw new Error("Bob fixture is required.");
+		const safePeople = [zoe, bob];
+		const values = createRelationshipFormValues(safePeople, zoe.filePath, bob.filePath);
+		const relationshipReference = buildRelationshipCreateInput(values, safePeople).from;
+		const contactReference = contactMomentWikilink(zoe.filePath);
+		const expectedTarget = zoe.filePath.replace(/\.md$/i, "");
+
+		expect([relationshipReference, contactReference].map((raw) => parsePersonReference(raw)?.target)).toEqual([
+			expectedTarget,
+			expectedTarget,
+		]);
 	});
 
 	it.each([

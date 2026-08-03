@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	canonicalPersonPhotoWikilink,
+	dossierPersonPhotoAssets,
 	filterPersonPhotoAssets,
 	getPendingPersonPhotoSelectionError,
 	isExternalPhotoReference,
@@ -32,6 +33,40 @@ describe("person photo contract", () => {
 			"Friends/Alex/photo.jpg",
 			"Team/Alex/photo.jpg",
 		]);
+	});
+
+	it("queries supported photos only from the exact dossier boundary and its descendants", () => {
+		const dossierPath = "People/Profiles/alice--11112222";
+		const assets = supportedPersonPhotoAssets([
+			`${dossierPath}/Portrait.jpg`,
+			`${dossierPath}/Events/Portrait.jpg`,
+			`${dossierPath}-archive/Portrait.jpg`,
+			"People/Profiles/bob--99999999/Portrait.jpg",
+			"Archive/Portrait.jpg",
+			`${dossierPath}/vector.svg`,
+		]);
+		expect(
+			dossierPersonPhotoAssets(assets, dossierPath)
+				.map((asset) => asset.path)
+				.sort(),
+		).toEqual([`${dossierPath}/Events/Portrait.jpg`, `${dossierPath}/Portrait.jpg`]);
+	});
+
+	it.each([
+		"",
+		" People/Profiles/alice--11112222",
+		"/People/Profiles/alice--11112222",
+		"People\\Profiles\\alice--11112222",
+		"People//Profiles/alice--11112222",
+		"People/Profiles/../alice--11112222",
+		"People/Profiles/alice--11112222/",
+	])("fails closed for the malformed dossier boundary %j", (dossierPath) => {
+		const assets = supportedPersonPhotoAssets([
+			"People/Profiles/alice--11112222/Portrait.jpg",
+			"People/Profiles/alice--11112222/Events/Portrait.jpg",
+		]);
+
+		expect(dossierPersonPhotoAssets(assets, dossierPath)).toEqual([]);
 	});
 
 	it("creates a canonical wikilink only for a supported vault-relative path", () => {

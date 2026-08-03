@@ -5,6 +5,7 @@ import type { PeopleAtlasSettings } from "../settings/types";
 export interface PersonMutationInput {
 	name: string;
 	personId?: string;
+	reviewedPath?: string;
 	aliases?: string[];
 	organisations?: string[];
 	photo?: string;
@@ -72,9 +73,20 @@ export function validateFolderPath(value: string): string | undefined {
 	return undefined;
 }
 
+const UNSAFE_NOTE_NAME_CHARACTERS = new Set(`\\/:*?"<>|[]#^`);
+
+function isUnsafeNoteNameCharacter(character: string): boolean {
+	const codePoint = character.codePointAt(0) ?? 0;
+	return codePoint <= 0x1f || codePoint === 0x7f || UNSAFE_NOTE_NAME_CHARACTERS.has(character);
+}
+
 export function validateNotePath(value: string): string | undefined {
-	const normalized = value.trim().replace(/\\/g, "/");
+	const containsUnsafeSegmentCharacter = value
+		.split("/")
+		.some((segment) => [...segment].some(isUnsafeNoteNameCharacter));
+	const normalized = value.trim();
 	if (
+		containsUnsafeSegmentCharacter ||
 		!normalized ||
 		normalized.startsWith("/") ||
 		normalized.split("/").some((part) => part === ".." || part === "." || !part.trim())
@@ -85,9 +97,9 @@ export function validateNotePath(value: string): string | undefined {
 }
 
 export function sanitizeNoteName(value: string): string {
-	return value
-		.trim()
-		.replace(/[\\/:*?"<>|]/g, "-")
+	return [...value.trim()]
+		.map((character) => (isUnsafeNoteNameCharacter(character) ? "-" : character))
+		.join("")
 		.replace(/\s+/g, " ")
 		.replace(/[-. ]+$/g, "");
 }

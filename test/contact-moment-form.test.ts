@@ -89,16 +89,16 @@ function moment(overrides: Partial<ContactMomentRecord> = {}): ContactMomentReco
 }
 
 describe("contact-moment form mapping", () => {
-	it("proposes a reviewable configured-folder path and always starts advancement unchecked", () => {
+	it("derives a reviewable contact-moment path from the People root and starts advancement unchecked", () => {
 		const values = createContactMomentFormValues({
-			contactMomentsFolder: "People/Contact moments",
+			peopleRootFolder: "Second Brain/People",
 			contactMomentId: "contact-12345678",
 			today: "2026-07-31",
 			people: context().people,
 			prefilledPersonPaths: [alice.filePath],
 		});
 
-		expect(values.path).toBe("People/Contact moments/2026-07-31 - Alice - Admin - 12345678.md");
+		expect(values.path).toBe("Second Brain/People/Contact moments/2026-07-31 - Alice - Admin - 12345678.md");
 		expect(values.peoplePaths).toEqual([alice.filePath]);
 		expect(values.advanceRelationshipLastContact).toBe(false);
 	});
@@ -129,7 +129,7 @@ describe("contact-moment form mapping", () => {
 
 	it("rejects a manually retained relationship path that does not overlap the selected people", () => {
 		const values = createContactMomentFormValues({
-			contactMomentsFolder: "People/Contact moments",
+			peopleRootFolder: "People",
 			contactMomentId: "moment-manual",
 			today: "2026-07-31",
 			people: context().people,
@@ -200,7 +200,7 @@ describe("ContactMomentFormSession", () => {
 		};
 		const session = new ContactMomentFormSession({ kind: "create" }, context(), mutations);
 		const values = createContactMomentFormValues({
-			contactMomentsFolder: "People/Contact moments",
+			peopleRootFolder: "People",
 			contactMomentId: "moment-one",
 			today: "2026-07-31",
 			people: context().people,

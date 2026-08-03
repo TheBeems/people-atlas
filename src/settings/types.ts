@@ -3,8 +3,7 @@ import type { RelationshipPreset } from "./relationship-presets";
 
 export interface PeopleAtlasSettings {
 	schemaVersion: number;
-	peopleFolder: string;
-	contactMomentsFolder: string;
+	peopleRootFolder: string;
 	typeProperty: string;
 	personTypeValue: string;
 	relationshipTypeValue: string;

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0
+
+- Added one configurable People root with derived `Profiles`, `Relationships`,
+  and `Contact moments` collections, plus readable person dossiers backed by
+  stable UUID identities.
+- A person's first Save creates only the dossier and canonical profile note;
+  later confirmed profile renames stay inside the same dossier.
+- Restricted the Edit-only photo picker to supported images in the current
+  canonical dossier and its descendants. Missing, stale, outside, or unsafe
+  selections fail closed, and People Atlas does not manage binary assets.
+- **Breaking:** plugin data schema 8 intentionally targets fresh configurations
+  and vault organization, without migration or backward compatibility for older
+  settings or data.
+
 ## 0.7.0
 
 - Added native **Edit person** and **Edit relationship** buttons to current,

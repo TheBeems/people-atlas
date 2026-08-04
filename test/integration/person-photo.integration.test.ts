@@ -54,16 +54,16 @@ describe("person photo view integration", () => {
 	it("rejects an outside photo before frontmatter write and changes only photo for a local Edit-Save", async () => {
 		const runtime = new ControlledObsidianRuntime(document);
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
-		const profilePath = "People/Profiles/alex-example--11112222/Alex Example.md";
+		const profilePath = "People/Profiles/Alex Example/Alex Example.md";
 		const profile = runtime.seedFile(profilePath, {
 			type: "person",
 			person_id: personId,
 			name: "Alex Example",
 			aliases: ["Alex"],
 		});
-		const localPhoto = runtime.seedFile("People/Profiles/alex-example--11112222/Photos/Alex.jpg");
+		const localPhoto = runtime.seedFile("People/Profiles/Alex Example/Photos/Alex.jpg");
 		const outsidePhoto = runtime.seedFile("Assets/Alex.jpg");
-		const siblingPhoto = runtime.seedFile("People/Profiles/alex-other--99999999/Photos/Alex.jpg");
+		const siblingPhoto = runtime.seedFile("People/Profiles/Alex Other/Photos/Alex.jpg");
 		profile.stat.mtime = 11;
 		profile.stat.size = 101;
 		localPhoto.stat.mtime = 17;

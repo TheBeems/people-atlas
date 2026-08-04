@@ -581,6 +581,10 @@ class ControlledVault extends ControlledEventSource {
 		return [...this.files.values()];
 	}
 
+	getAllLoadedFiles(): TFile[] {
+		return [...this.files.values()];
+	}
+
 	getMarkdownFiles(): TFile[] {
 		this.markdownScanCount += 1;
 		return [...this.files.values()].filter((file) => file.extension === "md");

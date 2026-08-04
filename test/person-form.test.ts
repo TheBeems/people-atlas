@@ -65,27 +65,54 @@ describe("person form contract", () => {
 		) => string;
 
 		expect(propose(" Alice / Admin ", "Second Brain/People", "person-7D9F4A12-6B3C-4D5E-8F90-123456789ABC")).toBe(
-			"Second Brain/People/Profiles/alice-admin--7d9f4a12/Alice - Admin.md",
+			"Second Brain/People/Profiles/Alice - Admin/Alice - Admin.md",
 		);
 	});
 
-	it("derives one stable dossier only from a canonical current profile-note boundary", () => {
+	it("derives a plain or suffixed dossier only for the exact canonical indexed profile", () => {
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
-		const validPaths = ["People/Profiles/alice--11112222/Alice.md", "People/Profiles/alice--11112222/Alice Admin.md"];
-		const invalidPaths = [
-			"People/Profiles/Alice.md",
-			"People/Profiles/alice--11112222/Subfolder/Alice.md",
-			"People/Alice.md",
-			"Elsewhere/Profiles/alice--11112222/Alice.md",
-			"People/Profiles/alice--99999999/Alice.md",
-		];
+		const plainPath = "People/Profiles/Alice/Alice Admin.md";
+		const suffixedPath = "People/Profiles/Alice · 24/Alice Admin.md";
+		const personAt = (filePath: string) => ({ ...alice, id: personId, filePath });
 
 		expect({
-			valid: validPaths.map((path) => personDossierPathFromProfile("People", path, personId)),
-			invalid: invalidPaths.map((path) => personDossierPathFromProfile("People", path, personId)),
+			plain: personDossierPathFromProfile("People", plainPath, personId, [plainPath], [personAt(plainPath)]),
+			suffixed: personDossierPathFromProfile(
+				"People",
+				suffixedPath,
+				personId,
+				[suffixedPath],
+				[personAt(suffixedPath)],
+			),
+			unindexed: personDossierPathFromProfile("People", plainPath, personId, [], [personAt(plainPath)]),
+			duplicateIndex: personDossierPathFromProfile(
+				"People",
+				plainPath,
+				personId,
+				[plainPath],
+				[personAt(plainPath), personAt(plainPath)],
+			),
+			wrongPrefix: personDossierPathFromProfile(
+				"People",
+				"People/Profiles/Alice · ZZ/Alice.md",
+				personId,
+				["People/Profiles/Alice · ZZ/Alice.md"],
+				[personAt("People/Profiles/Alice · ZZ/Alice.md")],
+			),
+			legacy: personDossierPathFromProfile(
+				"People",
+				"People/Profiles/alice--11112222/Alice.md",
+				personId,
+				["People/Profiles/alice--11112222/Alice.md"],
+				[personAt("People/Profiles/alice--11112222/Alice.md")],
+			),
 		}).toEqual({
-			valid: ["People/Profiles/alice--11112222", "People/Profiles/alice--11112222"],
-			invalid: [undefined, undefined, undefined, undefined, undefined],
+			plain: "People/Profiles/Alice",
+			suffixed: "People/Profiles/Alice · 24",
+			unindexed: undefined,
+			duplicateIndex: undefined,
+			wrongPrefix: undefined,
+			legacy: undefined,
 		});
 	});
 
@@ -93,9 +120,9 @@ describe("person form contract", () => {
 		UNSAFE_PEOPLE_ROOT_CASES,
 	)("rejects the directly injected $label People root through the canonical dossier authority", ({ root }) => {
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
-		const profilePath = `${root}/Profiles/alice--11112222/Alice.md`;
+		const profilePath = `${root}/Profiles/Alice/Alice.md`;
 
-		expect(personDossierPathFromProfile(root, profilePath, personId)).toBeUndefined();
+		expect(personDossierPathFromProfile(root, profilePath, personId, [profilePath], [])).toBeUndefined();
 	});
 
 	it.each([
@@ -107,7 +134,7 @@ describe("person form contract", () => {
 		["caret", "^"],
 	] as const)("keeps %s out of the generated canonical profile filename", (_label, character) => {
 		expect(personProfilePath("People", `Alice${character}Admin`, "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb")).toBe(
-			"People/Profiles/alice-admin--11112222/Alice-Admin.md",
+			"People/Profiles/Alice-Admin/Alice-Admin.md",
 		);
 	});
 
@@ -122,7 +149,7 @@ describe("person form contract", () => {
 		expect(values).toMatchObject({
 			personId: plannedPersonId,
 			personIdSource: "automatic",
-			path: "People/Profiles/<name>--<id>/<name>.md",
+			path: "People/Profiles/<name>/<name>.md",
 		});
 		expect(buildPersonCreateInput(values)).toMatchObject({ name: "Zoë Example", personId: plannedPersonId });
 	});
@@ -131,7 +158,7 @@ describe("person form contract", () => {
 		const plannedPersonId = "person-c0ffee00-1111-4222-8333-444455556666";
 		const values = {
 			...createPersonFormValues("People", plannedPersonId),
-			path: "People/Profiles/carol--c0ffee00/Carol.md",
+			path: "People/Profiles/Carol/Carol.md",
 			name: "  Carol  ",
 			aliases: "Caz\nC",
 			organisations: "Example Org\nOther Org",
@@ -145,14 +172,12 @@ describe("person form contract", () => {
 			contacts: [{ raw: "[[People/Bob]]", resolvedPath: bob.filePath }],
 		};
 
-		expect(proposeCreatePersonPath(values.name, "People", values.personId)).toBe(
-			"People/Profiles/carol--c0ffee00/Carol.md",
-		);
+		expect(proposeCreatePersonPath(values.name, "People", values.personId)).toBe("People/Profiles/Carol/Carol.md");
 		const input = buildPersonCreateInput(values);
 		expect(input).toEqual({
 			name: "Carol",
 			personId: plannedPersonId,
-			reviewedPath: "People/Profiles/carol--c0ffee00/Carol.md",
+			reviewedPath: "People/Profiles/Carol/Carol.md",
 			aliases: ["Caz", "C"],
 			organisations: ["Example Org", "Other Org"],
 			birthDate: "1990-07-30",
@@ -418,14 +443,14 @@ describe("person form contract", () => {
 
 	it.each([
 		["outside the dossier", "Archive/Portrait.jpg"],
-		["in a sibling dossier", "People/Profiles/bob--99999999/Portrait.jpg"],
-		["under a prefix-lookalike folder", "People/Profiles/alice--11112222-archive/Portrait.jpg"],
+		["in a sibling dossier", "People/Profiles/Bob/Portrait.jpg"],
+		["under a prefix-lookalike folder", "People/Profiles/Alice Archive/Portrait.jpg"],
 	] as const)("rejects a selected photo %s at the form boundary without writing", async (_case, selectedPath) => {
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
 		const person = {
 			...alice,
 			id: personId,
-			filePath: "People/Profiles/alice--11112222/Alice.md",
+			filePath: "People/Profiles/Alice/Alice.md",
 		};
 		const file = { path: person.filePath } as TFile;
 		const original = editPersonFormValues(person, "[[Archive/old.jpg]]", [person, bob], () => undefined);
@@ -437,6 +462,7 @@ describe("person form contract", () => {
 			() => [person, bob],
 			() => supportedPersonPhotoAssets([selectedPath]),
 			() => "People",
+			() => [person.filePath, selectedPath],
 		);
 		const values = {
 			...structuredClone(original),
@@ -453,14 +479,91 @@ describe("person form contract", () => {
 		expect(port.updatePerson).not.toHaveBeenCalled();
 	});
 
+	it("requires full identity and exact current index ownership before accepting a dossier-local photo", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const person = { ...alice, id: personId, filePath: "People/Profiles/Alice/Alice.md" };
+		const selectedPath = "People/Profiles/Alice/Photos/Portrait.jpg";
+		const file = { path: person.filePath } as TFile;
+		const original = editPersonFormValues(person, undefined, [person, bob], () => undefined);
+		const values = {
+			...structuredClone(original),
+			photo: canonicalPersonPhotoWikilink(selectedPath),
+			photoSelectionPath: selectedPath,
+		};
+		const stalePort = mutationPort();
+		const staleSession = new PersonFormSession(
+			{ kind: "edit", file, original },
+			stalePort,
+			[person, bob],
+			() => [],
+			() => supportedPersonPhotoAssets([selectedPath]),
+			() => "People",
+			() => [person.filePath, selectedPath],
+		);
+
+		await expect(staleSession.submit(values)).resolves.toMatchObject({
+			status: "error",
+			message: expect.stringContaining("canonical dossier"),
+		});
+		expect(stalePort.updatePerson).not.toHaveBeenCalled();
+
+		const currentPort = mutationPort();
+		const currentSession = new PersonFormSession(
+			{ kind: "edit", file, original },
+			currentPort,
+			[person, bob],
+			() => [person, bob],
+			() => supportedPersonPhotoAssets([selectedPath]),
+			() => "People",
+			() => [person.filePath, selectedPath],
+		);
+		await expect(currentSession.submit(values)).resolves.toMatchObject({ status: "success", created: false });
+		expect(currentPort.updatePerson).toHaveBeenCalledOnce();
+	});
+
+	it("rejects a local photo when two current people own direct profiles in one dossier", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const person = { ...alice, id: personId, filePath: "People/Profiles/Alice/Alice.md" };
+		const otherOwner = {
+			...bob,
+			id: "person-c0ffee00-1111-4222-8333-444455556666",
+			filePath: "People/Profiles/Alice/Bob.md",
+		};
+		const selectedPath = "People/Profiles/Alice/Photos/Portrait.jpg";
+		const file = { path: person.filePath } as TFile;
+		const original = editPersonFormValues(person, undefined, [person, otherOwner], () => undefined);
+		const port = mutationPort();
+		const session = new PersonFormSession(
+			{ kind: "edit", file, original },
+			port,
+			[person, otherOwner],
+			() => [person, otherOwner],
+			() => supportedPersonPhotoAssets([selectedPath]),
+			() => "People",
+			() => [person.filePath, otherOwner.filePath, selectedPath],
+		);
+		const values = {
+			...structuredClone(original),
+			photo: canonicalPersonPhotoWikilink(selectedPath),
+			photoSelectionPath: selectedPath,
+		};
+
+		await expect(session.submit(values)).resolves.toMatchObject({
+			status: "error",
+			message: expect.stringContaining("canonical dossier"),
+		});
+		expect(port.createPerson).not.toHaveBeenCalled();
+		expect(port.updatePerson).not.toHaveBeenCalled();
+	});
+
 	it("accepts one exact local descendant selection and keeps the dossier stable through a profile rename", async () => {
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
 		const person = {
 			...alice,
 			id: personId,
-			filePath: "People/Profiles/alice--11112222/Alice.md",
+			filePath: "People/Profiles/Alice/Alice.md",
 		};
-		const selectedPath = "People/Profiles/alice--11112222/Events/Portrait.jpg";
+		const selectedPath = "People/Profiles/Alice/Events/Portrait.jpg";
 		const file = { path: person.filePath } as TFile;
 		const original = editPersonFormValues(person, undefined, [person, bob], () => undefined);
 		const port = mutationPort();
@@ -471,6 +574,7 @@ describe("person form contract", () => {
 			() => [person, bob],
 			() => supportedPersonPhotoAssets([selectedPath]),
 			() => "People",
+			() => [person.filePath, selectedPath],
 		);
 		const values = {
 			...structuredClone(original),
@@ -484,7 +588,7 @@ describe("person form contract", () => {
 		expect(port.updatePerson).toHaveBeenCalledWith(
 			file,
 			{ name: "Alice Admin", photo: `[[${selectedPath}]]` },
-			expect.objectContaining({ targetPath: "People/Profiles/alice--11112222/Alice Admin.md" }),
+			expect.objectContaining({ targetPath: "People/Profiles/Alice/Alice Admin.md" }),
 		);
 	});
 
@@ -515,7 +619,7 @@ describe("person form contract", () => {
 	});
 
 	it("rejects a photo selection on create even when an injected asset exists", async () => {
-		const selectedPath = "People/Profiles/carol--c0ffee00/Portrait.jpg";
+		const selectedPath = "People/Profiles/Carol/Portrait.jpg";
 		const port = mutationPort();
 		const session = new PersonFormSession(
 			{ kind: "create" },
@@ -543,9 +647,9 @@ describe("person form contract", () => {
 		const person = {
 			...alice,
 			id: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-			filePath: "People/Profiles/alice--11112222/Alice.md",
+			filePath: "People/Profiles/Alice/Alice.md",
 		};
-		const selectedPath = "People/Profiles/alice--11112222/Portrait.jpg";
+		const selectedPath = "People/Profiles/Alice/Portrait.jpg";
 		const file = { path: person.filePath } as TFile;
 		const original = editPersonFormValues(person, undefined, [person, bob], () => undefined);
 		const port = mutationPort();
@@ -557,6 +661,7 @@ describe("person form contract", () => {
 			() => [person, bob],
 			() => currentAssets,
 			() => "People",
+			() => [person.filePath],
 		);
 		const values = {
 			...structuredClone(original),

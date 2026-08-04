@@ -1,6 +1,7 @@
-Status: active
+Status: superseded
 Created: 2026-08-03
 Updated: 2026-08-03
+Superseded-By: `.10x/decisions/presentation-first-person-dossier-naming.md`
 
 # Persoonsdossiers onder één People-root
 

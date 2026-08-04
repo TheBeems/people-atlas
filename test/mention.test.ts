@@ -33,11 +33,11 @@ describe("person mention parsing", () => {
 
 	it("plans one explicit UUID-backed person ID before an @ create action writes", async () => {
 		vi.spyOn(crypto, "randomUUID").mockReturnValue("12345678-90ab-4cde-8f01-23456789abcd");
-		const createdFile = { path: "People/Profiles/zoe-example--12345678/Zoë Example.md" } as TFile;
+		const createdFile = { path: "People/Profiles/Zoë Example/Zoë Example.md" } as TFile;
 		const createPerson = vi.fn(async () => createdFile);
 		const replaceRange = vi.fn();
 		const suggest = new PersonMentionSuggest(
-			{} as App,
+			{ vault: { getAllLoadedFiles: () => [] } } as unknown as App,
 			{ getSnapshot: () => ({ people: [], relationships: [], contactMoments: [], diagnostics: [] }) },
 			{ createPerson } as unknown as AtlasMutationService,
 			() => DEFAULT_SETTINGS,
@@ -56,11 +56,71 @@ describe("person mention parsing", () => {
 			expect(createPerson).toHaveBeenCalledExactlyOnceWith({
 				name: "Zoë Example",
 				personId: "person-12345678-90ab-4cde-8f01-23456789abcd",
-				reviewedPath: "People/Profiles/zoe-example--12345678/Zoë Example.md",
+				reviewedPath: "People/Profiles/Zoë Example/Zoë Example.md",
 			}),
 		);
 		expect(replaceRange).toHaveBeenCalledExactlyOnceWith(
-			"[[People/Profiles/zoe-example--12345678/Zoë Example|@Zoë Example]]",
+			"[[People/Profiles/Zoë Example/Zoë Example|@Zoë Example]]",
+			context.start,
+			context.end,
+			"people-atlas-mention",
+		);
+	});
+
+	it("uses current index ownership and vault occupancy for an @ create collision preview", async () => {
+		vi.spyOn(crypto, "randomUUID").mockReturnValue("7d9f4a12-6b3c-4d5e-8f90-123456789abc");
+		const existingPath = "People/Profiles/Jan Jansen/Jan Jansen.md";
+		const occupiedSuffixPath = "People/Profiles/Jan Jansen · FP/Notes.md";
+		const createdFile = { path: "People/Profiles/Jan Jansen · FPF/Jan Jansen.md" } as TFile;
+		const createPerson = vi.fn(async () => createdFile);
+		const replaceRange = vi.fn();
+		const suggest = new PersonMentionSuggest(
+			{
+				vault: {
+					getAllLoadedFiles: () => [{ path: existingPath }, { path: occupiedSuffixPath }],
+				},
+			} as unknown as App,
+			{
+				getSnapshot: () => ({
+					people: [
+						{
+							id: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+							filePath: existingPath,
+							name: "Jan Jansen",
+							aliases: [],
+							organisations: [],
+							emails: [],
+							phones: [],
+							contacts: [],
+						},
+					],
+					relationships: [],
+					contactMoments: [],
+					diagnostics: [],
+				}),
+			},
+			{ createPerson } as unknown as AtlasMutationService,
+			() => DEFAULT_SETTINGS,
+		);
+		const context = {
+			editor: { replaceRange },
+			start: { line: 0, ch: 0 },
+			end: { line: 0, ch: 11 },
+			query: "Jan Jansen",
+		} as unknown as EditorSuggestContext;
+		(suggest as unknown as { context: EditorSuggestContext }).context = context;
+
+		suggest.selectSuggestion({ kind: "create", name: "Jan Jansen" }, {} as KeyboardEvent);
+
+		await vi.waitFor(() =>
+			expect(createPerson).toHaveBeenCalledExactlyOnceWith({
+				name: "Jan Jansen",
+				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
+				reviewedPath: "People/Profiles/Jan Jansen · FPF/Jan Jansen.md",
+			}),
+		);
+		expect(replaceRange).toHaveBeenCalledExactlyOnceWith(
+			"[[People/Profiles/Jan Jansen · FPF/Jan Jansen|@Jan Jansen]]",
 			context.start,
 			context.end,
 			"people-atlas-mention",

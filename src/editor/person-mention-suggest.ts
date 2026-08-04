@@ -8,7 +8,7 @@ import {
 	type EditorSuggestTriggerInfo,
 	type TFile,
 } from "obsidian";
-import { peopleCollectionPaths, personProfilePath } from "../domain/people-paths";
+import { peopleCollectionPaths, planPersonDossier } from "../domain/people-paths";
 import type { PersonIndex } from "../index/person-index";
 import { type AtlasMutationService, MutationError } from "../mutations/atlas-mutation-service";
 import type { PeopleAtlasSettings } from "../settings/types";
@@ -83,7 +83,15 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 				targetPath = item.filePath;
 			} else {
 				const personId = `person-${crypto.randomUUID()}`;
-				const reviewedPath = personProfilePath(this.getSettings().peopleRootFolder, item.name, personId);
+				const plan = planPersonDossier({
+					peopleRootFolder: this.getSettings().peopleRootFolder,
+					displayName: item.name,
+					personId,
+					people: this.index.getSnapshot().people,
+					vaultPaths: this.app.vault.getAllLoadedFiles().map((entry) => entry.path),
+				});
+				if (plan.status === "blocked") throw new MutationError(plan.error);
+				const reviewedPath = plan.profilePath;
 				targetPath = (await this.mutations.createPerson({ name: item.name, personId, reviewedPath })).path;
 			}
 			context.editor.replaceRange(

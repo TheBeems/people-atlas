@@ -33,7 +33,7 @@ const bob: PersonRecord = {
 
 const alexPhotoPerson: PersonRecord = {
 	id: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-	filePath: "People/Profiles/alex-example--11112222/Alex Example.md",
+	filePath: "People/Profiles/Alex Example/Alex Example.md",
 	name: "Alex Example",
 	aliases: [],
 	organisations: [],
@@ -42,7 +42,7 @@ const alexPhotoPerson: PersonRecord = {
 	contacts: [],
 };
 
-const alexPhotoDossier = "People/Profiles/alex-example--11112222";
+const alexPhotoDossier = "People/Profiles/Alex Example";
 
 const tagSourceBaseline: PersonEditSourceBaseline = {
 	mtime: 1,
@@ -82,7 +82,12 @@ function mountModal(options?: {
 	const createPerson = options?.createPerson ?? vi.fn(async () => personFile("People/Created.md"));
 	const updatePerson = options?.updatePerson ?? vi.fn(async (file: TFile) => ({ file, renamed: false }));
 	const openFile = vi.fn(async () => undefined);
-	const vaultFiles = options?.photoFiles ?? [];
+	const photoFiles = options?.photoFiles ?? [];
+	const vaultFiles = [
+		...new Map(
+			[...people.map((person) => personFile(person.filePath)), ...photoFiles].map((file) => [file.path, file]),
+		).values(),
+	];
 	const getResourcePath = options?.getResourcePath ?? vi.fn((file: TFile) => `app://people-atlas/${file.path}`);
 	type VaultListener = (...args: unknown[]) => void;
 	interface VaultEventRef {
@@ -92,6 +97,7 @@ function mountModal(options?: {
 	const vaultListeners = new Map<string, Set<VaultListener>>();
 	const vault = {
 		getFiles: () => [...vaultFiles],
+		getAllLoadedFiles: () => [...vaultFiles],
 		getAbstractFileByPath: (path: string) => vaultFiles.find((file) => file.path === path) ?? null,
 		getResourcePath,
 		on: (name: string, callback: VaultListener): VaultEventRef => {
@@ -280,7 +286,7 @@ describe("person modal", () => {
 
 	it("plans one stable person ID at open and reuses its dossier path through the first Save", async () => {
 		vi.spyOn(crypto, "randomUUID").mockReturnValue("7d9f4a12-6b3c-4d5e-8f90-123456789abc");
-		const createdFile = personFile("People/Profiles/alice-admin--7d9f4a12/Alice - Admin.md");
+		const createdFile = personFile("People/Profiles/Alice - Admin/Alice - Admin.md");
 		const createPerson = vi.fn(async (_input: unknown) => createdFile);
 		const { content, openFile, photoListenerCount } = mountModal({ createPerson });
 
@@ -298,11 +304,32 @@ describe("person modal", () => {
 			expect(createPerson).toHaveBeenCalledExactlyOnceWith({
 				name: "Alice / Admin",
 				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
-				reviewedPath: "People/Profiles/alice-admin--7d9f4a12/Alice - Admin.md",
+				reviewedPath: "People/Profiles/Alice - Admin/Alice - Admin.md",
 			}),
 		);
 		await vi.waitFor(() => expect(openFile).toHaveBeenCalledWith(createdFile));
 		expect(createPerson.mock.calls[0]?.[0]).not.toHaveProperty("photo");
+	});
+
+	it("previews the shared collision plan from current canonical owners and current vault occupancy", () => {
+		vi.spyOn(crypto, "randomUUID").mockReturnValue("7d9f4a12-6b3c-4d5e-8f90-123456789abc");
+		const existingJan: PersonRecord = {
+			...bob,
+			id: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+			name: "Jan Jansen",
+			filePath: "People/Profiles/Jan Jansen/Jan Jansen.md",
+		};
+		const existingProfile = personFile(existingJan.filePath);
+		const occupiedShortSuffix = personFile("People/Profiles/Jan Jansen · FP/Notes.md");
+		const { content, createPerson } = mountModal({
+			people: [existingJan],
+			photoFiles: [existingProfile, occupiedShortSuffix],
+		});
+
+		setInput(inputForLabel(content, "Name"), "Jan Jansen");
+
+		expect(inputForLabel(content, "Person note path").value).toBe("People/Profiles/Jan Jansen · FPF/Jan Jansen.md");
+		expect(createPerson).not.toHaveBeenCalled();
 	});
 
 	it("explains the create photo steps accessibly and keeps Cancel and host close mutation-free", () => {
@@ -345,8 +372,8 @@ describe("person modal", () => {
 		const dossierPortrait = personFile(`${alexPhotoDossier}/Alex.jpg`);
 		const descendantPortrait = personFile(`${alexPhotoDossier}/Photos/Alex.jpg`);
 		const outsidePortrait = personFile("Assets/Alex.jpg");
-		const siblingPortrait = personFile("People/Profiles/alex-other--99999999/Photos/Alex.jpg");
-		const prefixLookalikePortrait = personFile("People/Profiles/alex-example--111122220/Photos/Alex.jpg");
+		const siblingPortrait = personFile("People/Profiles/Alex Other/Photos/Alex.jpg");
+		const prefixLookalikePortrait = personFile("People/Profiles/Alex Example Archive/Photos/Alex.jpg");
 		const unsupported = personFile(`${alexPhotoDossier}/Alex.svg`);
 		const file = personFile(alexPhotoPerson.filePath);
 		const updatePerson = vi.fn(async (updatedFile: TFile) => ({ file: updatedFile, renamed: false }));
@@ -411,6 +438,52 @@ describe("person modal", () => {
 		expect(createPerson).not.toHaveBeenCalled();
 	});
 
+	it("shows no dossier assets when current index ownership for the full person ID becomes ambiguous", () => {
+		const portrait = personFile(`${alexPhotoDossier}/Portrait.jpg`);
+		const file = personFile(alexPhotoPerson.filePath);
+		const ambiguousOwner = {
+			...alexPhotoPerson,
+			filePath: "People/Profiles/Alex Duplicate/Alex Duplicate.md",
+		};
+		const mounted = mountModal({
+			mode: { kind: "edit", file, person: alexPhotoPerson },
+			people: [alexPhotoPerson],
+			getCurrentPeople: () => [alexPhotoPerson, ambiguousOwner],
+			photoFiles: [portrait],
+		});
+		const select = selectForLabel(mounted.content, "Dossier image");
+
+		expect(Array.from(select.options).map((option) => option.textContent)).toEqual(["No supported dossier images"]);
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
+	});
+
+	it("shows no dossier assets and sends no Save mutation when two current people own direct profiles in one dossier", async () => {
+		const otherOwner: PersonRecord = {
+			...bob,
+			id: "person-c0ffee00-1111-4222-8333-444455556666",
+			filePath: `${alexPhotoDossier}/Other Alex.md`,
+		};
+		const profile = personFile(alexPhotoPerson.filePath);
+		const otherProfile = personFile(otherOwner.filePath);
+		const portrait = personFile(`${alexPhotoDossier}/Portrait.jpg`);
+		const mounted = mountModal({
+			mode: { kind: "edit", file: profile, person: alexPhotoPerson },
+			people: [alexPhotoPerson, otherOwner],
+			getCurrentPeople: () => [alexPhotoPerson, otherOwner],
+			photoFiles: [profile, otherProfile, portrait],
+		});
+		const select = selectForLabel(mounted.content, "Dossier image");
+
+		expect(Array.from(select.options).map((option) => option.textContent)).toEqual(["No supported dossier images"]);
+		select.value = portrait.path;
+		select.dispatchEvent(new Event("change", { bubbles: true }));
+		expect(inputForLabel(mounted.content, "Photo").value).toBe("");
+		buttonWithText(mounted.content, "Save").click();
+		await vi.waitFor(() => expect(mounted.close).toHaveBeenCalledOnce());
+		expect(mounted.createPerson).not.toHaveBeenCalled();
+		expect(mounted.updatePerson).not.toHaveBeenCalled();
+	});
+
 	it("requeries the current dossier and fails a pending selection closed after People root drift", async () => {
 		const settings = structuredClone(DEFAULT_SETTINGS);
 		const portrait = personFile(`${alexPhotoDossier}/Alex.jpg`);
@@ -440,7 +513,7 @@ describe("person modal", () => {
 	it.each(UNSAFE_PEOPLE_ROOT_CASES)("shows no dossier option for a directly injected $label People root", ({
 		root,
 	}) => {
-		const dossierPath = `${root}/Profiles/alex-example--11112222`;
+		const dossierPath = `${root}/Profiles/Alex Example`;
 		const person = {
 			...alexPhotoPerson,
 			filePath: `${dossierPath}/Alex Example.md`,
@@ -697,7 +770,7 @@ describe("person modal", () => {
 		expect(createPerson).toHaveBeenCalledWith({
 			name: "Carol",
 			personId: "person-bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
-			reviewedPath: "People/Profiles/carol--bbbbbbbb/Carol.md",
+			reviewedPath: "People/Profiles/Carol/Carol.md",
 			emails: ["person@example.com"],
 		});
 		expect(buttonWithText(content, "Save").disabled).toBe(false);
@@ -742,7 +815,7 @@ describe("person modal", () => {
 			expect(createPerson).toHaveBeenCalledWith({
 				name: "Carol",
 				personId: "person-cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa",
-				reviewedPath: "People/Profiles/carol--cccccccc/Carol.md",
+				reviewedPath: "People/Profiles/Carol/Carol.md",
 				emails: ["alice@example.com"],
 				phones: ["+31 (0)20 123"],
 			}),

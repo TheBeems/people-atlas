@@ -101,7 +101,7 @@ export class PersonModal extends Modal {
 		private readonly people: PersonRecord[],
 		mutations: AtlasMutationService,
 		private readonly getSettings: () => PeopleAtlasSettings,
-		getCurrentPeople: () => PersonRecord[] = () => people,
+		private readonly getCurrentPeople: () => PersonRecord[] = () => people,
 	) {
 		super(app);
 		const getCurrentPhotoAssets = () => this.currentPhotoAssets();
@@ -116,6 +116,7 @@ export class PersonModal extends Modal {
 				getCurrentPeople,
 				getCurrentPhotoAssets,
 				() => getSettings().peopleRootFolder,
+				() => this.app.vault.getAllLoadedFiles().map((file) => file.path),
 			);
 		} else {
 			this.values = editPersonFormValues(
@@ -138,6 +139,7 @@ export class PersonModal extends Modal {
 				getCurrentPeople,
 				getCurrentPhotoAssets,
 				() => getSettings().peopleRootFolder,
+				() => this.app.vault.getAllLoadedFiles().map((file) => file.path),
 			);
 		}
 	}
@@ -401,10 +403,13 @@ export class PersonModal extends Modal {
 
 	private currentPhotoAssets(): PersonPhotoAsset[] {
 		if (this.mode.kind !== "edit") return [];
+		const personId = this.mode.person.id;
 		const dossierPath = personDossierPathFromProfile(
 			this.getSettings().peopleRootFolder,
 			this.mode.file.path,
-			this.mode.person.id,
+			personId,
+			this.app.vault.getAllLoadedFiles().map((file) => file.path),
+			this.getCurrentPeople(),
 		);
 		if (!dossierPath) return [];
 		return dossierPersonPhotoAssets(
@@ -921,7 +926,13 @@ export class PersonModal extends Modal {
 		if (!this.pathInput) return;
 		this.values.path =
 			this.mode.kind === "create"
-				? proposeCreatePersonPath(this.values.name, this.getSettings().peopleRootFolder, this.values.personId)
+				? proposeCreatePersonPath(
+						this.values.name,
+						this.getSettings().peopleRootFolder,
+						this.values.personId,
+						this.getCurrentPeople(),
+						this.app.vault.getAllLoadedFiles().map((entry) => entry.path),
+					)
 				: this.mode.file.path;
 		const proposedRename =
 			this.mode.kind === "edit" ? proposePersonRenamePath(this.mode.file.path, this.values.name) : "";

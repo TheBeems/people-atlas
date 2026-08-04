@@ -3,11 +3,12 @@ import { normalizePathIdentity } from "../domain/identity";
 import { canonicalPersonPhotoWikilink, dossierPersonPhotoAssets } from "../domain/person-photo";
 import {
 	peopleCollectionPaths,
-	personDossierPath,
+	isPortableProfileFilename,
 	personDossierPathFromProfile,
 	personDossierSuffix,
-	personProfilePath,
+	planPersonDossier,
 } from "../domain/people-paths";
+import type { PersonRecord } from "../domain/types";
 import { parsePersonReference } from "../domain/wikilink";
 import type { RelationshipPresetValues } from "../settings/relationship-presets";
 import type { PeopleAtlasSettings } from "../settings/types";
@@ -100,9 +101,12 @@ export type RelationshipPresetSyncMutationResult = { status: "updated" } | { sta
 
 interface MutationIndex {
 	getPeoplePathsById(id: string): string[];
+	getSnapshot(): { people: PersonRecord[] };
 	getRelationshipPathsById(id: string): string[];
 	getContactMomentPathsById?(id: string): string[];
 }
+
+type NonPersonMutationIndex = Omit<MutationIndex, "getSnapshot">;
 
 interface ContactMomentNoteBaseline {
 	path: string;
@@ -154,14 +158,22 @@ export class AtlasMutationService {
 	private readonly reservedContactMomentIds = new Map<string, string>();
 	private readonly contactMomentRetries = new WeakMap<ContactMomentRelationshipRetryToken, ContactMomentRetryState>();
 
+	private readonly index: MutationIndex;
+	private readonly generateId: () => string;
+	private readonly generateContactMomentId: () => string;
+
 	constructor(
 		private readonly app: App,
 		private readonly getSettings: () => PeopleAtlasSettings,
 		private readonly canWrite: () => boolean,
-		private readonly index: MutationIndex,
-		private readonly generateId: () => string = () => `person-${crypto.randomUUID()}`,
-		private readonly generateContactMomentId: () => string = () => `contact-moment-${crypto.randomUUID()}`,
-	) {}
+		index: MutationIndex | NonPersonMutationIndex,
+		generateId: () => string = () => `person-${crypto.randomUUID()}`,
+		generateContactMomentId: () => string = () => `contact-moment-${crypto.randomUUID()}`,
+	) {
+		this.index = index as MutationIndex;
+		this.generateId = generateId;
+		this.generateContactMomentId = generateContactMomentId;
+	}
 
 	createPerson(input: PersonMutationInput): Promise<TFile> {
 		return this.runExclusive(() => this.createPersonExclusive(input));
@@ -229,33 +241,67 @@ export class AtlasMutationService {
 		if (validateFolderPath(folder)) errors.push("The configured People root folder is invalid.");
 		const personId = normalizedInput.personId?.trim() ?? "";
 		if (!personDossierSuffix(personId)) errors.push("An explicit UUID-backed person_id is required for person create.");
-		const dossierPath = personDossierPath(folder, normalizedInput.name, personId);
-		const proposedPath = personProfilePath(folder, normalizedInput.name, personId);
-		if (!dossierPath || !proposedPath)
-			errors.push("The person name and person_id cannot produce a valid dossier path.");
-		const path = proposedPath;
+		const plan = planPersonDossier({
+			peopleRootFolder: settings.peopleRootFolder,
+			displayName: normalizedInput.name,
+			personId,
+			people: this.currentPersonRecords(),
+			vaultPaths: this.app.vault.getAllLoadedFiles().map((entry) => entry.path),
+		});
+		if (plan.status === "blocked") errors.push(plan.error);
+		const dossierPath = plan.dossierPath ?? "";
+		const path = plan.profilePath ?? "";
+		if (!dossierPath || !path) errors.push("The person name and person_id cannot produce a valid dossier path.");
 		if (reviewedPath !== path) {
 			errors.push("The reviewed person path changed before Save. Review the current destination and try again.");
 		}
 		if (this.identityInUse(personId, path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
 			errors.push(`person_id “${personId}” is already in use.`);
 		}
-		if (dossierPath && this.app.vault.getAbstractFileByPath(dossierPath)) {
-			errors.push(`A dossier already exists at “${dossierPath}”.`);
-		}
 		if (this.app.vault.getAbstractFileByPath(path)) errors.push(`A note already exists at “${path}”.`);
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
-		const createdFolders = await this.ensureFolder(dossierPath);
-		const createdDossier = createdFolders.get(dossierPath);
-		if (!createdDossier || this.app.vault.getAbstractFileByPath(dossierPath) !== createdDossier) {
-			throw new MutationError(`The dossier “${dossierPath}” was not created by this transaction.`);
+		const livePlan = planPersonDossier({
+			peopleRootFolder: this.getSettings().peopleRootFolder,
+			displayName: normalizedInput.name,
+			personId,
+			people: this.currentPersonRecords(),
+			vaultPaths: this.app.vault.getAllLoadedFiles().map((entry) => entry.path),
+		});
+		if (livePlan.status === "blocked" || livePlan.dossierPath !== dossierPath || livePlan.profilePath !== path) {
+			throw new MutationError(
+				`The reviewed person path changed before Save. Review the current destination and try again. ${livePlan.status === "blocked" ? livePlan.error : ""}`.trim(),
+			);
 		}
-		const frontmatter = this.personFrontmatter(normalizedInput, personId, settings);
+		if (this.identityInUse(personId, path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
+			throw new MutationError(`person_id “${personId}” is already in use.`);
+		}
+		if (this.app.vault.getAbstractFileByPath(path)) throw new MutationError(`A note already exists at “${path}”.`);
+		const createdFolders = await this.ensureFolder(dossierPath);
 		let file: TFile;
 		try {
+			const createdDossier = createdFolders.get(dossierPath);
+			if (!createdDossier || this.app.vault.getAbstractFileByPath(dossierPath) !== createdDossier) {
+				throw new MutationError(`The dossier “${dossierPath}” was not created by this transaction.`);
+			}
+			const finalSettings = this.getSettings();
+			const finalPlan = planPersonDossier({
+				peopleRootFolder: finalSettings.peopleRootFolder,
+				displayName: normalizedInput.name,
+				personId,
+				people: this.currentPersonRecords(),
+				vaultPaths: this.app.vault.getAllLoadedFiles().map((entry) => entry.path),
+				ignoredVaultPaths: [dossierPath],
+			});
+			if (finalPlan.status === "blocked" || finalPlan.dossierPath !== dossierPath || finalPlan.profilePath !== path) {
+				throw new MutationError(
+					`The reviewed person path changed before Save. Review the current destination and try again. ${finalPlan.status === "blocked" ? finalPlan.error : ""}`.trim(),
+				);
+			}
 			if (this.identityInUse(personId, path, this.reservedPersonIds, (id) => this.index.getPeoplePathsById(id))) {
 				throw new MutationError(`person_id “${personId}” is already in use.`);
 			}
+			if (this.app.vault.getAbstractFileByPath(path)) throw new MutationError(`A note already exists at “${path}”.`);
+			const frontmatter = this.personFrontmatter(normalizedInput, personId, finalSettings);
 			file = await this.app.vault.create(path, `---\n${frontmatter}---\n`);
 		} catch (error) {
 			const createdDossier = createdFolders.get(dossierPath);
@@ -651,7 +697,11 @@ export class AtlasMutationService {
 		}
 		const resultingPersonId = normalizeStoredId(personId);
 		if (renameRequired && targetPath) {
+			const targetFilename = targetPath.split("/").at(-1) ?? "";
 			if (validateNotePath(targetPath)) errors.push("A safe Markdown person path is required.");
+			if (!isPortableProfileFilename(targetFilename)) {
+				errors.push("A portable Markdown person filename is required.");
+			}
 			const currentParent = file.path.split("/").slice(0, -1).join("/");
 			const targetParent = targetPath.split("/").slice(0, -1).join("/");
 			if (currentParent !== targetParent) errors.push("Editing a person may rename the note but cannot move it.");
@@ -774,7 +824,13 @@ export class AtlasMutationService {
 			}
 		}
 		if (!photoPath) return "A changed photo must be one exact canonical wikilink to a supported vault image.";
-		const dossierPath = personDossierPathFromProfile(settings.peopleRootFolder, profilePath, personId);
+		const dossierPath = personDossierPathFromProfile(
+			settings.peopleRootFolder,
+			profilePath,
+			personId,
+			this.app.vault.getAllLoadedFiles().map((entry) => entry.path),
+			this.currentPersonRecords(),
+		);
 		const photoFile = this.app.vault.getAbstractFileByPath(photoPath);
 		if (!(photoFile instanceof TFile) || photoFile.path !== photoPath) {
 			return `The changed photo “${photoPath}” is missing or is not a supported vault file.`;
@@ -789,6 +845,18 @@ export class AtlasMutationService {
 			return "A changed photo must be inside the person's current canonical dossier.";
 		}
 		return undefined;
+	}
+
+	private currentPersonRecords(): PersonRecord[] {
+		const getSnapshot = this.index.getSnapshot;
+		if (typeof getSnapshot !== "function") {
+			throw new MutationError("A current People index snapshot is required before a person mutation can write.");
+		}
+		const snapshot = getSnapshot.call(this.index);
+		if (!snapshot || !Array.isArray(snapshot.people)) {
+			throw new MutationError("A current People index snapshot is required before a person mutation can write.");
+		}
+		return snapshot.people;
 	}
 
 	private async updateRelationshipExclusive(file: TFile, updates: RelationshipUpdates): Promise<void> {

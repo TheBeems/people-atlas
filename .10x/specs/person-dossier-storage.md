@@ -1,6 +1,7 @@
 Status: active
 Created: 2026-08-03
 Updated: 2026-08-03
+Partially-Superseded-By: `.10x/specs/presentation-first-person-dossier-naming.md` for dossier naming, collision planning, ownership validation and the renewed fresh-vault boundary
 
 # Persoonsdossiers in één Second Brain-vault
 

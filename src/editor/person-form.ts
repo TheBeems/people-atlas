@@ -11,7 +11,7 @@ import {
 	getPendingPersonPhotoSelectionError,
 	type PersonPhotoAsset,
 } from "../domain/person-photo";
-import { peopleCollectionPaths, personDossierPathFromProfile, personProfilePath } from "../domain/people-paths";
+import { peopleCollectionPaths, personDossierPathFromProfile, planPersonDossier } from "../domain/people-paths";
 import type { PersonRecord, PersonReference } from "../domain/types";
 import type { PersonMutationInput, PersonUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
@@ -132,11 +132,17 @@ export function editPersonFormValues(
 	};
 }
 
-export function proposeCreatePersonPath(name: string, peopleRootFolder: string, personId = ""): string {
-	const path = personProfilePath(peopleRootFolder, name, personId);
-	if (path) return path;
+export function proposeCreatePersonPath(
+	name: string,
+	peopleRootFolder: string,
+	personId = "",
+	people: readonly PersonRecord[] = [],
+	vaultPaths: readonly string[] = [],
+): string {
+	const plan = planPersonDossier({ peopleRootFolder, displayName: name, personId, people, vaultPaths });
+	if (plan.profilePath) return plan.profilePath;
 	const profiles = peopleCollectionPaths(peopleRootFolder).profiles;
-	return `${profiles}/<name>--<id>/<name>.md`;
+	return `${profiles}/<name>/<name>.md`;
 }
 
 export function proposePersonRenamePath(currentPath: string, name: string): string {
@@ -257,6 +263,7 @@ export class PersonFormSession {
 		private readonly getCurrentPeople: () => PersonRecord[] = () => people,
 		private readonly getCurrentPhotoAssets: () => readonly PersonPhotoAsset[] = () => [],
 		private readonly getPeopleRootFolder: () => string = () => "",
+		private readonly getCurrentVaultPaths: () => readonly string[] = () => [],
 	) {}
 
 	cancel(): void {
@@ -313,10 +320,14 @@ export class PersonFormSession {
 			if (this.mode.kind === "create") {
 				throw new Error("Choose a local photo in Edit after the dossier exists.");
 			}
+			const original = this.mode.original;
+			const currentPeople = this.getCurrentPeople();
 			const dossierPath = personDossierPathFromProfile(
 				this.getPeopleRootFolder(),
-				this.mode.original.path,
-				this.mode.original.personId,
+				original.path,
+				original.personId,
+				this.getCurrentVaultPaths(),
+				currentPeople,
 			);
 			if (!dossierPath) {
 				throw new Error("The current profile note has no safe canonical dossier boundary.");

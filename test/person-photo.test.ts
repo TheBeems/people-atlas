@@ -36,12 +36,12 @@ describe("person photo contract", () => {
 	});
 
 	it("queries supported photos only from the exact dossier boundary and its descendants", () => {
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		const assets = supportedPersonPhotoAssets([
 			`${dossierPath}/Portrait.jpg`,
 			`${dossierPath}/Events/Portrait.jpg`,
 			`${dossierPath}-archive/Portrait.jpg`,
-			"People/Profiles/bob--99999999/Portrait.jpg",
+			"People/Profiles/Bob/Portrait.jpg",
 			"Archive/Portrait.jpg",
 			`${dossierPath}/vector.svg`,
 		]);

@@ -144,7 +144,7 @@ describe("plugin settings loading", () => {
 		}).toEqual({
 			writeEnabled: false,
 			parsedTarget: "Second Brain/People",
-			canonicalTarget: "Second Brain/People|Archive/Profiles/alice--11112222/Alice",
+			canonicalTarget: "Second Brain/People|Archive/Profiles/Alice/Alice",
 		});
 		expect(result.error).toContain("peopleRootFolder is invalid");
 	});

@@ -1,5 +1,6 @@
 import { TFile, type App } from "obsidian";
 import { describe, expect, it } from "vitest";
+import type { PersonRecord } from "../src/domain/types";
 import { personProfilePath } from "../src/domain/people-paths";
 import {
 	AtlasMutationService,
@@ -13,7 +14,16 @@ import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { PeopleAtlasSettings } from "../src/settings/types";
 import { UNSAFE_PEOPLE_ROOT_CASES } from "./people-root-fixtures";
 
-function createHarness(options: { peoplePathsById?: Map<string, string[]>; settings?: PeopleAtlasSettings } = {}) {
+function createHarness(
+	options: {
+		people?: PersonRecord[];
+		peoplePathsById?: Map<string, string[]>;
+		settings?: PeopleAtlasSettings;
+		currentPeople?: () => PersonRecord[];
+		currentVaultFiles?: () => Array<{ path: string }>;
+		withoutCurrentSnapshot?: boolean;
+	} = {},
+) {
 	const files = new Map<
 		string,
 		{ path: string; children?: unknown[]; content?: string; frontmatter?: Record<string, unknown> }
@@ -23,6 +33,8 @@ function createHarness(options: { peoplePathsById?: Map<string, string[]>; setti
 	const hostCommitCount = { current: 0 };
 	const processFrontMatterCallCount = { current: 0 };
 	const renameCalls: string[] = [];
+	const folderCreateCalls: string[] = [];
+	const noteCreateCalls: string[] = [];
 	const renameFailure: { current?: Error | undefined } = {};
 	const createFailure: { current?: Error | undefined } = {};
 	const beforeCreateFailure: { current?: ((path: string) => void) | undefined } = {};
@@ -33,17 +45,20 @@ function createHarness(options: { peoplePathsById?: Map<string, string[]>; setti
 	const app = {
 		vault: {
 			getAbstractFileByPath: (path: string) => files.get(path),
+			getAllLoadedFiles: () => options.currentVaultFiles?.() ?? [...files.values()],
 			read: async (file: { path: string }) => {
 				const entry = files.get(file.path);
 				if (!entry) throw new Error(`The source note “${file.path}” is missing.`);
 				return entry.content ?? "";
 			},
 			createFolder: async (path: string) => {
+				folderCreateCalls.push(path);
 				files.set(path, { path, children: [] });
 				await beforeCreateFolderResolve.current?.(path);
 				return files.get(path);
 			},
 			create: async (path: string, content: string) => {
+				noteCreateCalls.push(path);
 				if (createFailure.current) {
 					beforeCreateFailure.current?.(path);
 					throw createFailure.current;
@@ -89,16 +104,27 @@ function createHarness(options: { peoplePathsById?: Map<string, string[]>; setti
 			},
 		},
 	} as unknown as App;
-	const index = {
+	const baseIndex = {
 		getPeoplePathsById: (id: string) => options.peoplePathsById?.get(id) ?? [],
 		getRelationshipPathsById: () => [] as string[],
 		getContactMomentPathsById: () => [] as string[],
 	};
+	const index = options.withoutCurrentSnapshot
+		? baseIndex
+		: {
+				...baseIndex,
+				getSnapshot: () => ({
+					people: options.currentPeople?.() ?? options.people ?? [],
+					relationships: [],
+					contactMoments: [],
+					diagnostics: [],
+				}),
+			};
 	const service = new AtlasMutationService(
 		app,
 		() => options.settings ?? DEFAULT_SETTINGS,
 		() => true,
-		index,
+		index as ConstructorParameters<typeof AtlasMutationService>[3],
 		() => "person-fixed",
 	);
 	return {
@@ -112,7 +138,9 @@ function createHarness(options: { peoplePathsById?: Map<string, string[]>; setti
 		trashFailure,
 		trashedPaths,
 		files,
+		folderCreateCalls,
 		hostCommitCount,
+		noteCreateCalls,
 		processFrontMatterCallCount,
 		renameCalls,
 		renameFailure,
@@ -130,13 +158,139 @@ function vaultFile(path: string): TFile {
 	return file;
 }
 
+function personRecord(id: string, filePath: string, name: string): PersonRecord {
+	return {
+		id,
+		filePath,
+		name,
+		aliases: [],
+		organisations: [],
+		emails: [],
+		phones: [],
+		contacts: [],
+	};
+}
+
 describe("AtlasMutationService", () => {
+	it("uses the shared presentation-first planner for plain, suffixed and extended person create paths", async () => {
+		const unique = createHarness();
+		const uniqueId = "person-12345678-90ab-4cde-8f01-23456789abcd";
+		await expect(
+			unique.service.createPerson({
+				name: "Zoë Example",
+				personId: uniqueId,
+				reviewedPath: "People/Profiles/Zoë Example/Zoë Example.md",
+			}),
+		).resolves.toMatchObject({ path: "People/Profiles/Zoë Example/Zoë Example.md" });
+
+		const existingId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const existingPath = "People/Profiles/Jan Jansen/Jan Jansen.md";
+		const existing = personRecord(existingId, existingPath, "Jan Jansen");
+		const collision = createHarness({
+			people: [existing],
+			peoplePathsById: new Map([[existingId, [existingPath]]]),
+		});
+		collision.files.set("People/Profiles/Jan Jansen", { path: "People/Profiles/Jan Jansen", children: [] });
+		collision.files.set(existingPath, {
+			path: existingPath,
+			frontmatter: { type: "person", person_id: existingId, name: "Jan Jansen" },
+		});
+		await expect(
+			collision.service.createPerson({
+				name: "Jan Jansen",
+				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
+				reviewedPath: "People/Profiles/Jan Jansen · FP/Jan Jansen.md",
+			}),
+		).resolves.toMatchObject({ path: "People/Profiles/Jan Jansen · FP/Jan Jansen.md" });
+
+		const extended = createHarness({
+			people: [existing],
+			peoplePathsById: new Map([[existingId, [existingPath]]]),
+		});
+		extended.files.set("People/Profiles/Jan Jansen", { path: "People/Profiles/Jan Jansen", children: [] });
+		extended.files.set(existingPath, {
+			path: existingPath,
+			frontmatter: { type: "person", person_id: existingId, name: "Jan Jansen" },
+		});
+		extended.files.set("People/Profiles/Jan Jansen · FP", {
+			path: "People/Profiles/Jan Jansen · FP",
+			children: [{ path: "People/Profiles/Jan Jansen · FP/Notes.md" }],
+		});
+		extended.files.set("People/Profiles/Jan Jansen · FP/Notes.md", {
+			path: "People/Profiles/Jan Jansen · FP/Notes.md",
+		});
+		await expect(
+			extended.service.createPerson({
+				name: "Jan Jansen",
+				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
+				reviewedPath: "People/Profiles/Jan Jansen · FPF/Jan Jansen.md",
+			}),
+		).resolves.toMatchObject({ path: "People/Profiles/Jan Jansen · FPF/Jan Jansen.md" });
+	});
+
+	it("blocks a user-owned ordinary dossier namespace before every create write", async () => {
+		const { files, service } = createHarness();
+		files.set("People/Profiles/Jan Jansen", {
+			path: "People/Profiles/Jan Jansen",
+			children: [{ path: "People/Profiles/Jan Jansen/Notes.md" }],
+		});
+		files.set("People/Profiles/Jan Jansen/Notes.md", { path: "People/Profiles/Jan Jansen/Notes.md" });
+		const before = [...files.keys()];
+
+		await expect(
+			service.createPerson({
+				name: "Jan Jansen",
+				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
+				reviewedPath: "People/Profiles/Jan Jansen/Jan Jansen.md",
+			}),
+		).rejects.toThrow("without exactly one other canonical person owner");
+		expect([...files.keys()]).toEqual(before);
+	});
+
+	it("rejects a current collision snapshot that drifts after preview before any folder or profile write", async () => {
+		const ownerId = "person-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+		const ownerPath = "People/Profiles/Alice/Existing Alice.md";
+		const owner = personRecord(ownerId, ownerPath, "Alice");
+		let snapshotReads = 0;
+		const externalProfile = { path: ownerPath };
+		const { folderCreateCalls, noteCreateCalls, service } = createHarness({
+			currentPeople: () => (snapshotReads++ === 0 ? [] : [owner]),
+			currentVaultFiles: () => (snapshotReads < 2 ? [] : [externalProfile]),
+		});
+
+		await expect(
+			service.createPerson({
+				name: "Alice",
+				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
+			}),
+		).rejects.toThrow("reviewed person path changed");
+
+		expect(folderCreateCalls).toEqual([]);
+		expect(noteCreateCalls).toEqual([]);
+	});
+
+	it("fails closed when a safe test double omits the current People snapshot before any write", async () => {
+		const { folderCreateCalls, noteCreateCalls, service } = createHarness({ withoutCurrentSnapshot: true });
+
+		await expect(
+			service.createPerson({
+				name: "Carol",
+				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+				reviewedPath: "People/Profiles/Carol/Carol.md",
+			}),
+		).rejects.toThrow("current People index snapshot");
+
+		expect(folderCreateCalls).toEqual([]);
+		expect(noteCreateCalls).toEqual([]);
+	});
+
 	it("creates one dossier and canonical profile note from the explicit preplanned person ID", async () => {
 		const { files, service } = createHarness();
 		const file = await service.createPerson({
 			name: "Jan Jansen",
 			personId: "person-7D9F4A12-6B3C-4D5E-8F90-123456789ABC",
-			reviewedPath: "People/Profiles/jan-jansen--7d9f4a12/Jan Jansen.md",
+			reviewedPath: "People/Profiles/Jan Jansen/Jan Jansen.md",
 			birthDate: "--07-30",
 			pronouns: " they/them ",
 			gender: " non-binary ",
@@ -145,8 +299,8 @@ describe("AtlasMutationService", () => {
 			jobTitle: " Staff Engineer ",
 		});
 
-		expect(file.path).toBe("People/Profiles/jan-jansen--7d9f4a12/Jan Jansen.md");
-		expect(files.get("People/Profiles/jan-jansen--7d9f4a12")?.children).toEqual([]);
+		expect(file.path).toBe("People/Profiles/Jan Jansen/Jan Jansen.md");
+		expect(files.get("People/Profiles/Jan Jansen")?.children).toEqual([]);
 		expect(files.get(file.path)?.content).toContain('person_id: "person-7D9F4A12-6B3C-4D5E-8F90-123456789ABC"');
 		expect(files.get(file.path)?.content).toContain('birth_date: "--07-30"');
 		expect(files.get(file.path)?.content).toContain('pronouns: "they/them"');
@@ -171,7 +325,7 @@ describe("AtlasMutationService", () => {
 			service.createPerson({
 				name: "Alice",
 				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-				reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
 				photo: "[[Portraits/Alice.jpg]]",
 			}),
 		).rejects.toThrow("Person create cannot include a photo");
@@ -184,7 +338,7 @@ describe("AtlasMutationService", () => {
 		const file = await service.createPerson({
 			name: "Alice",
 			personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-			reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+			reviewedPath: "People/Profiles/Alice/Alice.md",
 			photo,
 		});
 
@@ -199,18 +353,18 @@ describe("AtlasMutationService", () => {
 			service.createPerson({
 				name: "Alice",
 				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-				reviewedPath: "Reviewed Root/Profiles/alice--11112222/Alice.md",
+				reviewedPath: "Reviewed Root/Profiles/Alice/Alice.md",
 			}),
 		).rejects.toThrow("reviewed person path changed");
 		expect(files.size).toBe(0);
 	});
 
 	it.each([
-		["a leading slash", "/People/Profiles/alice--11112222/Alice.md", "Alice"],
-		["backslashes", "People\\Profiles\\alice--11112222\\Alice.md", "Alice"],
-		["a duplicate separator", "People//Profiles/alice--11112222/Alice.md", "Alice"],
+		["a leading slash", "/People/Profiles/Alice/Alice.md", "Alice"],
+		["backslashes", "People\\Profiles\\Alice\\Alice.md", "Alice"],
+		["a duplicate separator", "People//Profiles/Alice/Alice.md", "Alice"],
 		["a missing value", undefined, "Alice"],
-		["a stale name", "People/Profiles/alice--11112222/Alice.md", "Bob"],
+		["a stale name", "People/Profiles/Alice/Alice.md", "Bob"],
 	] as const)("rejects %s in the raw reviewed create path before writing", async (_label, reviewedPath, name) => {
 		const { files, service } = createHarness();
 		const input: Parameters<typeof service.createPerson>[0] = {
@@ -234,7 +388,7 @@ describe("AtlasMutationService", () => {
 		const { files, service } = createHarness();
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
 		const name = `Alice${character}Admin`;
-		const profilePath = `People/Profiles/alice-admin--11112222/${name}.md`;
+		const profilePath = `People/Profiles/Alice-Admin/${name}.md`;
 		const outcome = await service.createPerson({ name, personId, reviewedPath: profilePath }).then(
 			(file) => ({ status: "fulfilled", path: file.path }),
 			(error: unknown) => ({ status: "rejected", message: error instanceof Error ? error.message : String(error) }),
@@ -252,7 +406,7 @@ describe("AtlasMutationService", () => {
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
 		const name = "Alice\u001fAdmin";
 		const reviewedPath = personProfilePath("People", name, personId);
-		expect(reviewedPath).toBe("People/Profiles/alice-admin--11112222/Alice-Admin.md");
+		expect(reviewedPath).toBe("People/Profiles/Alice-Admin/Alice-Admin.md");
 
 		const file = await service.createPerson({ name, personId, reviewedPath });
 		const serializedName = files.get(file.path)?.content?.match(/^name: (.+)$/m)?.[1];
@@ -262,7 +416,7 @@ describe("AtlasMutationService", () => {
 
 	it("rejects an existing dossier collision before creating any parent or profile note", async () => {
 		const { files, service } = createHarness();
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		files.set(dossierPath, { path: dossierPath, children: [] });
 		const before = structuredClone([...files.entries()]);
 
@@ -270,15 +424,15 @@ describe("AtlasMutationService", () => {
 			service.createPerson({
 				name: "Alice",
 				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-				reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
 			}),
-		).rejects.toThrow("dossier already exists");
+		).rejects.toThrow("without exactly one other canonical person owner");
 		expect([...files.entries()]).toEqual(before);
 	});
 
 	it("rejects a foreign dossier created while an ancestor folder is being created", async () => {
 		const { beforeCreateFolderResolve, files, service } = createHarness();
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		const profilePath = `${dossierPath}/Alice.md`;
 		const freeNotePath = `${dossierPath}/Interview notes.md`;
 		const freeNote = { path: freeNotePath, content: "Foreign user content" };
@@ -312,7 +466,7 @@ describe("AtlasMutationService", () => {
 		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
 		const peoplePathsById = new Map<string, string[]>();
 		const { beforeCreateFolderResolve, files, service, trashedPaths } = createHarness({ peoplePathsById });
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		const profilePath = `${dossierPath}/Alice.md`;
 		const foreignPath = "Elsewhere/Foreign Alice.md";
 		const foreignPerson = {
@@ -342,17 +496,129 @@ describe("AtlasMutationService", () => {
 		expect([...files.keys()].sort()).toEqual([foreignPath, "People", "People/Profiles"].sort());
 	});
 
+	it("rejects a canonical owner injected after its transaction-owned dossier folder is created without deleting external content", async () => {
+		const dossierPath = "People/Profiles/Alice";
+		const profilePath = `${dossierPath}/Alice.md`;
+		const externalPath = `${dossierPath}/Existing.md`;
+		const externalOwner = personRecord("person-c0ffee00-1111-4222-8333-444455556666", externalPath, "Alice");
+		let currentPeople: PersonRecord[] = [];
+		const { beforeCreateFolderResolve, files, noteCreateCalls, service, trashedPaths } = createHarness({
+			currentPeople: () => currentPeople,
+		});
+		beforeCreateFolderResolve.current = (path) => {
+			if (path !== dossierPath) return;
+			const dossier = files.get(dossierPath);
+			if (!dossier?.children) throw new Error("Expected the transaction-owned dossier folder.");
+			const externalFile = { path: externalPath, frontmatter: { type: "person", person_id: externalOwner.id } };
+			dossier.children.push(externalFile);
+			files.set(externalPath, externalFile);
+			currentPeople = [externalOwner];
+		};
+
+		await expect(
+			service.createPerson({
+				name: "Alice",
+				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+				reviewedPath: profilePath,
+			}),
+		).rejects.toThrow("reviewed person path changed");
+
+		expect(noteCreateCalls).toEqual([]);
+		expect(trashedPaths).toEqual([]);
+		expect(files.get(dossierPath)?.children).toEqual([
+			{ path: externalPath, frontmatter: { type: "person", person_id: externalOwner.id } },
+		]);
+		expect(files.get(externalPath)).toEqual({
+			path: externalPath,
+			frontmatter: { type: "person", person_id: externalOwner.id },
+		});
+	});
+
+	it("rejects a malformed current peer injected after its transaction-owned dossier folder is created before profile write", async () => {
+		const dossierPath = "People/Profiles/Alice";
+		const profilePath = `${dossierPath}/Alice.md`;
+		const malformedPeer = personRecord("person-c0ffee00-1111-4222-8333-444455556666", dossierPath, "Alice");
+		let currentPeople: PersonRecord[] = [];
+		let transactionDossier: { path: string; children?: unknown[] } | undefined;
+		const { beforeCreateFolderResolve, files, noteCreateCalls, service, trashedPaths } = createHarness({
+			currentPeople: () => currentPeople,
+		});
+		beforeCreateFolderResolve.current = (path) => {
+			if (path !== dossierPath) return;
+			transactionDossier = files.get(dossierPath);
+			if (!transactionDossier || !Array.isArray(transactionDossier.children)) {
+				throw new Error("Expected the empty transaction-owned dossier folder.");
+			}
+			currentPeople = [malformedPeer];
+		};
+
+		await expect(
+			service.createPerson({
+				name: "Alice",
+				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+				reviewedPath: profilePath,
+			}),
+		).rejects.toThrow("reviewed person path changed");
+
+		expect(noteCreateCalls).toEqual([]);
+		expect(transactionDossier?.children).toEqual([]);
+		expect(trashedPaths).toEqual([dossierPath]);
+		expect(files.has(dossierPath)).toBe(false);
+		expect([...files.keys()].sort()).toEqual(["People", "People/Profiles"]);
+	});
+
+	it("rejects a raw exact suffixed candidate peer after its transaction-owned dossier folder is created without writing a profile", async () => {
+		const ownerId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const ownerPath = "People/Profiles/Alice/Alice.md";
+		const owner = personRecord(ownerId, ownerPath, "Alice");
+		const dossierPath = "People/Profiles/Alice · FP";
+		const profilePath = `${dossierPath}/Alice.md`;
+		const rawPeer = personRecord(
+			"person-c0ffee00-1111-4222-8333-444455556666",
+			"People\\Profiles\\Alice · FP",
+			"Alice",
+		);
+		let currentPeople = [owner];
+		let transactionDossier: { path: string; children?: unknown[] } | undefined;
+		const { beforeCreateFolderResolve, files, noteCreateCalls, service, trashedPaths } = createHarness({
+			currentPeople: () => currentPeople,
+		});
+		files.set("People/Profiles/Alice", { path: "People/Profiles/Alice", children: [] });
+		files.set(ownerPath, { path: ownerPath, frontmatter: { type: "person", person_id: ownerId, name: "Alice" } });
+		beforeCreateFolderResolve.current = (path) => {
+			if (path !== dossierPath) return;
+			transactionDossier = files.get(dossierPath);
+			if (!transactionDossier || !Array.isArray(transactionDossier.children)) {
+				throw new Error("Expected the empty transaction-owned suffixed dossier folder.");
+			}
+			currentPeople = [owner, rawPeer];
+		};
+
+		await expect(
+			service.createPerson({
+				name: "Alice",
+				personId: "person-7d9f4a12-6b3c-4d5e-8f90-123456789abc",
+				reviewedPath: profilePath,
+			}),
+		).rejects.toThrow("reviewed person path changed");
+
+		expect(noteCreateCalls).toEqual([]);
+		expect(transactionDossier?.children).toEqual([]);
+		expect(trashedPaths).toEqual([dossierPath]);
+		expect(files.has(dossierPath)).toBe(false);
+	});
+
 	it("removes only the transaction-created empty dossier when profile-note creation fails", async () => {
 		const { createFailure, trashedPaths, files, service } = createHarness();
 		const writeFailure = new Error("profile write failed");
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		createFailure.current = writeFailure;
 
 		await expect(
 			service.createPerson({
 				name: "Alice",
 				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-				reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
 			}),
 		).rejects.toBe(writeFailure);
 
@@ -364,7 +630,7 @@ describe("AtlasMutationService", () => {
 	it("retains a transaction-created dossier that gained user content before profile-note failure", async () => {
 		const { beforeCreateFailure, createFailure, trashedPaths, files, service } = createHarness();
 		const writeFailure = new Error("profile write failed");
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		const freeNotePath = `${dossierPath}/Interview notes.md`;
 		createFailure.current = writeFailure;
 		beforeCreateFailure.current = () => {
@@ -378,7 +644,7 @@ describe("AtlasMutationService", () => {
 			service.createPerson({
 				name: "Alice",
 				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-				reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
 			}),
 		).rejects.toBe(writeFailure);
 
@@ -390,7 +656,7 @@ describe("AtlasMutationService", () => {
 	it("preserves the profile-write error when empty-dossier cleanup also fails", async () => {
 		const { createFailure, trashFailure, trashedPaths, files, service } = createHarness();
 		const writeFailure = new Error("profile write failed");
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		createFailure.current = writeFailure;
 		trashFailure.current = new Error("cleanup failed");
 
@@ -398,7 +664,7 @@ describe("AtlasMutationService", () => {
 			service.createPerson({
 				name: "Alice",
 				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
-				reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
 			}),
 		).rejects.toBe(writeFailure);
 
@@ -432,41 +698,44 @@ describe("AtlasMutationService", () => {
 		},
 		{
 			label: "a canonical supported asset in a sibling dossier",
-			photo: "[[People/Profiles/bob--99999999/Portrait.jpg]]",
-			assetPath: "People/Profiles/bob--99999999/Portrait.jpg",
+			photo: "[[People/Profiles/Bob/Portrait.jpg]]",
+			assetPath: "People/Profiles/Bob/Portrait.jpg",
 		},
 		{
 			label: "a canonical supported asset in a prefix-lookalike folder",
-			photo: "[[People/Profiles/alice--11112222-archive/Portrait.jpg]]",
-			assetPath: "People/Profiles/alice--11112222-archive/Portrait.jpg",
+			photo: "[[People/Profiles/Alice-archive/Portrait.jpg]]",
+			assetPath: "People/Profiles/Alice-archive/Portrait.jpg",
 		},
 		{
 			label: "a missing local asset",
-			photo: "[[People/Profiles/alice--11112222/Missing.jpg]]",
+			photo: "[[People/Profiles/Alice/Missing.jpg]]",
 		},
 		{
 			label: "an unsupported local file",
-			photo: "[[People/Profiles/alice--11112222/Portrait.svg]]",
-			assetPath: "People/Profiles/alice--11112222/Portrait.svg",
+			photo: "[[People/Profiles/Alice/Portrait.svg]]",
+			assetPath: "People/Profiles/Alice/Portrait.svg",
 		},
 		{
 			label: "a raw noncanonical local path",
-			photo: "People/Profiles/alice--11112222/Portrait.jpg",
-			assetPath: "People/Profiles/alice--11112222/Portrait.jpg",
+			photo: "People/Profiles/Alice/Portrait.jpg",
+			assetPath: "People/Profiles/Alice/Portrait.jpg",
 		},
 		{
 			label: "an aliased local embed",
-			photo: "[[People/Profiles/alice--11112222/Portrait.jpg|Portrait]]",
-			assetPath: "People/Profiles/alice--11112222/Portrait.jpg",
+			photo: "[[People/Profiles/Alice/Portrait.jpg|Portrait]]",
+			assetPath: "People/Profiles/Alice/Portrait.jpg",
 		},
 		{
 			label: "an embedded local wikilink",
-			photo: "![[People/Profiles/alice--11112222/Portrait.jpg]]",
-			assetPath: "People/Profiles/alice--11112222/Portrait.jpg",
+			photo: "![[People/Profiles/Alice/Portrait.jpg]]",
+			assetPath: "People/Profiles/Alice/Portrait.jpg",
 		},
 	] as const)("rejects $label before any write at the central photo boundary", async ({ photo, assetPath }) => {
-		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness();
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
+		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness({
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
 		const personFile = { path: personPath } as TFile;
 		files.set(personPath, {
 			path: personPath,
@@ -486,7 +755,7 @@ describe("AtlasMutationService", () => {
 			service.updatePerson(
 				personFile,
 				{ name: "Alice Admin", photo },
-				{ targetPath: "People/Profiles/alice--11112222/Alice Admin.md" },
+				{ targetPath: "People/Profiles/Alice/Alice Admin.md" },
 			),
 		).rejects.toThrow("photo");
 
@@ -501,11 +770,260 @@ describe("AtlasMutationService", () => {
 		}
 	});
 
-	it("accepts one exact local descendant at the central photo boundary without mutating the asset", async () => {
-		const { files, processFrontMatterCallCount, renameCalls, service } = createHarness();
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
+	it("rejects a local photo without one exact current canonical index owner before any host write", async () => {
+		const { files, hostCommitCount, processFrontMatterCallCount, service } = createHarness();
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
 		const personFile = { path: personPath } as TFile;
-		const asset = vaultFile("People/Profiles/alice--11112222/Events/Portrait.jpg");
+		const asset = vaultFile("People/Profiles/Alice/Portrait.jpg");
+		files.set(personPath, {
+			path: personPath,
+			frontmatter: { type: "person", person_id: personId, name: "Alice", custom: "keep" },
+		});
+		files.set(asset.path, asset);
+		const before = structuredClone(files.get(personPath));
+
+		await expect(service.updatePerson(personFile, { photo: `[[${asset.path}]]` })).rejects.toThrow(
+			"current canonical dossier",
+		);
+
+		expect(processFrontMatterCallCount.current).toBe(0);
+		expect(hostCommitCount.current).toBe(0);
+		expect(files.get(personPath)).toEqual(before);
+	});
+
+	it("rejects a dossier-local photo when an unsafe second current PersonRecord shares the dossier before any host write", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
+		const person = personRecord(personId, personPath, "Alice");
+		const unsafePeer = personRecord(
+			"person-c0ffee00-1111-4222-8333-444455556666",
+			"People/Profiles/Alice/Bob\u009f.md",
+			"Bob",
+		);
+		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness({
+			people: [person, unsafePeer],
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const personFile = vaultFile(personPath);
+		const asset = vaultFile("People/Profiles/Alice/Portrait.jpg");
+		const originalFrontmatter = { type: "person", person_id: personId, name: "Alice", custom: "keep" };
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+		files.set(asset.path, asset);
+
+		await expect(service.updatePerson(personFile, { photo: `[[${asset.path}]]` })).rejects.toThrow(
+			"current canonical dossier",
+		);
+
+		expect({
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			processFrontMatterCalls: 0,
+			hostCommits: 0,
+			renameCalls: [],
+			personFrontmatter: originalFrontmatter,
+		});
+	});
+
+	it("rejects a legacy dossier-local photo with zero frontmatter commits or mutation writes", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const dossierPath = "People/Profiles/alice--11112222";
+		const personPath = `${dossierPath}/Alice.md`;
+		const person = personRecord(personId, personPath, "Alice");
+		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness({
+			people: [person],
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const personFile = vaultFile(personPath);
+		const asset = vaultFile(`${dossierPath}/Portrait.jpg`);
+		const originalFrontmatter = { type: "person", person_id: personId, name: "Alice", custom: "keep" };
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+		files.set(asset.path, asset);
+
+		await expect(service.updatePerson(personFile, { photo: `[[${asset.path}]]` })).rejects.toThrow(
+			"current canonical dossier",
+		);
+
+		expect({
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			processFrontMatterCalls: 0,
+			hostCommits: 0,
+			renameCalls: [],
+			personFrontmatter: originalFrontmatter,
+		});
+	});
+
+	it("rejects a local photo when a second direct dossier owner appears inside the mutation callback", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
+		const otherOwner = personRecord(
+			"person-c0ffee00-1111-4222-8333-444455556666",
+			"People/Profiles/Alice/Bob.md",
+			"Bob",
+		);
+		const person = personRecord(personId, personPath, "Alice");
+		let currentPeople = [person];
+		const {
+			beforeProcessFrontMatterCallback,
+			files,
+			hostCommitCount,
+			processFrontMatterCallCount,
+			renameCalls,
+			service,
+		} = createHarness({
+			currentPeople: () => currentPeople,
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const personFile = vaultFile(personPath);
+		const asset = vaultFile("People/Profiles/Alice/Portrait.jpg");
+		const originalFrontmatter = { type: "person", person_id: personId, name: "Alice", custom: "keep" };
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+		files.set(otherOwner.filePath, {
+			path: otherOwner.filePath,
+			frontmatter: { type: "person", person_id: otherOwner.id },
+		});
+		files.set(asset.path, asset);
+		let callbackEntries = 0;
+		beforeProcessFrontMatterCallback.current = () => {
+			callbackEntries += 1;
+			currentPeople = [person, otherOwner];
+		};
+
+		await expect(service.updatePerson(personFile, { photo: `[[${asset.path}]]` })).rejects.toThrow(
+			"current canonical dossier",
+		);
+
+		expect({
+			callbackEntries,
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			callbackEntries: 1,
+			processFrontMatterCalls: 1,
+			hostCommits: 0,
+			renameCalls: [],
+			personFrontmatter: originalFrontmatter,
+		});
+	});
+
+	it("rejects a local photo when a malformed current peer appears on the exact dossier path inside the mutation callback", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const dossierPath = "People/Profiles/Alice";
+		const personPath = `${dossierPath}/Alice.md`;
+		const person = personRecord(personId, personPath, "Alice");
+		const malformedPeer = personRecord("person-c0ffee00-1111-4222-8333-444455556666", dossierPath, "Alice");
+		let currentPeople = [person];
+		const {
+			beforeProcessFrontMatterCallback,
+			files,
+			hostCommitCount,
+			processFrontMatterCallCount,
+			renameCalls,
+			service,
+		} = createHarness({
+			currentPeople: () => currentPeople,
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const personFile = vaultFile(personPath);
+		const asset = vaultFile(`${dossierPath}/Portrait.jpg`);
+		const originalFrontmatter = { type: "person", person_id: personId, name: "Alice", custom: "keep" };
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+		files.set(asset.path, asset);
+		let callbackEntries = 0;
+		beforeProcessFrontMatterCallback.current = () => {
+			callbackEntries += 1;
+			currentPeople = [person, malformedPeer];
+		};
+
+		await expect(service.updatePerson(personFile, { photo: `[[${asset.path}]]` })).rejects.toThrow(
+			"current canonical dossier",
+		);
+
+		expect({
+			callbackEntries,
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			callbackEntries: 1,
+			processFrontMatterCalls: 1,
+			hostCommits: 0,
+			renameCalls: [],
+			personFrontmatter: originalFrontmatter,
+		});
+	});
+
+	it("rejects a local photo when a trailing-dot Windows alias peer appears inside the mutation callback", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const dossierPath = "People/Profiles/Alice";
+		const personPath = `${dossierPath}/Alice.md`;
+		const person = personRecord(personId, personPath, "Alice");
+		const trailingAliasPeer = personRecord(
+			"person-c0ffee00-1111-4222-8333-444455556666",
+			"People/Profiles/Alice./Peer.md",
+			"Alice",
+		);
+		let currentPeople = [person];
+		const {
+			beforeProcessFrontMatterCallback,
+			files,
+			hostCommitCount,
+			processFrontMatterCallCount,
+			renameCalls,
+			service,
+		} = createHarness({
+			currentPeople: () => currentPeople,
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const personFile = vaultFile(personPath);
+		const asset = vaultFile(`${dossierPath}/Portrait.jpg`);
+		const originalFrontmatter = { type: "person", person_id: personId, name: "Alice", custom: "keep" };
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+		files.set(asset.path, asset);
+		let callbackEntries = 0;
+		beforeProcessFrontMatterCallback.current = () => {
+			callbackEntries += 1;
+			currentPeople = [person, trailingAliasPeer];
+		};
+
+		await expect(service.updatePerson(personFile, { photo: `[[${asset.path}]]` })).rejects.toThrow(
+			"current canonical dossier",
+		);
+
+		expect({
+			callbackEntries,
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			callbackEntries: 1,
+			processFrontMatterCalls: 1,
+			hostCommits: 0,
+			renameCalls: [],
+			personFrontmatter: originalFrontmatter,
+		});
+	});
+
+	it("accepts one exact local descendant at the central photo boundary without mutating the asset", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
+		const { files, processFrontMatterCallCount, renameCalls, service } = createHarness({
+			people: [personRecord(personId, personPath, "Alice")],
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const personFile = { path: personPath } as TFile;
+		const asset = vaultFile("People/Profiles/Alice/Events/Portrait.jpg");
 		files.set(personPath, {
 			path: personPath,
 			frontmatter: {
@@ -536,9 +1054,13 @@ describe("AtlasMutationService", () => {
 		root,
 	}) => {
 		const settings = { ...DEFAULT_SETTINGS, peopleRootFolder: root };
-		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness({ settings });
-		const dossierPath = `${root}/Profiles/alice--11112222`;
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const dossierPath = `${root}/Profiles/Alice`;
 		const personPath = `${dossierPath}/Alice.md`;
+		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness({
+			peoplePathsById: new Map([[personId, [personPath]]]),
+			settings,
+		});
 		const personFile = vaultFile(personPath);
 		const asset = vaultFile(`${dossierPath}/Portrait.jpg`);
 		const originalFrontmatter = {
@@ -580,6 +1102,8 @@ describe("AtlasMutationService", () => {
 	});
 
 	it("atomically rejects a local photo deleted inside processFrontMatter before apply, host commit or profile rename", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
 		const {
 			beforeProcessFrontMatterCallback,
 			files,
@@ -587,11 +1111,13 @@ describe("AtlasMutationService", () => {
 			processFrontMatterCallCount,
 			renameCalls,
 			service,
-		} = createHarness();
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
-		const targetPath = "People/Profiles/alice--11112222/Alice Admin.md";
+		} = createHarness({
+			people: [personRecord(personId, personPath, "Alice")],
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const targetPath = "People/Profiles/Alice/Alice Admin.md";
 		const personFile = { path: personPath } as TFile;
-		const asset = vaultFile("People/Profiles/alice--11112222/Events/Portrait.jpg");
+		const asset = vaultFile("People/Profiles/Alice/Events/Portrait.jpg");
 		const originalPhoto = "  [[Archive/legacy.jpg|Portrait]]  ";
 		const originalFrontmatter = {
 			type: "person",
@@ -636,10 +1162,12 @@ describe("AtlasMutationService", () => {
 		expect(outcome.status === "rejected" ? String(outcome.error) : "").toMatch(/photo.*(?:stale|missing|local)/i);
 		expect(externalDeleteCalls).toBe(1);
 		expect(files.has(asset.path)).toBe(false);
-		expect(asset.path).toBe("People/Profiles/alice--11112222/Events/Portrait.jpg");
+		expect(asset.path).toBe("People/Profiles/Alice/Events/Portrait.jpg");
 	});
 
 	it("atomically rejects a local photo whose live TFile path changes inside processFrontMatter before apply or rename", async () => {
+		const personId = "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb";
+		const personPath = "People/Profiles/Alice/Alice.md";
 		const {
 			beforeProcessFrontMatterCallback,
 			files,
@@ -647,12 +1175,14 @@ describe("AtlasMutationService", () => {
 			processFrontMatterCallCount,
 			renameCalls,
 			service,
-		} = createHarness();
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
-		const targetPath = "People/Profiles/alice--11112222/Alice Admin.md";
+		} = createHarness({
+			people: [personRecord(personId, personPath, "Alice")],
+			peoplePathsById: new Map([[personId, [personPath]]]),
+		});
+		const targetPath = "People/Profiles/Alice/Alice Admin.md";
 		const personFile = { path: personPath } as TFile;
-		const photoPath = "People/Profiles/alice--11112222/Events/Portrait.jpg";
-		const renamedPhotoPath = "People/Profiles/alice--11112222/Events/Renamed Portrait.jpg";
+		const photoPath = "People/Profiles/Alice/Events/Portrait.jpg";
+		const renamedPhotoPath = "People/Profiles/Alice/Events/Renamed Portrait.jpg";
 		const asset = vaultFile(photoPath);
 		const originalPhoto = "  [[Archive/legacy.jpg|Portrait]]  ";
 		const originalFrontmatter = {
@@ -708,7 +1238,7 @@ describe("AtlasMutationService", () => {
 
 	it("allows explicit photo clear at the central boundary", async () => {
 		const { files, processFrontMatterCallCount, service } = createHarness();
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
+		const personPath = "People/Profiles/Alice/Alice.md";
 		const personFile = { path: personPath } as TFile;
 		files.set(personPath, {
 			path: personPath,
@@ -734,7 +1264,7 @@ describe("AtlasMutationService", () => {
 
 	it("preserves an unrelated authored photo byte-exactly when photo is absent from the update", async () => {
 		const { files, service } = createHarness();
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
+		const personPath = "People/Profiles/Alice/Alice.md";
 		const personFile = { path: personPath } as TFile;
 		const authoredPhoto = "  [[Archive/legacy.jpg|Portrait]]  ";
 		files.set(personPath, {
@@ -1025,7 +1555,7 @@ describe("AtlasMutationService", () => {
 
 	it("renames only the profile note inside its dossier without moving identity, assets or free notes", async () => {
 		const { files, service } = createHarness();
-		const dossierPath = "People/Profiles/alice--11112222";
+		const dossierPath = "People/Profiles/Alice";
 		const file = { path: `${dossierPath}/Alice.md` } as TFile;
 		const asset = { path: `${dossierPath}/portrait.jpg`, content: "binary fixture" };
 		const freeNote = { path: `${dossierPath}/Interview notes.md`, content: "Keep this note" };
@@ -1058,7 +1588,7 @@ describe("AtlasMutationService", () => {
 		});
 		expect(files.get(asset.path)).toBe(asset);
 		expect(files.get(freeNote.path)).toBe(freeNote);
-		expect(files.has("People/Profiles/alice-admin--11112222")).toBe(false);
+		expect(files.has("People/Profiles/Alice-Admin")).toBe(false);
 	});
 
 	it("rejects renaming a person note without an explicit ID", async () => {
@@ -1085,6 +1615,56 @@ describe("AtlasMutationService", () => {
 			"already exists",
 		);
 		expect(files.get(file.path)?.frontmatter).toEqual({ type: "person", name: "Jan", custom: "keep" });
+	});
+
+	it("rejects a portability-unsafe full profile filename before frontmatter or rename writes", async () => {
+		const personPath = "People/Profiles/Alice/Alice.md";
+		const targetPath = "People/Profiles/Alice/CON.md";
+		const file = vaultFile(personPath);
+		const originalFrontmatter = { type: "person", person_id: "person-alice", name: "Alice", custom: "keep" };
+		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness();
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+
+		await expect(service.updatePerson(file, { name: "CON" }, { targetPath })).rejects.toThrow("portable");
+
+		expect({
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personPath: file.path,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			processFrontMatterCalls: 0,
+			hostCommits: 0,
+			renameCalls: [],
+			personPath,
+			personFrontmatter: originalFrontmatter,
+		});
+	});
+
+	it("rejects a trailing-dot full profile filename before frontmatter or rename writes", async () => {
+		const personPath = "People/Profiles/Alice/Alice.md";
+		const targetPath = "People/Profiles/Alice/Alice..md";
+		const file = vaultFile(personPath);
+		const originalFrontmatter = { type: "person", person_id: "person-alice", name: "Alice", custom: "keep" };
+		const { files, hostCommitCount, processFrontMatterCallCount, renameCalls, service } = createHarness();
+		files.set(personPath, { path: personPath, frontmatter: structuredClone(originalFrontmatter) });
+
+		await expect(service.updatePerson(file, { name: "Alice." }, { targetPath })).rejects.toThrow("portable");
+
+		expect({
+			processFrontMatterCalls: processFrontMatterCallCount.current,
+			hostCommits: hostCommitCount.current,
+			renameCalls,
+			personPath: file.path,
+			personFrontmatter: files.get(personPath)?.frontmatter,
+		}).toEqual({
+			processFrontMatterCalls: 0,
+			hostCommits: 0,
+			renameCalls: [],
+			personPath,
+			personFrontmatter: originalFrontmatter,
+		});
 	});
 
 	it("reports saved properties after an unexpected rename failure and keeps the queue reusable", async () => {
@@ -1137,7 +1717,7 @@ describe("AtlasMutationService", () => {
 	});
 
 	it("rejects contact-moment create outside the centrally derived collection before writing", async () => {
-		const personPath = "People/Profiles/alice--11112222/Alice.md";
+		const personPath = "People/Profiles/Alice/Alice.md";
 		const { files, service } = createHarness({
 			peoplePathsById: new Map([["person-alice", [personPath]]]),
 		});
@@ -1163,7 +1743,7 @@ describe("AtlasMutationService", () => {
 
 	it("writes relationships and contact moments only to collections derived from a custom People root", async () => {
 		const settings = { ...DEFAULT_SETTINGS, peopleRootFolder: "Second Brain/People" };
-		const personPath = "Second Brain/People/Profiles/alice--11112222/Alice.md";
+		const personPath = "Second Brain/People/Profiles/Alice/Alice.md";
 		const { files, service } = createHarness({
 			peoplePathsById: new Map([["person-alice", [personPath]]]),
 			settings,
@@ -1177,7 +1757,7 @@ describe("AtlasMutationService", () => {
 			path: "Second Brain/People/Relationships/Alice - Bob.md",
 			relationshipId: "relationship-custom-root",
 			from: `[[${personPath.replace(/\.md$/, "")}]]`,
-			to: "[[Second Brain/People/Profiles/bob--99999999/Bob]]",
+			to: "[[Second Brain/People/Profiles/Bob/Bob]]",
 		});
 		const contactMoment = await service.createContactMoment(
 			{
@@ -1450,12 +2030,12 @@ describe("AtlasMutationService", () => {
 			people.service.createPerson({
 				name: "Alice",
 				personId: sharedPersonId,
-				reviewedPath: "People/Profiles/alice--aaaaaaaa/Alice.md",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
 			}),
 			people.service.createPerson({
 				name: "Bob",
 				personId: sharedPersonId,
-				reviewedPath: "People/Profiles/bob--aaaaaaaa/Bob.md",
+				reviewedPath: "People/Profiles/Bob/Bob.md",
 			}),
 		]);
 
@@ -1550,7 +2130,7 @@ describe("AtlasMutationService", () => {
 		const alice = await service.createPerson({
 			name: "Alice",
 			personId,
-			reviewedPath: "People/Profiles/alice--11112222/Alice.md",
+			reviewedPath: "People/Profiles/Alice/Alice.md",
 		});
 		const created = files.get(alice.path);
 		if (!created) throw new Error("Created person fixture is missing.");
@@ -1566,7 +2146,7 @@ describe("AtlasMutationService", () => {
 			service.createPerson({
 				name: "Bob",
 				personId,
-				reviewedPath: "People/Profiles/bob--11112222/Bob.md",
+				reviewedPath: "People/Profiles/Bob/Bob.md",
 			}),
 		).rejects.toThrow(`person_id “${personId}” is already in use.`);
 		expect([...files.values()].filter((entry) => entry.content?.includes(`person_id: "${personId}"`))).toHaveLength(1);

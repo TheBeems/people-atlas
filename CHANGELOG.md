@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.0 (Alpha)
+
+- Replaces the assetless 0.9.0 Alpha prerelease; install 0.10.0 instead.
+- Added **Add relationship** next to **Edit person** for canonical people in
+  Reading View. It revalidates on activation and remains write-free until an
+  explicit editor/modal Save.
+- The current canonical graph detail sheet continues to provide **Open note**
+  for its linked local Markdown note.
+- Simplified regular Settings to **People root folder**, **My person**,
+  **Relationship templates**, and **Show labels**. Stored technical schema
+  settings remain readable but are no longer ordinary editable controls.
+- **Breaking:** 0.10.0 continues the fresh-vault-only presentation-first dossier
+  boundary without migration or backward compatibility for older folder
+  layouts.
+
+## 0.9.0 (Alpha)
+
+- Added presentation-first person dossier folders: a safe readable name by
+  default, with a shortest UUID-derived suffix only for canonical-name
+  collisions; stable `person_id` values remain canonical.
+- **Breaking:** 0.9.0 introduced the fresh-vault-only presentation-first dossier
+  boundary without migration or backward compatibility for older folder
+  layouts.
+
 ## 0.8.0
 
 - Added one configurable People root with derived `Profiles`, `Relationships`,

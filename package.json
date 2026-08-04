@@ -1,6 +1,6 @@
 {
   "name": "obsidian-people-atlas",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "description": "A Bases-native people and relationship atlas for Obsidian.",
   "main": "main.js",

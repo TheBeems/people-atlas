@@ -155,6 +155,44 @@ describe("controlled note-context actions integration", () => {
 		}
 	});
 
+	it("routes Add relationship from a person Reading View action through the canonical create entrypoint without a write", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		const alice = runtime.seedFile("People/Alice.md", {
+			type: "person",
+			person_id: "person-alice",
+			name: "Alice",
+		});
+		const plugin = new PeopleAtlasPlugin(runtime.app as unknown as App, manifest);
+		const component = plugin as unknown as Component;
+		await component.load();
+		runtime.triggerLayoutReady();
+		await waitForObservation(
+			() => plugin.index.getSnapshot().people.some((person) => person.filePath === alice.path),
+			"The current canonical person was not indexed.",
+		);
+		const openPersonEditor = vi.spyOn(plugin, "openEditPerson");
+		const openRelationshipCreator = vi.spyOn(plugin, "openCreateRelationship");
+		const rendered = await runtime.renderMarkdown(alice.path, "person-add-relationship-action-doc");
+		try {
+			const actions = Array.from(
+				rendered.section.querySelectorAll<HTMLButtonElement>(".people-atlas-note-actions button"),
+			);
+			expect(actions.map((action) => action.textContent)).toEqual(["Edit person", "Add relationship"]);
+			const addRelationship = actions[1];
+			if (!addRelationship) throw new Error("The production Add relationship action was not rendered.");
+
+			addRelationship.click();
+
+			expect(openRelationshipCreator).toHaveBeenCalledOnce();
+			expect(openRelationshipCreator).toHaveBeenCalledWith(alice.path);
+			expect(openPersonEditor).not.toHaveBeenCalled();
+			expect(runtime.savedPluginData).toEqual([]);
+		} finally {
+			await rendered.unload();
+			await component.unload();
+		}
+	});
+
 	it("routes a relationship action to the existing path editor without a write", async () => {
 		const runtime = new ControlledObsidianRuntime(document);
 		const alice = runtime.seedFile("People/Alice.md", {

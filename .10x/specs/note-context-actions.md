@@ -1,6 +1,13 @@
 Status: active
 Created: 2026-08-02
-Updated: 2026-08-02
+Updated: 2026-08-04
+
+> **Nauwe supersessie (2026-08-04):**
+> `.10x/specs/contextual-actions-and-settings-simplification.md` vervangt
+> uitsluitend de oude één-persoonsknopgrens en de uitsluiting van een
+> relatieactie vanuit een persoonsnotitie. De nieuwe actie is `Add relationship`
+> naast `Edit person`. Alle andere Reading View-, canonicaliteit-, lifecycle- en
+> expliciete-Save-grenzen in dit contract blijven gelden.
 
 # Note-contextacties
 

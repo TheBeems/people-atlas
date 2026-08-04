@@ -327,7 +327,7 @@ describe("People Atlas settings definitions", () => {
 		});
 	});
 
-	it("stratifies one General root group into the ratified pages without losing declarative controls", () => {
+	it("exposes only the daily configuration surface in one General group", () => {
 		const tab = createTab();
 		const definitions = tab.getSettingDefinitions() as unknown as DeclarativeSettingDefinition[];
 
@@ -336,87 +336,16 @@ describe("People Atlas settings definitions", () => {
 		if (!general) throw new Error("Expected the General root group.");
 		expect(general).toMatchObject({ type: "group", heading: "General" });
 		const rootItems = general.items ?? [];
-		const pages = rootItems.filter((definition) => definition.type === "page");
-		expect(pages.map((page) => page.name)).toEqual([
-			"People schema",
-			"Relationships",
-			"Contact moments",
-			"View & Bases",
-		]);
-		expect(new Set(pages.map((page) => page.name)).size).toBe(pages.length);
+		expect(rootItems.filter((definition) => definition.type === "page")).toEqual([]);
 		expect(
 			rootItems.filter((definition) => definition.control !== undefined).map((definition) => definition.control?.key),
-		).toEqual([
-			"peopleRootFolder",
-			"typeProperty",
-			"personTypeValue",
-			"relationshipTypeValue",
-			"contactMomentTypeValue",
-			"personTag",
+		).toEqual(["peopleRootFolder", "myPersonId", "showLabels"]);
+		expect(rootItems.filter((definition) => definition.type === "list")).toMatchObject([
+			{ heading: "Relationship templates" },
 		]);
-
-		const page = (name: string): DeclarativeSettingDefinition => {
-			const result = pages.find((candidate) => candidate.name === name);
-			if (!result) throw new Error(`Expected ${name} page.`);
-			return result;
-		};
-		const controlKeys = (definition: DeclarativeSettingDefinition): Array<string | undefined> =>
-			(definition.items ?? []).filter((item) => item.control !== undefined).map((item) => item.control?.key);
-
-		expect(controlKeys(page("People schema"))).toEqual([
-			"personIdProperty",
-			"nameProperty",
-			"aliasesProperty",
-			"organisationsProperty",
-			"photoProperty",
-			"birthDateProperty",
-			"pronounsProperty",
-			"genderProperty",
-			"emailsProperty",
-			"phonesProperty",
-			"jobTitleProperty",
-			"contactsProperty",
-			"myPersonId",
-		]);
-		expect(controlKeys(page("Relationships"))).toEqual([
-			"relationshipIdProperty",
-			"relationshipFromProperty",
-			"relationshipToProperty",
-			"relationshipTypesProperty",
-			"relationshipPresetProperty",
-			"relationshipFromRoleProperty",
-			"relationshipToRoleProperty",
-			"closenessProperty",
-			"sinceProperty",
-			"lastContactProperty",
-			"statusProperty",
-			"relationshipRoleFormat",
-		]);
-		expect(controlKeys(page("Contact moments"))).toEqual([
-			"contactMomentIdProperty",
-			"contactMomentPeopleProperty",
-			"contactMomentRelationshipProperty",
-			"contactMomentOccurredOnProperty",
-			"contactMomentChannelProperty",
-			"contactMomentSummaryProperty",
-			"contactMomentFollowUpOnProperty",
-			"contactMomentFollowUpStatusProperty",
-		]);
-		expect(controlKeys(page("View & Bases"))).toEqual([
-			"defaultCenterPersonId",
-			"enableBases",
-			"showLabels",
-			"showDiagnostics",
-		]);
-
-		const allDefinitions = definitionNodes(definitions);
-		const lists = allDefinitions.filter((definition) => definition.type === "list");
-		expect(lists).toHaveLength(1);
-		expect(page("Relationships").items?.filter((definition) => definition.type === "list")).toEqual(lists);
-		expect(lists[0]).toMatchObject({ heading: "Relationship templates" });
 	});
 
-	it("keeps every configured control unique with its existing declarative metadata after flattening", () => {
+	it("keeps only the user-facing controls unique with their current metadata", () => {
 		const metadata = flattenedSettingDefinitions(createTab()).map((definition) => ({
 			key: definition.control?.key,
 			type: definition.control?.type,
@@ -427,29 +356,6 @@ describe("People Atlas settings definitions", () => {
 
 		expect(metadata).toEqual([
 			{ key: "peopleRootFolder", type: "text", placeholder: "People", validates: true, optionKeys: [] },
-			{ key: "typeProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "personTypeValue", type: "text", placeholder: "person", validates: true, optionKeys: [] },
-			{ key: "relationshipTypeValue", type: "text", placeholder: "relationship", validates: true, optionKeys: [] },
-			{
-				key: "contactMomentTypeValue",
-				type: "text",
-				placeholder: "contact_moment",
-				validates: true,
-				optionKeys: [],
-			},
-			{ key: "personTag", type: "text", placeholder: "person", validates: false, optionKeys: [] },
-			{ key: "personIdProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "nameProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "aliasesProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "organisationsProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "photoProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "birthDateProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "pronounsProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "genderProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "emailsProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "phonesProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "jobTitleProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "contactsProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
 			{
 				key: "myPersonId",
 				type: "dropdown",
@@ -457,106 +363,18 @@ describe("People Atlas settings definitions", () => {
 				validates: false,
 				optionKeys: ["", "alice-id", "bob-id"],
 			},
-			{ key: "relationshipIdProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "relationshipFromProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "relationshipToProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "relationshipTypesProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "relationshipPresetProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "relationshipFromRoleProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "relationshipToRoleProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "closenessProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "sinceProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "lastContactProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "statusProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{
-				key: "relationshipRoleFormat",
-				type: "text",
-				placeholder: "{role} of {person}",
-				validates: true,
-				optionKeys: [],
-			},
-			{ key: "contactMomentIdProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "contactMomentPeopleProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{
-				key: "contactMomentRelationshipProperty",
-				type: "text",
-				placeholder: null,
-				validates: true,
-				optionKeys: [],
-			},
-			{
-				key: "contactMomentOccurredOnProperty",
-				type: "text",
-				placeholder: null,
-				validates: true,
-				optionKeys: [],
-			},
-			{ key: "contactMomentChannelProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{ key: "contactMomentSummaryProperty", type: "text", placeholder: null, validates: true, optionKeys: [] },
-			{
-				key: "contactMomentFollowUpOnProperty",
-				type: "text",
-				placeholder: null,
-				validates: true,
-				optionKeys: [],
-			},
-			{
-				key: "contactMomentFollowUpStatusProperty",
-				type: "text",
-				placeholder: null,
-				validates: true,
-				optionKeys: [],
-			},
-			{ key: "defaultCenterPersonId", type: "text", placeholder: null, validates: false, optionKeys: [] },
-			{ key: "enableBases", type: "toggle", placeholder: null, validates: false, optionKeys: [] },
 			{ key: "showLabels", type: "toggle", placeholder: null, validates: false, optionKeys: [] },
-			{ key: "showDiagnostics", type: "toggle", placeholder: null, validates: false, optionKeys: [] },
 		]);
 		expect(new Set(metadata.map((definition) => definition.key)).size).toBe(metadata.length);
 	});
 
-	it("exposes exactly the nine contact-moment schema settings with safe inline guidance", () => {
-		type TextDefinition = {
-			name?: string;
-			desc?: string;
-			control?: {
-				key?: string;
-				placeholder?: string;
-				validate?: (value: string) => string | undefined;
-			};
-		};
-		const definitions = flattenedSettingDefinitions(createTab()) as TextDefinition[];
-		const contactMomentDefinitions = definitions.filter((definition) =>
-			definition.control?.key?.startsWith("contactMoment"),
-		);
-		const typeProperty = definitions.find((definition) => definition.control?.key === "typeProperty");
+	it("does not expose contact-moment schema mappings or technical type controls", () => {
+		const definitions = flattenedSettingDefinitions(createTab());
+		const technicalKeys = definitions
+			.map((definition) => definition.control?.key)
+			.filter((key): key is string => key !== undefined && (key.startsWith("contactMoment") || key === "typeProperty"));
 
-		expect(contactMomentDefinitions.map((definition) => definition.control?.key).sort()).toEqual(
-			[
-				"contactMomentTypeValue",
-				"contactMomentIdProperty",
-				"contactMomentPeopleProperty",
-				"contactMomentRelationshipProperty",
-				"contactMomentOccurredOnProperty",
-				"contactMomentChannelProperty",
-				"contactMomentSummaryProperty",
-				"contactMomentFollowUpOnProperty",
-				"contactMomentFollowUpStatusProperty",
-			].sort(),
-		);
-
-		const byKey = (key: string) => contactMomentDefinitions.find((definition) => definition.control?.key === key);
-		expect(byKey("contactMomentTypeValue")?.desc).toContain("person and relationship type values");
-		expect(byKey("contactMomentPeopleProperty")?.desc).toContain("Canonical person-note wikilinks");
-		expect(byKey("contactMomentRelationshipProperty")?.desc).toContain("Optional canonical relationship-note wikilink");
-		expect(byKey("contactMomentOccurredOnProperty")?.desc).toContain("YYYY-MM-DD");
-		expect(byKey("contactMomentFollowUpOnProperty")?.desc).toContain("YYYY-MM-DD");
-		expect(byKey("contactMomentFollowUpStatusProperty")?.desc).toContain("open, done or dismissed");
-
-		expect(byKey("contactMomentTypeValue")?.control?.validate?.("PERSON")).toContain("must be distinct");
-		expect(byKey("contactMomentSummaryProperty")?.control?.validate?.("channel")).toContain("must be distinct");
-		expect(byKey("contactMomentSummaryProperty")?.control?.validate?.("moment_summary")).toBeUndefined();
-		expect(typeProperty?.control?.validate?.("contact_moment_id")).toContain("must be distinct");
+		expect(technicalKeys).toEqual([]);
 	});
 
 	it("offers None and canonical explicit My person candidates without direction or Person A/B settings", () => {
@@ -585,7 +403,7 @@ describe("People Atlas settings definitions", () => {
 		});
 	});
 
-	it("uses relationship template copy semantics and explicit endpoint-slot role labels", () => {
+	it("keeps relationship templates while hiding their technical mapping controls", () => {
 		const definitions = settingDefinitionNodes(createTab()) as Array<Record<string, unknown>>;
 		const templateProperty = definitions.find((definition) => definition.name === "Relationship template property");
 		const firstRole = definitions.find((definition) => definition.name === "First-person role property");
@@ -599,9 +417,9 @@ describe("People Atlas settings definitions", () => {
 			  }
 			| undefined;
 
-		expect(templateProperty?.desc).toBe("Optional stable template ID copied onto a relationship note as provenance.");
-		expect(firstRole?.desc).toBe("Optional role of the first endpoint relative to the second endpoint.");
-		expect(secondRole?.desc).toBe("Optional role of the second endpoint relative to the first endpoint.");
+		expect(templateProperty).toBeUndefined();
+		expect(firstRole).toBeUndefined();
+		expect(secondRole).toBeUndefined();
 		expect(templates).toMatchObject({
 			heading: "Relationship templates",
 			addItem: { name: "Add relationship template" },

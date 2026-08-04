@@ -1,6 +1,13 @@
 Status: active
 Created: 2026-08-01
-Updated: 2026-08-01
+Updated: 2026-08-04
+
+> **Nauwe supersessie (2026-08-04):**
+> `.10x/specs/contextual-actions-and-settings-simplification.md` vervangt alleen
+> de eerdere eis dat iedere configureerbare key zichtbaar blijft en de
+> bijbehorende schema-/view-pagina-membership. De declaratieve API, unieke
+> navigatiestructuur, I/O-vrije definitiefunctie en het behoud van de
+> relationship-template-lijst blijven gelden.
 
 # Settings-informatiearchitectuur
 

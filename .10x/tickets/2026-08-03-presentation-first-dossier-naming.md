@@ -1,4 +1,4 @@
-Status: active
+Status: done
 Created: 2026-08-03
 Updated: 2026-08-04
 Depends-On: None
@@ -116,7 +116,7 @@ Crockford Base32-suffix vanaf twee tekens gebruikt.
 - [x] Rename/delete wijzigen geen dossierpad of bestaande suffix; relatie-,
       contactmoment- en binary-lifecycle blijven ongewijzigd.
 - [x] Geen compatibility/migration/dual parser voor 0.8 `--<acht-hex>`-dossiers.
-- [ ] Iedere behaviorwijziging heeft assertion-grade RED→GREEN-evidence; alle
+- [x] Iedere behaviorwijziging heeft assertion-grade RED→GREEN-evidence; alle
       getroffen suites, onafhankelijke review en één semantisch actuele volledige
       Node-24 gate zijn groen.
 - [x] Diff bevat geen dependency-, lockfile-, workflow-, versie-, release- of
@@ -335,11 +335,10 @@ Crockford Base32-suffix vanaf twee tekens gebruikt.
 
 ## Blockers
 
-De onafhankelijke rereview en de afzonderlijk in dit ticket voorgeschreven
-`npm run build`- en reproduceerbaarheidsgates blijven open. De nieuwe brede
-Node-24 `npm run check` is groen; de post-record whitespacechecks zijn schoon.
-Scope en user-visible semantiek zijn verder geratificeerd; execution blijft
-actief.
+None. De finale onafhankelijke rereview is PASS; de actuele Node-24
+`npm run check`, afzonderlijke build en reproduceerbaarheidsgate zijn groen.
+Dit ticket is volledig geleverd in commit `6df234c4aea6ab8192f9bd5fa73c2b1f25d69f03`.
+Commit, push en release liggen buiten deze recordsluiting.
 
 ## Evidence
 
@@ -860,3 +859,7 @@ maakte zichtbaar dat geen aanvullende productiecorrectie nodig was.
   `47c5d5de74292a51b4720cd97ab680eba9b441b174a4cbe9e596e52e97d88cdc`.
   Alle implementatie-, review- en kwaliteitscriteria zijn gesloten; release-
   publicatie volgt via de geautoriseerde 0.9.0 Alpha-flow.
+- 2026-08-04: Record-only sluiting: de finale criteria stonden al onderbouwd
+  als groen, maar status en één checkbox waren niet gesynchroniseerd. De huidige
+  bron/testimplementatie is de ongewijzigde `6df234c`-commit; deze edit wijzigt
+  uitsluitend dit ticket en draait geen gate opnieuw. Status is daarom `done`.

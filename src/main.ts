@@ -820,7 +820,13 @@ export default class PeopleAtlasPlugin extends Plugin {
 		button.type = "button";
 		button.textContent = action === "person" ? "Edit person" : "Edit relationship";
 		button.setAttribute("aria-label", button.textContent);
-		panel.append(button);
+		const addRelationship = action === "person" ? document.createElement("button") : undefined;
+		if (addRelationship) {
+			addRelationship.type = "button";
+			addRelationship.textContent = "Add relationship";
+			addRelationship.setAttribute("aria-label", addRelationship.textContent);
+		}
+		panel.append(button, ...(addRelationship ? [addRelationship] : []));
 		section.append(panel);
 
 		const child = new MarkdownRenderChild(panel);
@@ -828,6 +834,9 @@ export default class PeopleAtlasPlugin extends Plugin {
 			if (action === "person") void this.openEditPerson(context.sourcePath);
 			else this.openEditRelationship(context.sourcePath);
 		});
+		if (addRelationship) {
+			child.registerDomEvent(addRelationship, "click", () => this.openCreateRelationship(context.sourcePath));
+		}
 		context.addChild(child);
 		this.renderedNoteActionDocumentIds.add(context.docId);
 		child.register(() => this.renderedNoteActionDocumentIds.delete(context.docId));

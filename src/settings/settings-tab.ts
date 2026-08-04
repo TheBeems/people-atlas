@@ -315,55 +315,20 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				control: { type: "toggle", key: "showDiagnostics" },
 			},
 		];
-		const missingDefinition = (): never => {
-			throw new Error("People Atlas Settings definition is missing.");
+		const requiredControlDefinition = (key: keyof PeopleAtlasSettings): SettingDefinitionItem => {
+			const definition = flatDefinitions.find(
+				(candidate): candidate is SettingDefinition => "control" in candidate && candidate.control?.key === key,
+			);
+			if (!definition) throw new Error(`People Atlas Settings definition is missing: ${key}.`);
+			return definition;
 		};
-		const [
-			peopleRootFolder = missingDefinition(),
-			personTypeValue = missingDefinition(),
-			relationshipTypeValue = missingDefinition(),
-			contactMomentTypeValue = missingDefinition(),
-			personTag = missingDefinition(),
-			typeProperty = missingDefinition(),
-			personIdProperty = missingDefinition(),
-			nameProperty = missingDefinition(),
-			aliasesProperty = missingDefinition(),
-			organisationsProperty = missingDefinition(),
-			photoProperty = missingDefinition(),
-			birthDateProperty = missingDefinition(),
-			pronounsProperty = missingDefinition(),
-			genderProperty = missingDefinition(),
-			emailsProperty = missingDefinition(),
-			phonesProperty = missingDefinition(),
-			jobTitleProperty = missingDefinition(),
-			contactsProperty = missingDefinition(),
-			relationshipIdProperty = missingDefinition(),
-			relationshipFromProperty = missingDefinition(),
-			relationshipToProperty = missingDefinition(),
-			relationshipTypesProperty = missingDefinition(),
-			relationshipPresetProperty = missingDefinition(),
-			relationshipFromRoleProperty = missingDefinition(),
-			relationshipToRoleProperty = missingDefinition(),
-			closenessProperty = missingDefinition(),
-			sinceProperty = missingDefinition(),
-			lastContactProperty = missingDefinition(),
-			statusProperty = missingDefinition(),
-			contactMomentIdProperty = missingDefinition(),
-			contactMomentPeopleProperty = missingDefinition(),
-			contactMomentRelationshipProperty = missingDefinition(),
-			contactMomentOccurredOnProperty = missingDefinition(),
-			contactMomentChannelProperty = missingDefinition(),
-			contactMomentSummaryProperty = missingDefinition(),
-			contactMomentFollowUpOnProperty = missingDefinition(),
-			contactMomentFollowUpStatusProperty = missingDefinition(),
-			relationshipRoleFormat = missingDefinition(),
-			relationshipTemplates = missingDefinition(),
-			myPerson = missingDefinition(),
-			defaultCenterPersonId = missingDefinition(),
-			enableBases = missingDefinition(),
-			showLabels = missingDefinition(),
-			showDiagnostics = missingDefinition(),
-		] = flatDefinitions;
+		const peopleRootFolder = requiredControlDefinition("peopleRootFolder");
+		const relationshipTemplates = flatDefinitions.find(
+			(definition) => "type" in definition && definition.type === "list",
+		);
+		if (!relationshipTemplates) throw new Error("People Atlas Settings relationship template list is missing.");
+		const myPerson = requiredControlDefinition("myPersonId");
+		const showLabels = requiredControlDefinition("showLabels");
 
 		return [
 			{
@@ -371,68 +336,9 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				heading: "General",
 				items: [
 					peopleRootFolder as SettingDefinition,
-					typeProperty as SettingDefinition,
-					personTypeValue as SettingDefinition,
-					relationshipTypeValue as SettingDefinition,
-					contactMomentTypeValue as SettingDefinition,
-					personTag as SettingDefinition,
-					{
-						type: "page",
-						name: "People schema",
-						items: [
-							personIdProperty,
-							nameProperty,
-							aliasesProperty,
-							organisationsProperty,
-							photoProperty,
-							birthDateProperty,
-							pronounsProperty,
-							genderProperty,
-							emailsProperty,
-							phonesProperty,
-							jobTitleProperty,
-							contactsProperty,
-							myPerson,
-						],
-					},
-					{
-						type: "page",
-						name: "Relationships",
-						items: [
-							relationshipIdProperty,
-							relationshipFromProperty,
-							relationshipToProperty,
-							relationshipTypesProperty,
-							relationshipPresetProperty,
-							relationshipFromRoleProperty,
-							relationshipToRoleProperty,
-							closenessProperty,
-							sinceProperty,
-							lastContactProperty,
-							statusProperty,
-							relationshipRoleFormat,
-							relationshipTemplates,
-						],
-					},
-					{
-						type: "page",
-						name: "Contact moments",
-						items: [
-							contactMomentIdProperty,
-							contactMomentPeopleProperty,
-							contactMomentRelationshipProperty,
-							contactMomentOccurredOnProperty,
-							contactMomentChannelProperty,
-							contactMomentSummaryProperty,
-							contactMomentFollowUpOnProperty,
-							contactMomentFollowUpStatusProperty,
-						],
-					},
-					{
-						type: "page",
-						name: "View & Bases",
-						items: [defaultCenterPersonId, enableBases, showLabels, showDiagnostics],
-					},
+					myPerson as SettingDefinition,
+					relationshipTemplates as SettingDefinition,
+					showLabels as SettingDefinition,
 				],
 			},
 		];

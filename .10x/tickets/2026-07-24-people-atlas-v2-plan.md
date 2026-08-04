@@ -1,6 +1,6 @@
-Status: open
+Status: done
 Created: 2026-07-24
-Updated: 2026-07-30
+Updated: 2026-08-04
 
 # People Atlas v2 implementation plan
 
@@ -131,9 +131,11 @@ Completed children:
 - `.10x/tickets/2026-07-26-generated-graph-index-invariants.md` (P7b)
 - `.10x/tickets/2026-07-27-high-dpi-popup-browser-matrix.md` (P7c)
 
-Next shaping candidate: P7d live/manual Obsidian Desktop, Bases, pop-out,
-assistive-technology and Mobile evidence. It has no active specification or
-executable ticket yet.
+P7d live/manual Obsidian Desktop, Bases, pop-out, assistive-technology and
+Mobile evidence was never shaped into an executable ticket. On 2026-08-04 the
+user explicitly decided not to pursue further implementation under this plan.
+It therefore remains an explicit live-host validation limit, not unfinished
+delivery scope.
 
 P7 is split into independently verifiable children:
 
@@ -142,7 +144,8 @@ P7 is split into independently verifiable children:
 2. P7b — generated graph/index invariants;
 3. P7c — missing high-DPI and real-pop-out browser matrix;
 4. P7d — separately initiated live/manual Obsidian Desktop, Bases, pop-out,
-   assistive-technology and Mobile evidence.
+   assistive-technology and Mobile evidence; explicitly not initiated and
+   excluded from this plan's 2026-08-04 closure by user decision.
 
 Existing P5 browser cases and P6 deterministic 100/1,000/5,000-node fixtures
 are reused. Later P7 shaping must not duplicate them or convert calibrated
@@ -173,10 +176,16 @@ Gate: CI produces a reproducible, verified release from an exact source revision
 
 ## Parent acceptance criteria
 
-- [ ] Each priority has a bounded child ticket with explicit scope, non-goals and acceptance criteria before implementation begins.
-- [ ] Child tickets close in dependency order, except for explicitly parallelized design or harness work.
-- [ ] Every child ticket records tests, review findings, residual risk and follow-up ownership.
-- [ ] The final release gate proves source revision, artifact contents, build provenance and full verification results.
+- [x] Each executed priority has a bounded child ticket with explicit scope,
+      non-goals and acceptance criteria. P7d was explicitly not initiated and
+      is an accepted live-host validation limit.
+- [x] Executed child tickets closed in dependency order, except for explicitly
+      parallelized design or harness work.
+- [x] Every executed child ticket records tests, review findings, residual risk
+      and follow-up ownership.
+- [x] The final local release gate records candidate artifact contents,
+      reproducibility and full verification results. External publication is a
+      separate versioned release transaction and is not implied by this closure.
 
 ## References
 
@@ -399,14 +408,18 @@ Gate: CI produces a reproducible, verified release from an exact source revision
   removes direction and adds My person through the separate UX0/UX2 tickets;
   earlier P1/P2/P3/P5 journal entries remain historical implementation
   evidence.
+- 2026-08-04: The user explicitly accepted closure of this parent plan and
+  directed that no further plan implementation be pursued. P7d was never
+  ratified as executable work and remains an explicit absence of live
+  Desktop/Bases/pop-out/assistive-technology/Mobile validation, not a shipped
+  claim. All executed child tickets are closed; the current external release is
+  handled as a separate versioned transaction.
 
 ## Blockers
 
-P5, measured P6 and P7a-P7c are closed within their explicit evidence
-boundaries. P7d shaping awaits the three ratifications recorded in
-`.10x/research/2026-07-27-p7d-live-validation-feasibility.md`: compatible
-Desktop update authorization, named assistive technology and available
-physical Mobile platform(s).
+None. P5, measured P6 and P7a-P7c are closed within their explicit evidence
+boundaries. P7d was explicitly excluded from further implementation by the
+user on 2026-08-04; its live-host validation gap remains documented.
 
 ## Evidence
 
@@ -447,8 +460,12 @@ physical Mobile platform(s).
 
 ## Review
 
-Pending review at parent-plan closure.
+Parent closure accepted by the user on 2026-08-04. The closure relies on the
+completed child-ticket reviews and does not claim unperformed P7d live-host
+validation.
 
 ## Retrospective
 
-Pending delivery.
+The staged child-ticket model delivered the automated graph, mutation,
+accessibility, performance, test-matrix and local release-hardening scope.
+Keep future live-host validation as separately shaped work if it is ever needed.

@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PartnerParentCandidate } from "../../src/domain/partner-parent-confirmation";
 import { PartnerParentConfirmationModal } from "../../src/editor/partner-parent-confirmation-modal";
+import { createTranslator, type Translator } from "../../src/i18n";
 import "../../styles.css";
 
 const candidate: PartnerParentCandidate = {
@@ -43,9 +44,9 @@ function buttonWithText(content: HTMLElement, text: string): HTMLButtonElement {
 	return button;
 }
 
-function mount(ownerDocument: Document = document) {
+function mount(ownerDocument: Document = document, translator: Translator = createTranslator("en")) {
 	const onReview = vi.fn();
-	const modal = new PartnerParentConfirmationModal({} as App, candidate, onReview);
+	const modal = new PartnerParentConfirmationModal({} as App, candidate, onReview, translator);
 	const title = ownerDocument.createElement("h2");
 	const content = ownerDocument.createElement("div");
 	content.style.boxSizing = "border-box";
@@ -70,8 +71,8 @@ describe("partner-ouderbevestiging", () => {
 		const review = buttonWithText(content, "Review relationship");
 		const notNow = buttonWithText(content, "Not now");
 
-		expect(content.textContent).toContain("Alex heeft partner Robin");
-		expect(content.textContent).toContain("Is Robin ook ouder van Sam?");
+		expect(content.textContent).toContain("Alex has partner Robin");
+		expect(content.textContent).toContain("Is Robin also a parent of Sam?");
 		expect(review.tagName).toBe("BUTTON");
 		expect(review.type).toBe("button");
 		expect(notNow.tagName).toBe("BUTTON");
@@ -81,6 +82,17 @@ describe("partner-ouderbevestiging", () => {
 		expect(document.activeElement).toBe(review);
 		expect(Array.from(content.querySelectorAll("*")).every((element) => element.ownerDocument === document)).toBe(true);
 		expect(content.scrollWidth).toBeLessThanOrEqual(content.clientWidth);
+	});
+
+	it("localiseert de vraag en actie-namen zonder persoonsnamen te wijzigen", () => {
+		const { content } = mount(document, createTranslator("nl-NL"));
+		const review = buttonWithText(content, "Relatie beoordelen");
+		const notNow = buttonWithText(content, "Nu niet");
+
+		expect(content.textContent).toContain("Alex heeft partner Robin");
+		expect(content.textContent).toContain("Is Robin ook ouder van Sam?");
+		expect(review.getAttribute("aria-label")).toBe("Relatie beoordelen");
+		expect(notNow.getAttribute("aria-label")).toBe("Nu niet");
 	});
 
 	it("roept alleen Review relationship eenmaal aan; Not now, direct close en Escape openen niets", () => {

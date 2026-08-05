@@ -12,6 +12,7 @@ import { peopleCollectionPaths, planPersonDossier } from "../domain/people-paths
 import type { PersonIndex } from "../index/person-index";
 import { type AtlasMutationService, MutationError } from "../mutations/atlas-mutation-service";
 import type { PeopleAtlasSettings } from "../settings/types";
+import { createTranslator, type Translator } from "../i18n";
 import { findMentionTrigger, formatMentionLink } from "./mention";
 
 export type PersonMentionSuggestion =
@@ -26,12 +27,13 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 		private readonly index: Pick<PersonIndex, "getSnapshot">,
 		private readonly mutations: AtlasMutationService,
 		private readonly getSettings: () => PeopleAtlasSettings,
+		private readonly t: Translator = createTranslator("en"),
 	) {
 		super(app);
 		this.setInstructions([
-			{ command: "↑↓", purpose: "navigate" },
-			{ command: "↵", purpose: "select" },
-			{ command: "esc", purpose: "dismiss" },
+			{ command: "↑↓", purpose: this.t.personMentionSuggest.navigate },
+			{ command: "↵", purpose: this.t.personMentionSuggest.select },
+			{ command: "esc", purpose: this.t.personMentionSuggest.dismiss },
 		]);
 	}
 
@@ -64,7 +66,10 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 		el.createDiv({
 			text:
 				item.kind === "create"
-					? `Create person “${item.name}” in ${peopleCollectionPaths(this.getSettings().peopleRootFolder).profiles}/`
+					? this.t.personMentionSuggest.create({
+							name: item.name,
+							directory: peopleCollectionPaths(this.getSettings().peopleRootFolder).profiles,
+						})
 					: item.name,
 		});
 		if (item.kind === "person") el.createDiv({ text: item.filePath, cls: "suggestion-note" });

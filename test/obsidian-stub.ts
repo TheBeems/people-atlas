@@ -4,6 +4,16 @@ export interface EventRef {
 
 type EventCallback = (...args: unknown[]) => void;
 
+let controlledLanguage = "en";
+
+export function getLanguage(): string {
+	return controlledLanguage;
+}
+
+export function setTestLanguage(language: string): void {
+	controlledLanguage = language;
+}
+
 class ControlledEventSource {
 	private readonly handlers = new Map<string, Set<EventCallback>>();
 
@@ -404,6 +414,8 @@ export class EditorSuggest<T> extends Component {
 }
 
 export class PluginSettingTab extends Component {
+	settingItems: unknown[] = [];
+
 	constructor(
 		readonly app: ControlledApp,
 		readonly plugin: Plugin,
@@ -420,6 +432,16 @@ export class PluginSettingTab extends Component {
 	getSettingDefinitions(): unknown[] {
 		return [];
 	}
+
+	update(): void {
+		this.settingItems = this.getSettingDefinitions();
+	}
+
+	display(): void {
+		this.update();
+	}
+
+	hide(): void {}
 }
 
 export class ControlledValue {

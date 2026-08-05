@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
+import { PeopleAtlasBasesView } from "../../src/bases/people-atlas-bases-view";
+import { createTranslator, type Translator } from "../../src/i18n";
 import type { AtlasEdge, AtlasNode, AtlasSnapshot, ContactMomentSummary } from "../../src/domain/types";
 import { AtlasRenderer, type AtlasRendererCallbacks } from "../../src/render/atlas-renderer";
 import { renderPersonProfile } from "../../src/render/person-profile";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
+import { DEFAULT_VIEW_STATE } from "../../src/settings/view-state";
 import type { PeopleAtlasSettings } from "../../src/settings/types";
 import { PeopleAtlasView } from "../../src/view/people-atlas-view";
 import "../../styles.css";
@@ -176,6 +179,7 @@ function mount(
 	graph = snapshot([alice, ghost, charlie], edges),
 	settings: PeopleAtlasSettings = DEFAULT_SETTINGS,
 	callbackOverrides: Partial<AtlasRendererCallbacks> = {},
+	translator: Translator = createTranslator("en"),
 ): {
 	renderer: AtlasRenderer;
 	callbacks: {
@@ -214,7 +218,7 @@ function mount(
 		onEditRelationship: vi.fn(),
 	};
 	Object.assign(callbacks, callbackOverrides);
-	const renderer = new AtlasRenderer(container, () => settings, callbacks as AtlasRendererCallbacks);
+	const renderer = new AtlasRenderer(container, () => settings, callbacks as AtlasRendererCallbacks, translator);
 	renderer.setGraph(graph);
 	return { renderer, callbacks };
 }
@@ -225,6 +229,142 @@ afterEach(() => {
 });
 
 describe("accessible atlas renderer", () => {
+	it("localizes fixed graph, list and follow-up controls without changing person or contact values", async () => {
+		const moment: ContactMomentSummary = {
+			id: "contact-alice",
+			filePath: "People/Contact moments/Alice.md",
+			personIds: [alice.personId as string],
+			occurredOn: localDay(0),
+			channel: "call",
+			summary: "Private note",
+			followUpOn: localDay(1),
+			followUpStatus: "open",
+		};
+		mount(snapshot([alice], [], [moment]), DEFAULT_SETTINGS, {}, createTranslator("nl-BE"));
+
+		expect(document.querySelector("legend")?.textContent).toBe("Weergave");
+		expect(page.getByRole("button", { name: "Grafiek" }).element()).toBeInstanceOf(HTMLButtonElement);
+		expect(page.getByRole("button", { name: "Lijst" }).element()).toBeInstanceOf(HTMLButtonElement);
+		expect(page.getByRole("button", { name: "Opvolgingen" }).element()).toBeInstanceOf(HTMLButtonElement);
+		expect(page.getByRole("application", { name: "Interactieve personen- en relatieatlas" }).element()).toBeInstanceOf(
+			HTMLCanvasElement,
+		);
+		expect(page.getByRole("button", { name: "Uitzoomen" }).element()).toBeInstanceOf(HTMLButtonElement);
+
+		await page.getByRole("button", { name: "Lijst" }).click();
+		expect(document.querySelector(".people-atlas-semantic-panel")?.getAttribute("aria-label")).toBe(
+			"Lijstweergave van Personenatlas",
+		);
+		expect(page.getByRole("button", { name: "Alice, Example Org", exact: true }).element().textContent).toContain(
+			"Alice",
+		);
+
+		await page.getByRole("button", { name: "Opvolgingen" }).click();
+		expect(page.getByRole("heading", { name: "Contactopvolgingen" }).element()).toBeInstanceOf(HTMLHeadingElement);
+		expect(document.querySelector(".people-atlas-follow-ups-panel")?.textContent).toContain("Private note");
+		expect(document.querySelector(".people-atlas-follow-ups-summary")?.textContent).toBe("1 openstaande opvolging");
+	});
+
+	it("localizes semantic-list live summaries including hidden contact moments", async () => {
+		mount(snapshot([alice], [], [], 1), DEFAULT_SETTINGS, {}, createTranslator("nl"));
+
+		await page.getByRole("button", { name: "Lijst" }).click();
+
+		expect(document.querySelector(".people-atlas-semantic-summary")?.getAttribute("aria-live")).toBe("polite");
+		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe(
+			"1 personen · 0 verbindingen · 1 verborgen contactmoment",
+		);
+	});
+
+	it("localizes noncanonical list metadata and accessible names without changing node labels", async () => {
+		mount(snapshot([ghost, ambiguous]), DEFAULT_SETTINGS, {}, createTranslator("nl"));
+
+		await page.getByRole("button", { name: "Lijst" }).click();
+
+		const ghostButton = document.querySelector<HTMLButtonElement>("[data-node-id='ghost:Missing']");
+		const ambiguousButton = document.querySelector<HTMLButtonElement>("[data-node-id='ambiguous:duplicate-alice']");
+		expect(ghostButton?.getAttribute("aria-label")).toBe("Missing, onopgeloste persoon");
+		expect(ghostButton?.textContent).toBe("MissingOnopgeloste persoon");
+		expect(ambiguousButton?.getAttribute("aria-label")).toBe("Ambiguous Alice, ambigue persoon");
+		expect(ambiguousButton?.textContent).toBe("Ambiguous AliceAmbigue persoon");
+	});
+
+	it("localizes selected Bases actions while preserving the canonical person path", () => {
+		const actions = document.createElement("div");
+		const openEditPerson = vi.fn();
+		const openCreateRelationship = vi.fn();
+		const openLogContact = vi.fn();
+		const view = Object.create(PeopleAtlasBasesView.prototype) as {
+			selectionActionsEl: HTMLElement;
+			plugin: {
+				t: Translator;
+				openEditPerson: (path: string) => void;
+				openCreateRelationship: (path: string) => void;
+				openLogContact: (path: string) => void;
+			};
+			canEditPerson: (node: AtlasNode | undefined) => boolean;
+		};
+		Object.assign(view, {
+			selectionActionsEl: actions,
+			plugin: { t: createTranslator("nl"), openEditPerson, openCreateRelationship, openLogContact },
+			canEditPerson: () => true,
+		});
+
+		(view as unknown as { renderSelectionActions: (node: AtlasNode | undefined) => void }).renderSelectionActions(
+			alice,
+		);
+
+		expect(Array.from(actions.querySelectorAll("button")).map((button) => button.textContent)).toEqual([
+			"Alice bewerken",
+			"Relatie met Alice aanmaken",
+			"Contact met Alice vastleggen",
+		]);
+		for (const button of Array.from(actions.querySelectorAll("button"))) button.click();
+		expect(openEditPerson).toHaveBeenCalledExactlyOnceWith("People/Alice.md");
+		expect(openCreateRelationship).toHaveBeenCalledExactlyOnceWith("People/Alice.md");
+		expect(openLogContact).toHaveBeenCalledExactlyOnceWith("People/Alice.md");
+	});
+
+	it("localizes standalone-view graph statistics without changing the graph snapshot", () => {
+		const statsEl = document.createElement("span");
+		const renderer = { setGraph: vi.fn() };
+		const view = Object.create(PeopleAtlasView.prototype) as {
+			selectedPath: string | undefined;
+			selectedCenterPath: string | undefined;
+			centerMode: "configured";
+			projectionMode: "free";
+			centerId: string | undefined;
+			activePath: string | undefined;
+			viewState: typeof DEFAULT_VIEW_STATE;
+			viewConfigurationKey: string;
+			fullSnapshot: AtlasSnapshot;
+			renderer: typeof renderer;
+			statsEl: HTMLElement;
+			plugin: { t: Translator };
+			renderDiagnostics: (snapshot: AtlasSnapshot) => void;
+		};
+		Object.assign(view, {
+			selectedPath: undefined,
+			selectedCenterPath: undefined,
+			centerMode: "configured",
+			projectionMode: "free",
+			centerId: undefined,
+			activePath: undefined,
+			viewState: structuredClone(DEFAULT_VIEW_STATE),
+			viewConfigurationKey: "localized-stats",
+			fullSnapshot: snapshot([alice], []),
+			renderer,
+			statsEl,
+			plugin: { t: createTranslator("nl") },
+			renderDiagnostics: vi.fn(),
+		});
+
+		(view as unknown as { renderSnapshot: () => void }).renderSnapshot();
+
+		expect(statsEl.textContent).toBe("1 personen · 0 verbindingen");
+		expect(renderer.setGraph.mock.calls[0]?.[0]).toMatchObject({ nodes: [{ id: "person-alice" }], edges: [] });
+	});
+
 	it("switches one surface without layout persistence and synchronizes canvas/list selection", async () => {
 		const { renderer, callbacks } = mount();
 		const graphMode = page.getByRole("button", { name: "Graph" });
@@ -389,6 +529,74 @@ describe("accessible atlas renderer", () => {
 		expect(resolvePersonPhoto).toHaveBeenNthCalledWith(3, photographedAlice.photoPath);
 	});
 
+	it("localizes profile-photo live-region fallbacks without exposing the vault path", () => {
+		const profile = renderPersonProfile(
+			document,
+			{ ...bob, photoPath: "Private/missing-person.png" },
+			{
+				contactHeadingLevel: 4,
+				resolvePhotoResource: () => ({ status: "missing" }),
+				translator: createTranslator("nl"),
+			},
+		);
+		const explanation = profile.querySelector<HTMLElement>(".people-atlas-profile-photo-explanation");
+
+		expect(explanation?.getAttribute("role")).toBe("status");
+		expect(explanation?.getAttribute("aria-live")).toBe("polite");
+		expect(explanation?.textContent).toBe(
+			"Foto niet beschikbaar: de verwezen vaultafbeelding kon niet worden gevonden.",
+		);
+		expect(profile.textContent).not.toContain("Private/missing-person.png");
+	});
+
+	it("covers every remaining localized profile-photo fallback without exposing vault paths", () => {
+		const cases: Array<{
+			status: "unsupported" | "unavailable";
+			expected: string;
+		}> = [
+			{ status: "unsupported", expected: "Foto niet beschikbaar: dit bestandstype wordt niet ondersteund." },
+			{
+				status: "unavailable",
+				expected: "Foto niet beschikbaar: er kon geen veilige vaultresource worden voorbereid.",
+			},
+		];
+		for (const testCase of cases) {
+			const profile = renderPersonProfile(
+				document,
+				{ ...bob, photoPath: "Private/source.png" },
+				{
+					contactHeadingLevel: 4,
+					resolvePhotoResource: () => ({ status: testCase.status }),
+					translator: createTranslator("nl"),
+				},
+			);
+			expect(profile.querySelector(".people-atlas-profile-photo-explanation")?.textContent).toBe(testCase.expected);
+			expect(profile.textContent).not.toContain("Private/source.png");
+		}
+
+		const decoding = renderPersonProfile(
+			document,
+			{ ...bob, photoPath: "Private/decode.png" },
+			{
+				contactHeadingLevel: 4,
+				resolvePhotoResource: () => ({
+					status: "ready",
+					resourceUrl: "about:blank#localized-profile-photo",
+					cacheKey: "Private/decode.png\u00001:1",
+				}),
+				translator: createTranslator("nl"),
+			},
+		);
+		document.body.append(decoding);
+		const image = decoding.querySelector<HTMLImageElement>(".people-atlas-profile-photo-image");
+		if (!image) throw new Error("Expected a profile-photo image.");
+		image.dispatchEvent(new Event("error"));
+		expect(decoding.querySelector(".people-atlas-profile-photo-explanation")?.textContent).toBe(
+			"Foto niet beschikbaar: de afbeelding kon niet worden gedecodeerd.",
+		);
+		expect(decoding.textContent).not.toContain("Private/decode.png");
+	});
+
 	it("renders private, owning-document photo fallbacks for absent, missing, unsupported, and undecodable images", () => {
 		const frame = document.createElement("iframe");
 		document.body.append(frame);
@@ -551,6 +759,7 @@ describe("accessible atlas renderer", () => {
 		const view = Object.create(PeopleAtlasView.prototype) as {
 			detailsEl: HTMLElement;
 			plugin: {
+				t: Translator;
 				index: {
 					getSnapshot(): { people: Array<{ id: string; filePath: string }> };
 				};
@@ -561,6 +770,7 @@ describe("accessible atlas renderer", () => {
 		};
 		view.detailsEl = details;
 		view.plugin = {
+			t: createTranslator("en"),
 			index: {
 				getSnapshot: () => ({ people: [{ id: profileAlice.id, filePath: profileAlice.filePath as string }] }),
 			},

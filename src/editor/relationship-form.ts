@@ -3,6 +3,8 @@ import {
 	deriveFamilyRelationshipTerm,
 	deriveSimpleRelationshipChoice,
 	getSimpleRelationshipRoles,
+	isDerivedFamilyRelationshipTerm,
+	type DerivedFamilyRelationshipTerm,
 	type SimpleRelationshipChoice,
 } from "../domain/simple-relationships";
 import { peopleCollectionPaths } from "../domain/people-paths";
@@ -50,11 +52,12 @@ export interface RelationshipCreatePrefill {
 }
 
 export interface RelationshipFormPresentation {
-	fromPersonLabel: string;
-	toPersonLabel: string;
-	fromRoleLabel: string;
-	toRoleLabel: string;
-	rolePreview?: string;
+	fromPerson?: { name: string; isMyPerson: boolean };
+	toPerson?: { name: string; isMyPerson: boolean };
+	fromRoleTerm?: string;
+	toRoleTerm?: string;
+	fromDerivedFamilyRoleTerm?: DerivedFamilyRelationshipTerm;
+	toDerivedFamilyRoleTerm?: DerivedFamilyRelationshipTerm;
 }
 
 export function buildRelationshipCreatePrefill(
@@ -109,29 +112,26 @@ export function getRelationshipFormPresentation(
 	const fromPerson = values.fromPath ? resolveCanonicalPersonByPath(people, values.fromPath) : undefined;
 	const toPerson = values.toPath ? resolveCanonicalPersonByPath(people, values.toPath) : undefined;
 	const myPerson = myPersonPath ? resolveCanonicalPersonByPath(people, myPersonPath) : undefined;
-	const presentation: RelationshipFormPresentation = {
-		fromPersonLabel: fromPerson ? `First person — ${fromPerson.name}` : "First person",
-		toPersonLabel: toPerson ? `Second person — ${toPerson.name}` : "Second person",
-		fromRoleLabel:
-			fromPerson && fromPerson.filePath === myPerson?.filePath
-				? "My role"
-				: fromPerson
-					? `${fromPerson.name}'s role`
-					: "First person's role",
-		toRoleLabel:
-			toPerson && toPerson.filePath === myPerson?.filePath
-				? "My role"
-				: toPerson
-					? `${toPerson.name}'s role`
-					: "Second person's role",
-	};
+	const presentation: RelationshipFormPresentation = {};
+	if (fromPerson) {
+		presentation.fromPerson = { name: fromPerson.name, isMyPerson: fromPerson.filePath === myPerson?.filePath };
+	}
+	if (toPerson) {
+		presentation.toPerson = { name: toPerson.name, isMyPerson: toPerson.filePath === myPerson?.filePath };
+	}
 	const fromRole = values.fromRole.trim();
 	const toRole = values.toRole.trim();
 	if (fromPerson && toPerson && fromRole && toRole) {
 		const fromTerm = deriveFamilyRelationshipTerm(fromRole, fromPerson.gender);
 		const toTerm = deriveFamilyRelationshipTerm(toRole, toPerson.gender);
-		presentation.rolePreview =
-			`In this relationship, ${fromPerson.name}'s role is ${fromTerm} ` + `and ${toPerson.name}'s role is ${toTerm}.`;
+		presentation.fromRoleTerm = fromTerm;
+		presentation.toRoleTerm = toTerm;
+		if (fromTerm !== fromRole && isDerivedFamilyRelationshipTerm(fromTerm)) {
+			presentation.fromDerivedFamilyRoleTerm = fromTerm;
+		}
+		if (toTerm !== toRole && isDerivedFamilyRelationshipTerm(toTerm)) {
+			presentation.toDerivedFamilyRoleTerm = toTerm;
+		}
 	}
 	return presentation;
 }

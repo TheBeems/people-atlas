@@ -3,6 +3,7 @@ import {
 	Notice,
 	Plugin,
 	TFile,
+	getLanguage,
 	type MarkdownPostProcessorContext,
 	type QueryController,
 	type WorkspaceLeaf,
@@ -58,6 +59,7 @@ import {
 	type RelationshipPresetSyncChange,
 	type RelationshipPresetSyncResult,
 } from "./settings/relationship-preset-sync";
+import { createTranslator, type Translator } from "./i18n";
 
 export interface MyPersonCandidate {
 	id: string;
@@ -73,6 +75,7 @@ interface ResolvedCanonicalContactMoment {
 
 export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
+	readonly t: Translator = createTranslator(getLanguage());
 	readonly index = new PersonIndex(this.app, () => this.settings);
 	private settingsWriteEnabled = true;
 	private readonly renderedNoteActionDocumentIds = new Set<string>();
@@ -103,49 +106,51 @@ export default class PeopleAtlasPlugin extends Plugin {
 			});
 		}
 
-		this.addRibbonIcon("map", "Open People Atlas", () => void this.activateView());
+		this.addRibbonIcon("map", this.t.ribbonOpenPeopleAtlas, () => void this.activateView());
 		this.addCommand({
 			id: "open-people-atlas",
-			name: "Open atlas",
+			name: this.t.commandOpenAtlas,
 			callback: () => void this.activateView(),
 		});
 		this.addCommand({
 			id: "open-follow-ups",
-			name: "Open follow-ups",
+			name: this.t.commandOpenFollowUps,
 			callback: () => void this.activateView("follow-ups"),
 		});
 		this.addCommand({
 			id: "create-person",
-			name: "Create person",
+			name: this.t.commandCreatePerson,
 			callback: () => this.openCreatePerson(),
 		});
 		this.addCommand({
 			id: "edit-current-person",
-			name: "Edit current person",
+			name: this.t.commandEditCurrentPerson,
 			callback: () => this.openEditCurrentPerson(),
 		});
 		this.addCommand({
 			id: "create-relationship",
-			name: "Create relationship",
+			name: this.t.commandCreateRelationship,
 			callback: () => this.openCreateRelationship(),
 		});
 		this.addCommand({
 			id: "edit-current-relationship",
-			name: "Edit current relationship",
+			name: this.t.commandEditCurrentRelationship,
 			callback: () => this.openEditCurrentRelationship(),
 		});
 		this.addCommand({
 			id: "log-contact",
-			name: "Log contact",
+			name: this.t.commandLogContact,
 			callback: () => this.openLogContact(),
 		});
 		this.addCommand({
 			id: "edit-current-contact-moment",
-			name: "Edit current contact moment",
+			name: this.t.commandEditCurrentContactMoment,
 			callback: () => this.openEditCurrentContactMoment(),
 		});
 		this.addSettingTab(new PeopleAtlasSettingTab(this));
-		this.registerEditorSuggest(new PersonMentionSuggest(this.app, this.index, this.mutations, () => this.settings));
+		this.registerEditorSuggest(
+			new PersonMentionSuggest(this.app, this.index, this.mutations, () => this.settings, this.t),
+		);
 		this.registerMarkdownPostProcessor((section, context) => this.renderNoteContextActions(section, context));
 
 		this.app.workspace.onLayoutReady(() => this.addChild(this.index));
@@ -153,7 +158,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 
 	async updateSetting(key: keyof PeopleAtlasSettings, value: unknown): Promise<boolean> {
 		if (!this.settingsWriteEnabled) {
-			new Notice("People Atlas settings are read-only until the plugin data is repaired.");
+			new Notice(this.t.noticeSettingsReadOnly);
 			return false;
 		}
 		if (key === "relationshipPresets") {
@@ -203,9 +208,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				return true;
 			} catch (error) {
 				this.settings = previous;
-				new Notice(
-					`People Atlas settings could not be saved: ${error instanceof Error ? error.message : String(error)}`,
-				);
+				new Notice(this.t.noticeSettingsSaveFailed({ error: error instanceof Error ? error.message : String(error) }));
 				return false;
 			}
 		});
@@ -364,8 +367,8 @@ export default class PeopleAtlasPlugin extends Plugin {
 		const matches = this.index.getSnapshot().people.filter((person) => person.id === configuredId);
 		if (matches.length === 1) return undefined;
 		return matches.length === 0
-			? `My person ID “${configuredId}” is not available in the canonical index.`
-			: `My person ID “${configuredId}” is ambiguous across ${matches.length} person notes.`;
+			? this.t.settingsMyPersonUnavailableWarning({ id: configuredId })
+			: this.t.settingsMyPersonAmbiguousWarning({ id: configuredId, count: matches.length });
 	}
 
 	private async persistViewState(viewConfigurationKey: string, state: AtlasViewState): Promise<void> {
@@ -408,6 +411,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			this.mutations,
 			() => this.settings,
 			() => this.index.getSnapshot().people,
+			this.t,
 		).open();
 	}
 
@@ -466,6 +470,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			this.mutations,
 			() => this.settings,
 			() => this.index.getSnapshot().people,
+			this.t,
 		).open();
 	}
 
@@ -490,17 +495,23 @@ export default class PeopleAtlasPlugin extends Plugin {
 			this.relationshipTemplateCreation(),
 			() => this.index.getSnapshot().people,
 			(success) => this.offerPartnerParentConfirmation(success),
+			this.t,
 		).open();
 	}
 
 	private offerPartnerParentConfirmation(success: RelationshipCreateSuccess): void {
 		const initialCandidate = this.partnerParentCandidateFor(success);
 		if (!initialCandidate) return;
-		new PartnerParentConfirmationModal(this.app, initialCandidate, () => {
-			const currentCandidate = this.partnerParentCandidateFor(success);
-			if (!currentCandidate || !samePartnerParentCandidate(initialCandidate, currentCandidate)) return;
-			this.openConfirmedPartnerParentEditor(currentCandidate);
-		}).open();
+		new PartnerParentConfirmationModal(
+			this.app,
+			initialCandidate,
+			() => {
+				const currentCandidate = this.partnerParentCandidateFor(success);
+				if (!currentCandidate || !samePartnerParentCandidate(initialCandidate, currentCandidate)) return;
+				this.openConfirmedPartnerParentEditor(currentCandidate);
+			},
+			this.t,
+		).open();
 	}
 
 	private partnerParentCandidateFor(success: RelationshipCreateSuccess) {
@@ -535,6 +546,8 @@ export default class PeopleAtlasPlugin extends Plugin {
 			undefined,
 			this.relationshipTemplateCreation(),
 			() => this.index.getSnapshot().people,
+			undefined,
+			this.t,
 		).open();
 	}
 
@@ -596,6 +609,8 @@ export default class PeopleAtlasPlugin extends Plugin {
 			onClose,
 			this.relationshipTemplateCreation(),
 			() => this.index.getSnapshot().people,
+			undefined,
+			this.t,
 		).open();
 		return true;
 	}
@@ -631,6 +646,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			() => this.settings,
 			undefined,
 			() => this.contactMomentContext(),
+			this.t,
 		).open();
 		return true;
 	}
@@ -742,7 +758,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				reviewedFollowUpStatus: moment.followUpStatus === "open" ? "open" : undefined,
 				status,
 			});
-			new Notice(status === "done" ? "Follow-up marked done." : "Follow-up dismissed.");
+			new Notice(status === "done" ? this.t.noticeFollowUpMarkedDone : this.t.noticeFollowUpDismissed);
 			return true;
 		} catch (error) {
 			new Notice(`The follow-up was not changed: ${error instanceof Error ? error.message : String(error)}`);
@@ -766,6 +782,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				() => this.settings,
 				onClose,
 				() => this.contactMomentContext(),
+				this.t,
 			).open();
 		} catch (error) {
 			new Notice(
@@ -815,15 +832,15 @@ export default class PeopleAtlasPlugin extends Plugin {
 		const document = section.ownerDocument;
 		const panel = document.createElement("div");
 		panel.className = "people-atlas-note-actions";
-		panel.setAttribute("aria-label", "People Atlas actions");
+		panel.setAttribute("aria-label", this.t.readingView.actions);
 		const button = document.createElement("button");
 		button.type = "button";
-		button.textContent = action === "person" ? "Edit person" : "Edit relationship";
+		button.textContent = action === "person" ? this.t.atlasRenderer.editPerson : this.t.atlasRenderer.editRelationship;
 		button.setAttribute("aria-label", button.textContent);
 		const addRelationship = action === "person" ? document.createElement("button") : undefined;
 		if (addRelationship) {
 			addRelationship.type = "button";
-			addRelationship.textContent = "Add relationship";
+			addRelationship.textContent = this.t.readingView.addRelationship;
 			addRelationship.setAttribute("aria-label", addRelationship.textContent);
 		}
 		panel.append(button, ...(addRelationship ? [addRelationship] : []));

@@ -16,6 +16,7 @@ import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
 import type { PersonEditSourceBaseline } from "../mutations/person-source-guard";
 import { resolvePersonPhotoResource } from "../person-photo-resource";
 import type { PeopleAtlasSettings } from "../settings/types";
+import { createTranslator, type Translator } from "../i18n";
 import {
 	PersonFormSession,
 	addPersonContact,
@@ -58,11 +59,12 @@ interface PersonInputOptions {
 }
 
 type PersonPhotoResolution =
-	| { status: "empty"; message: string }
-	| { status: "missing"; message: string }
-	| { status: "unsupported"; message: string }
-	| { status: "external"; message: string }
-	| { status: "unavailable"; message: string }
+	| { status: "empty" }
+	| { status: "unreadable" }
+	| { status: "missing" }
+	| { status: "unsupported" }
+	| { status: "external" }
+	| { status: "unavailable" }
 	| { status: "ready"; file: TFile };
 
 let personModalSequence = 0;
@@ -102,6 +104,7 @@ export class PersonModal extends Modal {
 		mutations: AtlasMutationService,
 		private readonly getSettings: () => PeopleAtlasSettings,
 		private readonly getCurrentPeople: () => PersonRecord[] = () => people,
+		private readonly t: Translator = createTranslator("en"),
 	) {
 		super(app);
 		const getCurrentPhotoAssets = () => this.currentPhotoAssets();
@@ -158,7 +161,8 @@ export class PersonModal extends Modal {
 	}
 
 	private renderForm(focusTarget?: PersonModalFocusTarget): void {
-		this.titleEl.textContent = this.mode.kind === "create" ? "Create person" : "Edit person";
+		this.titleEl.textContent =
+			this.mode.kind === "create" ? this.t.personModal.titleCreate : this.t.personModal.titleEdit;
 		this.advancedOpen = this.advancedDetails?.open ?? this.advancedOpen;
 		this.contentEl.replaceChildren();
 		this.resetControls();
@@ -166,13 +170,11 @@ export class PersonModal extends Modal {
 		const form = document.createElement("form");
 		form.className = "people-atlas-person-form";
 
-		const basic = this.addGroup(form, "Basic");
+		const basic = this.addGroup(form, this.t.personModal.sectionBasic);
 		this.nameInput = this.addInput(basic, {
-			label: "Name",
+			label: this.t.personModal.name,
 			description:
-				this.mode.kind === "create"
-					? "Required display name. The new note filename is derived from this value."
-					: "Changing the display name also proposes a filename change in the current folder.",
+				this.mode.kind === "create" ? this.t.personModal.nameDescriptionCreate : this.t.personModal.nameDescriptionEdit,
 			value: this.values.name,
 			onInput: (value) => {
 				this.values.name = value;
@@ -184,69 +186,68 @@ export class PersonModal extends Modal {
 			const photoHint = document.createElement("p");
 			photoHint.className = "people-atlas-person-photo-create-hint";
 			photoHint.setAttribute("role", "note");
-			photoHint.textContent =
-				"Photo: Save this person first to create its dossier. Place an image in the person's dossier yourself. Then open Edit and choose the dossier image.";
+			photoHint.textContent = this.t.personModal.createPhotoHint;
 			basic.append(photoHint);
 		} else this.addPhotoControl(basic);
 		this.addTextarea(basic, {
-			label: "Aliases",
-			description: "Optional alternative names, one per line.",
+			label: this.t.personModal.aliases,
+			description: this.t.personModal.aliasesDescription,
 			value: this.values.aliases,
 			onInput: (value) => {
 				this.values.aliases = value;
 			},
 		});
 
-		const profile = this.addGroup(form, "Profile");
+		const profile = this.addGroup(form, this.t.personModal.sectionProfile);
 		this.addBirthDateControl(profile);
 		this.addInput(profile, {
-			label: "Pronouns",
-			description: "Optional user-authored pronouns. People Atlas does not infer relationship meaning from them.",
+			label: this.t.personModal.pronouns,
+			description: this.t.personModal.pronounsDescription,
 			value: this.values.pronouns,
 			onInput: (value) => {
 				this.values.pronouns = value;
 			},
 		});
 		this.addInput(profile, {
-			label: "Gender",
-			description: "Optional user-authored gender. People Atlas does not infer relationship meaning from it.",
+			label: this.t.personModal.gender,
+			description: this.t.personModal.genderDescription,
 			value: this.values.gender,
 			onInput: (value) => {
 				this.values.gender = value;
 			},
 		});
 		this.addInput(profile, {
-			label: "Job title",
-			description: "Optional current job title.",
+			label: this.t.personModal.jobTitle,
+			description: this.t.personModal.jobTitleDescription,
 			value: this.values.jobTitle,
 			onInput: (value) => {
 				this.values.jobTitle = value;
 			},
 		});
 		this.addTextarea(profile, {
-			label: "Organisations",
-			description: "Optional organisations, one per line.",
+			label: this.t.personModal.organisations,
+			description: this.t.personModal.organisationsDescription,
 			value: this.values.organisations,
 			onInput: (value) => {
 				this.values.organisations = value;
 			},
 		});
 
-		const contactDetails = this.addGroup(form, "Contact details");
+		const contactDetails = this.addGroup(form, this.t.personModal.sectionContactDetails);
 		this.addProfileList(
 			contactDetails,
-			"Email addresses",
-			"Add one address per entry. Each address needs one @; duplicates are compared without letter case.",
+			this.t.personModal.emailAddresses,
+			this.t.personModal.emailAddressesDescription,
 			"email",
 		);
 		this.addProfileList(
 			contactDetails,
-			"Phone numbers",
-			"Add one number per entry. Formatting and international prefixes are preserved.",
+			this.t.personModal.phoneNumbers,
+			this.t.personModal.phoneNumbersDescription,
 			"phone",
 		);
 
-		const linkedPeople = this.addGroup(form, "Linked people");
+		const linkedPeople = this.addGroup(form, this.t.personModal.sectionLinkedPeople);
 		this.addLinkedPeople(linkedPeople);
 
 		this.advancedDetails = document.createElement("details");
@@ -259,18 +260,18 @@ export class PersonModal extends Modal {
 		const advancedBody = document.createElement("div");
 		advancedBody.className = "people-atlas-person-advanced-body";
 		this.pathInput = this.addInput(advancedBody, {
-			label: this.mode.kind === "create" ? "Person note path" : "Current person note path",
+			label: this.mode.kind === "create" ? this.t.personModal.personNotePath : this.t.personModal.currentPersonNotePath,
 			description:
 				this.mode.kind === "create"
-					? "The configured People folder and a safe filename determine this path."
-					: "The note stays in this folder. A changed filename requires a separate confirmation.",
+					? this.t.personModal.personNotePathDescriptionCreate
+					: this.t.personModal.personNotePathDescriptionEdit,
 			value: this.values.path,
 			readOnly: true,
 		});
 		this.pathInput.dataset.personPath = "true";
 		this.addInput(advancedBody, {
-			label: "Person ID",
-			description: "Stable identity planned before any vault write and managed by People Atlas.",
+			label: this.t.personModal.personId,
+			description: this.t.personModal.personIdDescription,
 			value: this.values.personId,
 			readOnly: true,
 		});
@@ -286,12 +287,12 @@ export class PersonModal extends Modal {
 		actions.className = "people-atlas-form-actions";
 		const cancelButton = document.createElement("button");
 		cancelButton.type = "button";
-		cancelButton.textContent = "Cancel";
+		cancelButton.textContent = this.t.personModal.cancel;
 		cancelButton.addEventListener("click", () => this.close());
 		this.saveButton = document.createElement("button");
 		this.saveButton.type = "submit";
 		this.saveButton.className = "mod-cta";
-		this.saveButton.textContent = "Save";
+		this.saveButton.textContent = this.t.personModal.save;
 		actions.append(cancelButton, this.saveButton);
 		form.addEventListener("submit", (event) => {
 			event.preventDefault();
@@ -329,17 +330,16 @@ export class PersonModal extends Modal {
 		this.refreshPhotoInitials();
 
 		this.photoInput = this.addInput(section, {
-			label: "Photo",
-			description:
-				"Stored vault path or wikilink. Use the dossier image picker or Clear photo to change it; unchanged authored text stays exact.",
+			label: this.t.personModal.photo,
+			description: this.t.personModal.photoDescription,
 			value: this.values.photo,
 			readOnly: true,
 		});
 		appendDescribedBy(this.photoInput, this.photoStatusEl.id);
 
 		this.photoSearchInput = this.addInput(section, {
-			label: "Search dossier images",
-			description: "Filter supported PNG, JPG, JPEG, WebP, GIF and AVIF files in this person's own dossier.",
+			label: this.t.personModal.searchDossierImages,
+			description: this.t.personModal.searchDossierImagesDescription,
 			value: "",
 			type: "search",
 			inputMode: "search",
@@ -366,11 +366,10 @@ export class PersonModal extends Modal {
 		const selectDescriptionId = `${selectId}-description`;
 		const selectLabel = document.createElement("label");
 		selectLabel.htmlFor = selectId;
-		selectLabel.textContent = "Dossier image";
+		selectLabel.textContent = this.t.personModal.dossierImage;
 		const selectDescription = document.createElement("small");
 		selectDescription.id = selectDescriptionId;
-		selectDescription.textContent =
-			"Each choice from this person's own dossier uses its full vault-relative path, so equal filenames remain distinct.";
+		selectDescription.textContent = this.t.personModal.dossierImageDescription;
 		this.photoSelect = document.createElement("select");
 		this.photoSelect.id = selectId;
 		this.photoSelect.dataset.personPhotoSelect = "true";
@@ -386,7 +385,7 @@ export class PersonModal extends Modal {
 		actions.className = "people-atlas-person-photo-actions";
 		const clear = document.createElement("button");
 		clear.type = "button";
-		clear.textContent = "Clear photo";
+		clear.textContent = this.t.personModal.clearPhoto;
 		clear.addEventListener("click", () => {
 			this.values.photo = "";
 			this.values.photoSelectionPath = undefined;
@@ -425,9 +424,9 @@ export class PersonModal extends Modal {
 		const document = this.photoSelect.ownerDocument;
 		const placeholder = document.createElement("option");
 		placeholder.value = "";
-		if (assets.length === 0) placeholder.textContent = "No supported dossier images";
-		else if (this.filteredPhotoAssets.length === 0) placeholder.textContent = "No dossier images match";
-		else placeholder.textContent = "Choose a dossier image";
+		if (assets.length === 0) placeholder.textContent = this.t.personModal.noSupportedDossierImages;
+		else if (this.filteredPhotoAssets.length === 0) placeholder.textContent = this.t.personModal.noDossierImagesMatch;
+		else placeholder.textContent = this.t.personModal.chooseDossierImage;
 		this.photoSelect.replaceChildren(placeholder);
 		for (const asset of this.filteredPhotoAssets) {
 			const option = document.createElement("option");
@@ -444,10 +443,7 @@ export class PersonModal extends Modal {
 		const matches = this.currentPhotoAssets().filter((asset) => asset.path === path);
 		const asset = matches.length === 1 ? matches[0] : undefined;
 		if (!asset) {
-			this.showPhotoFallback(
-				"missing",
-				`The selected photo “${path}” is no longer uniquely available in the vault. Choose it again or clear the photo.`,
-			);
+			this.showPhotoFallback("missing", this.t.personModal.selectedPhotoUnavailable({ path }));
 			this.refreshPhotoPickerOptions();
 			return;
 		}
@@ -470,7 +466,7 @@ export class PersonModal extends Modal {
 
 		const resolution = this.resolvePhoto();
 		if (resolution.status !== "ready") {
-			this.showPhotoFallback(resolution.status, resolution.message);
+			this.showPhotoFallback(resolution.status, this.photoFallbackMessage(resolution.status));
 			return;
 		}
 
@@ -478,14 +474,7 @@ export class PersonModal extends Modal {
 		if (resource.status !== "ready") {
 			const fallbackStatus =
 				resource.status === "missing" || resource.status === "unsupported" ? resource.status : "unavailable";
-			this.showPhotoFallback(
-				fallbackStatus,
-				resource.status === "missing"
-					? "The referenced vault image is missing. Initials will be shown."
-					: resource.status === "unsupported"
-						? "This photo format is unsupported. Choose a PNG, JPG, JPEG, WebP, GIF or AVIF image."
-						: "The selected vault image is temporarily unavailable. Initials will be shown.",
-			);
+			this.showPhotoFallback(fallbackStatus, this.photoFallbackMessage(fallbackStatus));
 			return;
 		}
 
@@ -499,7 +488,7 @@ export class PersonModal extends Modal {
 		frame?.append(image);
 		preview.dataset.photoStatus = "loading";
 		status.hidden = false;
-		status.textContent = "Loading the selected vault image. Initials are shown until it is ready.";
+		status.textContent = this.t.personModal.photoLoading;
 		image.addEventListener("load", () => {
 			if (!this.isCurrentPhotoImage(image, sequence)) return;
 			image.hidden = false;
@@ -514,32 +503,18 @@ export class PersonModal extends Modal {
 			initials.hidden = false;
 			preview.dataset.photoStatus = "decode-error";
 			status.hidden = false;
-			status.textContent = "The selected vault image could not be decoded. Initials will be shown.";
+			status.textContent = this.t.personModal.photoDecodeError;
 		});
 		image.src = resource.resourceUrl;
 	}
 
 	private resolvePhoto(): PersonPhotoResolution {
 		const rawPhoto = this.values.photo;
-		if (!rawPhoto.trim()) {
-			return { status: "empty", message: "No photo is selected. Initials will be shown." };
-		}
-		if (isExternalPhotoReference(rawPhoto)) {
-			return {
-				status: "external",
-				message: "External or network photo references are not supported. Initials will be shown.",
-			};
-		}
+		if (!rawPhoto.trim()) return { status: "empty" };
+		if (isExternalPhotoReference(rawPhoto)) return { status: "external" };
 		const target = parsePersonReference(rawPhoto)?.target.trim();
-		if (!target) {
-			return { status: "missing", message: "The photo reference is not readable. Initials will be shown." };
-		}
-		if (isExternalPhotoReference(target)) {
-			return {
-				status: "external",
-				message: "External or network photo references are not supported. Initials will be shown.",
-			};
-		}
+		if (!target) return { status: "unreadable" };
+		if (isExternalPhotoReference(target)) return { status: "external" };
 
 		let file: TFile | undefined;
 		if (this.values.photoSelectionPath !== undefined) {
@@ -555,22 +530,26 @@ export class PersonModal extends Modal {
 				if (resolved) file = resolved;
 			}
 		}
-		if (!file) {
-			if (pathHasUnsupportedExtension(target)) {
-				return {
-					status: "unsupported",
-					message: "This photo format is unsupported. Choose a PNG, JPG, JPEG, WebP, GIF or AVIF image.",
-				};
-			}
-			return { status: "missing", message: "The referenced vault image is missing. Initials will be shown." };
-		}
-		if (!isSupportedPersonPhotoPath(file.path)) {
-			return {
-				status: "unsupported",
-				message: "This photo format is unsupported. Choose a PNG, JPG, JPEG, WebP, GIF or AVIF image.",
-			};
-		}
+		if (!file) return { status: pathHasUnsupportedExtension(target) ? "unsupported" : "missing" };
+		if (!isSupportedPersonPhotoPath(file.path)) return { status: "unsupported" };
 		return { status: "ready", file };
+	}
+
+	private photoFallbackMessage(status: Exclude<PersonPhotoResolution["status"], "ready">): string {
+		switch (status) {
+			case "empty":
+				return this.t.personModal.photoEmpty;
+			case "external":
+				return this.t.personModal.photoExternal;
+			case "unreadable":
+				return this.t.personModal.photoUnreadable;
+			case "missing":
+				return this.t.personModal.photoMissing;
+			case "unsupported":
+				return this.t.personModal.photoUnsupported;
+			case "unavailable":
+				return this.t.personModal.photoUnavailable;
+		}
 	}
 
 	private photoSourcePath(): string {
@@ -617,16 +596,15 @@ export class PersonModal extends Modal {
 		const group = document.createElement("fieldset");
 		group.className = "people-atlas-person-birth-date";
 		const legend = document.createElement("legend");
-		legend.textContent = "Birth date";
+		legend.textContent = this.t.personModal.birthDate;
 		const description = document.createElement("small");
 		description.id = `people-atlas-person-birth-description-${++personModalSequence}`;
-		description.textContent =
-			"Enter month and day. A four-digit year is optional; clearing only the year keeps a birthday without a known year.";
+		description.textContent = this.t.personModal.birthDateDescription;
 		const controls = document.createElement("div");
 		controls.className = "people-atlas-person-birth-date-controls";
 		const month = this.addInput(controls, {
-			label: "Month",
-			description: "Month number from 1 to 12.",
+			label: this.t.personModal.month,
+			description: this.t.personModal.monthDescription,
 			value: this.values.birthDate.month,
 			inputMode: "numeric",
 			onInput: (value) => {
@@ -635,8 +613,8 @@ export class PersonModal extends Modal {
 			},
 		});
 		const day = this.addInput(controls, {
-			label: "Day",
-			description: "Calendar-valid day for the selected month.",
+			label: this.t.personModal.day,
+			description: this.t.personModal.dayDescription,
 			value: this.values.birthDate.day,
 			inputMode: "numeric",
 			onInput: (value) => {
@@ -645,8 +623,8 @@ export class PersonModal extends Modal {
 			},
 		});
 		const year = this.addInput(controls, {
-			label: "Year (optional)",
-			description: "Optional four-digit year from 0001 to 9999.",
+			label: this.t.personModal.yearOptional,
+			description: this.t.personModal.yearDescription,
 			value: this.values.birthDate.year,
 			inputMode: "numeric",
 			onInput: (value) => {
@@ -657,7 +635,7 @@ export class PersonModal extends Modal {
 		this.birthInputs = [month, day, year];
 		const clear = document.createElement("button");
 		clear.type = "button";
-		clear.textContent = "Clear birth date";
+		clear.textContent = this.t.personModal.clearBirthDate;
 		clear.addEventListener("click", () => {
 			this.values.birthDate = { year: "", month: "", day: "" };
 			for (const input of this.birthInputs) input.value = "";
@@ -703,7 +681,10 @@ export class PersonModal extends Modal {
 			const errorId = `${id}-error`;
 			const label = document.createElement("label");
 			label.htmlFor = id;
-			label.textContent = kind === "email" ? `Email address ${index + 1}` : `Phone number ${index + 1}`;
+			label.textContent =
+				kind === "email"
+					? this.t.personModal.emailAddress({ index: index + 1 })
+					: this.t.personModal.phoneNumber({ index: index + 1 });
 			const input = document.createElement("input");
 			input.id = id;
 			input.type = "text";
@@ -719,10 +700,12 @@ export class PersonModal extends Modal {
 			});
 			const remove = document.createElement("button");
 			remove.type = "button";
-			remove.textContent = "Remove";
+			remove.textContent = this.t.personModal.remove;
 			remove.setAttribute(
 				"aria-label",
-				kind === "email" ? `Remove email address ${index + 1}` : `Remove phone number ${index + 1}`,
+				kind === "email"
+					? this.t.personModal.removeEmailAddress({ index: index + 1 })
+					: this.t.personModal.removePhoneNumber({ index: index + 1 }),
 			);
 			remove.addEventListener("click", () => {
 				values.splice(index, 1);
@@ -745,7 +728,7 @@ export class PersonModal extends Modal {
 		}
 		const add = document.createElement("button");
 		add.type = "button";
-		add.textContent = kind === "email" ? "Add email address" : "Add phone number";
+		add.textContent = kind === "email" ? this.t.personModal.addEmailAddress : this.t.personModal.addPhoneNumber;
 		add.addEventListener("click", () => {
 			values.push("");
 			this.renderForm({ kind, index: values.length - 1 });
@@ -758,8 +741,7 @@ export class PersonModal extends Modal {
 		const document = container.ownerDocument;
 		const description = document.createElement("small");
 		description.id = `people-atlas-person-linked-description-${++personModalSequence}`;
-		description.textContent =
-			"Links are stored on this person note as simple connections. New links must resolve to one canonical, non-self person. Existing unresolved values remain until you remove them. Use Create relationship for roles, dates, status and other rich metadata.";
+		description.textContent = this.t.personModal.linkedPeopleDescription;
 		const list = document.createElement("ul");
 		list.className = "people-atlas-person-linked-list";
 		for (const [index, contact] of this.values.contacts.entries()) {
@@ -770,11 +752,14 @@ export class PersonModal extends Modal {
 			const text = document.createElement("span");
 			text.textContent = resolved
 				? `${resolved.name} — ${resolved.filePath}`
-				: `Unresolved or ambiguous — ${contact.raw}`;
+				: this.t.personModal.unresolvedOrAmbiguous({ value: contact.raw });
 			const remove = document.createElement("button");
 			remove.type = "button";
-			remove.textContent = "Remove";
-			remove.setAttribute("aria-label", `Remove linked person ${resolved?.name ?? contact.raw}`);
+			remove.textContent = this.t.personModal.remove;
+			remove.setAttribute(
+				"aria-label",
+				this.t.personModal.removeLinkedPerson({ value: resolved?.name ?? contact.raw }),
+			);
 			remove.addEventListener("click", () => {
 				this.values.contacts = this.values.contacts.filter((_, candidateIndex) => candidateIndex !== index);
 				this.renderForm({ kind: "linked-person" });
@@ -789,7 +774,7 @@ export class PersonModal extends Modal {
 		const datalistId = `${inputId}-choices`;
 		const label = document.createElement("label");
 		label.htmlFor = inputId;
-		label.textContent = "Add a linked person";
+		label.textContent = this.t.personModal.addLinkedPerson;
 		const input = document.createElement("input");
 		input.id = inputId;
 		input.type = "search";
@@ -809,7 +794,7 @@ export class PersonModal extends Modal {
 		}
 		const add = document.createElement("button");
 		add.type = "button";
-		add.textContent = "Add linked person";
+		add.textContent = this.t.personModal.addLinkedPersonButton;
 		add.addEventListener("click", () => {
 			const result = addPersonContact(
 				this.values.contacts,
@@ -830,22 +815,21 @@ export class PersonModal extends Modal {
 	}
 
 	private renderRenameConfirmation(currentPath: string, targetPath: string, errorMessage?: string): void {
-		this.titleEl.textContent = "Confirm person rename";
+		this.titleEl.textContent = this.t.personModal.confirmRename;
 		this.contentEl.replaceChildren();
 		this.resetControls();
 		const document = this.contentEl.ownerDocument;
 		const panel = document.createElement("div");
 		panel.className = "people-atlas-person-rename-confirmation";
 		const explanation = document.createElement("p");
-		explanation.textContent =
-			"Saving this name also renames the Markdown note. Obsidian updates links according to the vault setting for automatic link updates.";
+		explanation.textContent = this.t.personModal.renameExplanation;
 		const paths = document.createElement("dl");
 		const fromLabel = document.createElement("dt");
-		fromLabel.textContent = "Current path";
+		fromLabel.textContent = this.t.personModal.currentPath;
 		const fromValue = document.createElement("dd");
 		fromValue.textContent = currentPath;
 		const toLabel = document.createElement("dt");
-		toLabel.textContent = "New path";
+		toLabel.textContent = this.t.personModal.newPath;
 		const toValue = document.createElement("dd");
 		toValue.textContent = targetPath;
 		paths.append(fromLabel, fromValue, toLabel, toValue);
@@ -859,12 +843,14 @@ export class PersonModal extends Modal {
 		actions.className = "people-atlas-form-actions";
 		const back = document.createElement("button");
 		back.type = "button";
-		back.textContent = "Back";
+		back.textContent = this.t.personModal.back;
 		back.addEventListener("click", () => this.renderForm());
 		this.saveButton = document.createElement("button");
 		this.saveButton.type = "button";
 		this.saveButton.className = "mod-cta";
-		this.saveButton.textContent = errorMessage ? "Retry rename and save" : "Rename and save";
+		this.saveButton.textContent = errorMessage
+			? this.t.personModal.retryRenameAndSave
+			: this.t.personModal.renameAndSave;
 		this.saveButton.addEventListener("click", () => void this.submit(true));
 		actions.append(back, this.saveButton);
 		panel.append(explanation, paths, this.errorEl, actions);
@@ -943,7 +929,9 @@ export class PersonModal extends Modal {
 		this.pathInput.value = preview;
 		if (this.advancedSummary) {
 			this.advancedSummary.textContent =
-				this.mode.kind === "create" ? `Advanced — Destination: ${preview}` : `Advanced — Current path: ${preview}`;
+				this.mode.kind === "create"
+					? this.t.personModal.advancedDestination({ path: preview })
+					: this.t.personModal.advancedCurrentPath({ path: preview });
 		}
 	}
 

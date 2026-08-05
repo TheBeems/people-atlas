@@ -18,6 +18,9 @@ const FAMILY_TERMS = {
 	sibling: { woman: "sister", man: "brother" },
 } as const;
 
+export type DerivedFamilyRelationshipTerm =
+	(typeof FAMILY_TERMS)[keyof typeof FAMILY_TERMS][keyof (typeof FAMILY_TERMS)[keyof typeof FAMILY_TERMS]];
+
 export function deriveSimpleRelationshipChoice(fromRole: string, toRole: string): SimpleRelationshipChoice {
 	const from = fromRole.trim();
 	const to = toRole.trim();
@@ -38,4 +41,15 @@ export function deriveFamilyRelationshipTerm(role: string, gender: string | unde
 	const normalizedGender = gender?.trim().toLowerCase();
 	if (normalizedGender !== "woman" && normalizedGender !== "man") return role;
 	return FAMILY_TERMS[role][normalizedGender];
+}
+
+export function isDerivedFamilyRelationshipTerm(term: string): term is DerivedFamilyRelationshipTerm {
+	return (
+		term === "mother" ||
+		term === "father" ||
+		term === "daughter" ||
+		term === "son" ||
+		term === "sister" ||
+		term === "brother"
+	);
 }

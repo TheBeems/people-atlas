@@ -2,6 +2,7 @@ import { Modal, Notice, type App, type TFile } from "obsidian";
 import type { SimpleRelationshipChoice } from "../domain/simple-relationships";
 import type { PersonRecord, RelationshipRecord } from "../domain/types";
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
+import { createTranslator, type Translator } from "../i18n";
 import { RelationshipPresetModal } from "../settings/relationship-preset-modal";
 import type { RelationshipPreset } from "../settings/relationship-presets";
 import type { PeopleAtlasSettings } from "../settings/types";
@@ -111,6 +112,7 @@ export class RelationshipModal extends Modal {
 		private readonly templateCreation?: RelationshipTemplateCreation,
 		getCurrentPeople: () => PersonRecord[] = () => people,
 		private readonly onCreateSuccess?: (success: RelationshipCreateSuccess) => void,
+		private readonly t: Translator = createTranslator("en"),
 	) {
 		super(app);
 		if (mode.kind === "create") {
@@ -134,7 +136,8 @@ export class RelationshipModal extends Modal {
 	}
 
 	override onOpen(): void {
-		this.titleEl.textContent = this.mode.kind === "create" ? "Create relationship" : "Edit relationship";
+		this.titleEl.textContent =
+			this.mode.kind === "create" ? this.t.relationshipModal.titleCreate : this.t.relationshipModal.titleEdit;
 		this.contentEl.classList.add("people-atlas-relationship-modal");
 		this.buildForm();
 	}
@@ -156,10 +159,10 @@ export class RelationshipModal extends Modal {
 			datalist.append(option);
 		}
 
-		const peopleGroup = this.addGroup(form, "People");
+		const peopleGroup = this.addGroup(form, this.t.relationshipModal.groupPeople);
 		const fromField = this.addInput(peopleGroup, {
-			label: "First person",
-			description: "Choose one canonical indexed person as the first selected person.",
+			label: this.t.relationshipModal.firstPerson,
+			description: this.t.relationshipModal.firstPersonDescription,
 			value: this.values.fromPath,
 			type: "search",
 			list: datalistId,
@@ -172,8 +175,8 @@ export class RelationshipModal extends Modal {
 		this.fromInput = fromField.control;
 		this.fromPersonLabel = fromField.label;
 		const toField = this.addInput(peopleGroup, {
-			label: "Second person",
-			description: "Choose one canonical indexed person as the second selected person.",
+			label: this.t.relationshipModal.secondPerson,
+			description: this.t.relationshipModal.secondPersonDescription,
 			value: this.values.toPath,
 			type: "search",
 			list: datalistId,
@@ -186,26 +189,24 @@ export class RelationshipModal extends Modal {
 		this.toPersonLabel = toField.label;
 		peopleGroup.append(datalist);
 
-		const relationshipGroup = this.addGroup(form, "Relationship");
+		const relationshipGroup = this.addGroup(form, this.t.relationshipModal.groupRelationship);
 		const simpleRelationshipField = this.addSelect(relationshipGroup, {
-			label: "Simple relationship",
-			description:
-				"Optional shortcut from the first person to the second person. It fills only both unsaved roles; Custom keeps the roles below unchanged.",
+			label: this.t.relationshipModal.simpleRelationship,
+			description: this.t.relationshipModal.simpleRelationshipDescription,
 			value: getSimpleRelationshipChoice(this.values),
 			options: [
-				["custom", "Custom — use template or roles below"],
-				["parent", "Parent of the second person"],
-				["child", "Child of the second person"],
-				["sibling", "Sibling of the second person"],
-				["partner", "Partner of the second person"],
+				["custom", this.t.relationshipModal.simpleCustom],
+				["parent", this.t.relationshipModal.simpleParent],
+				["child", this.t.relationshipModal.simpleChild],
+				["sibling", this.t.relationshipModal.simpleSibling],
+				["partner", this.t.relationshipModal.simplePartner],
 			],
 			onChange: (value) => this.selectSimpleRelationship(value),
 		});
 		this.simpleRelationshipSelect = simpleRelationshipField.control;
 		const presetField = this.addSelect(relationshipGroup, {
-			label: "Relationship template",
-			description:
-				"Templates copy repeatable relationship types and roles for both selected people into this form; they are not live links.",
+			label: this.t.relationshipModal.relationshipTemplate,
+			description: this.t.relationshipModal.relationshipTemplateDescription,
 			value: this.values.presetId,
 			options: [],
 			onChange: (value) => this.selectTemplate(value),
@@ -215,17 +216,16 @@ export class RelationshipModal extends Modal {
 		this.templateEmptyStateEl = document.createElement("section");
 		this.templateEmptyStateEl.className = "people-atlas-template-empty-state";
 		const emptyHeading = document.createElement("h3");
-		emptyHeading.textContent = "No relationship templates yet";
+		emptyHeading.textContent = this.t.relationshipModal.noRelationshipTemplates;
 		const emptyExplanation = document.createElement("p");
-		emptyExplanation.textContent =
-			"Manual relationship values remain available. Templates copy repeatable types and both roles into the form; saved relationship notes keep those copied values.";
+		emptyExplanation.textContent = this.t.relationshipModal.noRelationshipTemplatesDescription;
 		this.templateEmptyStateEl.append(emptyHeading, emptyExplanation);
 
 		const templateCreation = document.createElement("div");
 		templateCreation.className = "people-atlas-template-creation";
 		this.createTemplateButton = document.createElement("button");
 		this.createTemplateButton.type = "button";
-		this.createTemplateButton.textContent = "Create template";
+		this.createTemplateButton.textContent = this.t.relationshipModal.createTemplate;
 		this.createTemplateButton.addEventListener("click", () => this.openTemplateCreator());
 		this.templateCreationExplanationEl = document.createElement("small");
 		this.templateCreationExplanationEl.id = `people-atlas-description-${++modalSequence}`;
@@ -237,7 +237,7 @@ export class RelationshipModal extends Modal {
 		this.presetStatusEl.setAttribute("aria-live", "polite");
 		this.applyPresetButton = document.createElement("button");
 		this.applyPresetButton.type = "button";
-		this.applyPresetButton.textContent = "Apply latest template values";
+		this.applyPresetButton.textContent = this.t.relationshipModal.applyLatestTemplateValues;
 		this.applyPresetButton.addEventListener("click", () => this.reapplyTemplate());
 		const presetState = document.createElement("div");
 		presetState.className = "people-atlas-preset-state";
@@ -245,8 +245,8 @@ export class RelationshipModal extends Modal {
 		relationshipGroup.append(this.templateEmptyStateEl, templateCreation, presetState);
 
 		const typesField = this.addInput(relationshipGroup, {
-			label: "Relationship types",
-			description: "Optional comma-separated labels. A template may copy these values into the unsaved form.",
+			label: this.t.relationshipModal.relationshipTypes,
+			description: this.t.relationshipModal.relationshipTypesDescription,
 			value: this.values.types,
 			onInput: (value) => {
 				this.values.types = value;
@@ -255,8 +255,8 @@ export class RelationshipModal extends Modal {
 		});
 		this.typesInput = typesField.control;
 		const fromRoleField = this.addInput(relationshipGroup, {
-			label: "First person's role",
-			description: "Role held by the first selected person. Define roles for both selected people or leave both empty.",
+			label: this.t.relationshipModal.firstPersonRole,
+			description: this.t.relationshipModal.firstPersonRoleDescription,
 			value: this.values.fromRole,
 			onInput: (value) => {
 				this.values.fromRole = value;
@@ -268,8 +268,8 @@ export class RelationshipModal extends Modal {
 		this.fromRoleInput = fromRoleField.control;
 		this.fromRoleLabel = fromRoleField.label;
 		const toRoleField = this.addInput(relationshipGroup, {
-			label: "Second person's role",
-			description: "Role held by the second selected person. It stays with that person when you save.",
+			label: this.t.relationshipModal.secondPersonRole,
+			description: this.t.relationshipModal.secondPersonRoleDescription,
 			value: this.values.toRole,
 			onInput: (value) => {
 				this.values.toRole = value;
@@ -285,10 +285,10 @@ export class RelationshipModal extends Modal {
 		this.rolePreviewEl.setAttribute("aria-live", "polite");
 		relationshipGroup.append(this.rolePreviewEl);
 
-		const contextGroup = this.addGroup(form, "Context");
+		const contextGroup = this.addGroup(form, this.t.relationshipModal.groupContext);
 		this.addInput(contextGroup, {
-			label: "Closeness",
-			description: "Optional value from 1 to 5.",
+			label: this.t.relationshipModal.closeness,
+			description: this.t.relationshipModal.closenessDescription,
 			value: this.values.closeness,
 			type: "number",
 			min: "1",
@@ -298,8 +298,8 @@ export class RelationshipModal extends Modal {
 			},
 		});
 		this.addInput(contextGroup, {
-			label: "Since",
-			description: "Optional relationship start date.",
+			label: this.t.relationshipModal.since,
+			description: this.t.relationshipModal.sinceDescription,
 			value: this.values.since,
 			type: "date",
 			onInput: (value) => {
@@ -307,8 +307,8 @@ export class RelationshipModal extends Modal {
 			},
 		});
 		this.addInput(contextGroup, {
-			label: "Last contact",
-			description: "Optional observation date; it never changes status automatically.",
+			label: this.t.relationshipModal.lastContact,
+			description: this.t.relationshipModal.lastContactDescription,
 			value: this.values.lastContact,
 			type: "date",
 			onInput: (value) => {
@@ -316,14 +316,14 @@ export class RelationshipModal extends Modal {
 			},
 		});
 		this.addSelect(contextGroup, {
-			label: "Status",
-			description: "Optional user-authored relationship status. Last contact never changes it automatically.",
+			label: this.t.relationshipModal.status,
+			description: this.t.relationshipModal.statusDescription,
 			value: this.values.status,
 			options: [
-				["", "Not set"],
-				["active", "Active"],
-				["dormant", "Dormant"],
-				["ended", "Ended"],
+				["", this.t.relationshipModal.statusNotSet],
+				["active", this.t.relationshipModal.statusActive],
+				["dormant", this.t.relationshipModal.statusDormant],
+				["ended", this.t.relationshipModal.statusEnded],
 			],
 			onChange: (value) => {
 				this.values.status = value === "active" || value === "dormant" || value === "ended" ? value : "";
@@ -336,11 +336,14 @@ export class RelationshipModal extends Modal {
 		const advancedBody = document.createElement("div");
 		advancedBody.className = "people-atlas-relationship-advanced-body";
 		const pathField = this.addInput(advancedBody, {
-			label: this.mode.kind === "create" ? "Relationship note path" : "Source note path",
+			label:
+				this.mode.kind === "create"
+					? this.t.relationshipModal.relationshipNotePath
+					: this.t.relationshipModal.sourceNotePath,
 			description:
 				this.mode.kind === "create"
-					? "Review or edit the proposed Markdown path. Existing notes are never overwritten."
-					: "The current source path is read-only. Moving or renaming this relationship is outside the editor.",
+					? this.t.relationshipModal.relationshipNotePathDescription
+					: this.t.relationshipModal.sourceNotePathDescription,
 			value: this.values.path,
 			readOnly: this.mode.kind === "edit",
 			dataRelationshipPath: true,
@@ -352,8 +355,8 @@ export class RelationshipModal extends Modal {
 		});
 		this.pathInput = pathField.control;
 		const relationshipIdField = this.addInput(advancedBody, {
-			label: "Relationship ID",
-			description: "A stable relationship_id is generated when a new relationship is saved.",
+			label: this.t.relationshipModal.relationshipId,
+			description: this.t.relationshipModal.relationshipIdDescription,
 			value: this.values.relationshipId,
 			onInput: (value) => {
 				this.values.relationshipId = value;
@@ -373,12 +376,12 @@ export class RelationshipModal extends Modal {
 		actions.className = "people-atlas-form-actions";
 		const cancelButton = document.createElement("button");
 		cancelButton.type = "button";
-		cancelButton.textContent = "Cancel";
+		cancelButton.textContent = this.t.relationshipModal.cancel;
 		cancelButton.addEventListener("click", () => this.close());
 		this.saveButton = document.createElement("button");
 		this.saveButton.type = "submit";
 		this.saveButton.className = "mod-cta";
-		this.saveButton.textContent = "Save";
+		this.saveButton.textContent = this.t.relationshipModal.save;
 		actions.append(cancelButton, this.saveButton);
 
 		form.addEventListener("submit", (event) => {
@@ -522,6 +525,7 @@ export class RelationshipModal extends Modal {
 				}
 				return saved;
 			},
+			this.t,
 		);
 		const originalOnClose = presetModal.onClose.bind(presetModal);
 		presetModal.onClose = () => {
@@ -541,9 +545,12 @@ export class RelationshipModal extends Modal {
 		if (!this.presetSelect || !this.templateEmptyStateEl) return;
 		const document = this.presetSelect.ownerDocument;
 		const presets = this.getSettings().relationshipPresets;
-		const options: Array<[string, string]> = [["", "No template — enter values manually"]];
+		const options: Array<[string, string]> = [["", this.t.relationshipModal.noTemplate]];
 		if (this.values.presetId && !presets.some((preset) => preset.id === this.values.presetId)) {
-			options.push([this.values.presetId, `Missing template — ${this.values.presetId}`]);
+			options.push([
+				this.values.presetId,
+				this.t.relationshipModal.missingTemplate({ presetId: this.values.presetId }),
+			]);
 		}
 		for (const preset of presets) options.push([preset.id, preset.name]);
 		const optionElements = options.map(([value, text]) => {
@@ -562,8 +569,8 @@ export class RelationshipModal extends Modal {
 		const enabled = this.templateCreation?.enabled() ?? false;
 		this.createTemplateButton.disabled = !enabled;
 		this.templateCreationExplanationEl.textContent = enabled
-			? "Create a reusable template without losing this unsaved relationship. It will not be selected automatically."
-			: "Template creation is unavailable because People Atlas settings are read-only or invalid. Manual relationship values remain available.";
+			? this.t.relationshipModal.templateCreationAvailable
+			: this.t.relationshipModal.templateCreationUnavailable;
 	}
 
 	private refreshTemplateOwnedInputs(): void {
@@ -600,11 +607,10 @@ export class RelationshipModal extends Modal {
 		if (!this.presetStatusEl || !this.applyPresetButton) return;
 		const state = getRelationshipPresetState(this.values, this.getSettings().relationshipPresets);
 		const messages: Record<typeof state, string> = {
-			unlinked: "No template is selected. Types and roles are stored directly on this relationship note when you save.",
-			"up-to-date": "The unsaved types and roles match the values copied from the selected template.",
-			modified:
-				"The unsaved types or roles differ from the selected template. Apply its latest values only if you want to replace them.",
-			missing: `Template “${this.values.presetId}” is unavailable. Its copied types and roles remain editable.`,
+			unlinked: this.t.relationshipModal.presetUnlinked,
+			"up-to-date": this.t.relationshipModal.presetUpToDate,
+			modified: this.t.relationshipModal.presetModified,
+			missing: this.t.relationshipModal.presetMissing({ presetId: this.values.presetId }),
 		};
 		this.presetStatusEl.textContent = messages[state];
 		this.applyPresetButton.hidden = state === "unlinked" || state === "missing";
@@ -612,23 +618,58 @@ export class RelationshipModal extends Modal {
 
 	private refreshPresentation(): void {
 		const presentation = getRelationshipFormPresentation(this.values, this.people, this.mode.myPersonPath);
-		if (this.fromPersonLabel) this.fromPersonLabel.textContent = presentation.fromPersonLabel;
-		if (this.toPersonLabel) this.toPersonLabel.textContent = presentation.toPersonLabel;
-		if (this.fromRoleLabel) this.fromRoleLabel.textContent = presentation.fromRoleLabel;
-		if (this.toRoleLabel) this.toRoleLabel.textContent = presentation.toRoleLabel;
+		if (this.fromPersonLabel) {
+			this.fromPersonLabel.textContent = presentation.fromPerson
+				? this.t.relationshipModal.firstPersonSelected({ name: presentation.fromPerson.name })
+				: this.t.relationshipModal.firstPerson;
+		}
+		if (this.toPersonLabel) {
+			this.toPersonLabel.textContent = presentation.toPerson
+				? this.t.relationshipModal.secondPersonSelected({ name: presentation.toPerson.name })
+				: this.t.relationshipModal.secondPerson;
+		}
+		if (this.fromRoleLabel) {
+			this.fromRoleLabel.textContent = presentation.fromPerson?.isMyPerson
+				? this.t.relationshipModal.myRole
+				: presentation.fromPerson
+					? this.t.relationshipModal.personRole({ name: presentation.fromPerson.name })
+					: this.t.relationshipModal.firstPersonRole;
+		}
+		if (this.toRoleLabel) {
+			this.toRoleLabel.textContent = presentation.toPerson?.isMyPerson
+				? this.t.relationshipModal.myRole
+				: presentation.toPerson
+					? this.t.relationshipModal.personRole({ name: presentation.toPerson.name })
+					: this.t.relationshipModal.secondPersonRole;
+		}
 		if (this.rolePreviewEl) {
 			this.rolePreviewEl.textContent =
-				presentation.rolePreview ??
-				"Choose both people and define both roles to review how each selected person maps to a role.";
-			this.rolePreviewEl.classList.toggle("is-placeholder", !presentation.rolePreview);
+				presentation.fromPerson && presentation.toPerson && presentation.fromRoleTerm && presentation.toRoleTerm
+					? this.t.relationshipModal.rolePreview({
+							fromName: presentation.fromPerson.name,
+							fromRole: presentation.fromDerivedFamilyRoleTerm
+								? this.t.relationshipModal.familyTerms[presentation.fromDerivedFamilyRoleTerm]
+								: presentation.fromRoleTerm,
+							toName: presentation.toPerson.name,
+							toRole: presentation.toDerivedFamilyRoleTerm
+								? this.t.relationshipModal.familyTerms[presentation.toDerivedFamilyRoleTerm]
+								: presentation.toRoleTerm,
+						})
+					: this.t.relationshipModal.rolePreviewPlaceholder;
+			this.rolePreviewEl.classList.toggle(
+				"is-placeholder",
+				!(presentation.fromPerson && presentation.toPerson && presentation.fromRoleTerm && presentation.toRoleTerm),
+			);
 		}
 	}
 
 	private refreshAdvancedSummary(): void {
 		if (!this.advancedSummary) return;
-		const path = this.values.path.trim() || "not set";
-		const pathKind = this.mode.kind === "create" ? "Destination" : "Source";
-		this.advancedSummary.textContent = `Advanced — ${pathKind}: ${path}`;
+		const path = this.values.path.trim() || this.t.relationshipModal.notSet;
+		this.advancedSummary.textContent =
+			this.mode.kind === "create"
+				? this.t.relationshipModal.advancedDestination({ path })
+				: this.t.relationshipModal.advancedSource({ path });
 	}
 
 	private associateAdvancedError(message: string): void {

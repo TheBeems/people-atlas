@@ -1,4 +1,5 @@
 import { Modal, type App } from "obsidian";
+import { createTranslator, type Translator } from "../i18n";
 import type { RelationshipPreset } from "./relationship-presets";
 import type { RelationshipPresetSyncChange, RelationshipPresetSyncResult } from "./relationship-preset-sync";
 
@@ -11,18 +12,20 @@ export class RelationshipPresetSyncModal extends Modal {
 		private readonly preset: RelationshipPreset,
 		private readonly changes: RelationshipPresetSyncChange[],
 		private readonly onConfirm: (changes: RelationshipPresetSyncChange[]) => Promise<RelationshipPresetSyncResult>,
+		private readonly t: Translator = createTranslator("en"),
 	) {
 		super(app);
 	}
 
 	override onOpen(): void {
-		this.titleEl.textContent = "Update linked relationships from template";
+		this.titleEl.textContent = this.t.relationshipPresetSyncModal.title;
 		this.contentEl.replaceChildren();
 		const document = this.contentEl.ownerDocument;
 		const intro = document.createElement("p");
-		intro.textContent = `Review ${this.changes.length} relationship note${
-			this.changes.length === 1 ? "" : "s"
-		} whose stored template provenance is “${this.preset.name}”. Confirming copies this template’s relationship types, first-person role and second-person role to the exact paths below. Endpoints, paths, relationship IDs, closeness, dates, status, unrelated frontmatter and note content stay unchanged.`;
+		intro.textContent = this.t.relationshipPresetSyncModal.intro({
+			count: this.changes.length,
+			presetName: this.preset.name,
+		});
 		const list = document.createElement("ul");
 		list.className = "people-atlas-preset-sync-list";
 		for (const change of this.changes) {
@@ -30,7 +33,7 @@ export class RelationshipPresetSyncModal extends Modal {
 			const path = document.createElement("strong");
 			path.textContent = change.filePath;
 			const details = document.createElement("span");
-			details.textContent = `${describe(change.before)} → ${describe(change.after)}`;
+			details.textContent = `${describe(change.before, this.t)} → ${describe(change.after, this.t)}`;
 			item.append(path, details);
 			list.append(item);
 		}
@@ -42,12 +45,12 @@ export class RelationshipPresetSyncModal extends Modal {
 		actions.className = "people-atlas-form-actions";
 		const cancel = document.createElement("button");
 		cancel.type = "button";
-		cancel.textContent = "Cancel";
+		cancel.textContent = this.t.relationshipPresetSyncModal.cancel;
 		cancel.addEventListener("click", () => this.close());
 		this.confirmButton = document.createElement("button");
 		this.confirmButton.type = "button";
 		this.confirmButton.className = "mod-cta";
-		this.confirmButton.textContent = "Update linked relationships from template";
+		this.confirmButton.textContent = this.t.relationshipPresetSyncModal.confirm;
 		this.confirmButton.addEventListener("click", () => void this.confirm());
 		actions.append(cancel, this.confirmButton);
 		this.contentEl.append(intro, list, this.statusEl, actions);
@@ -78,11 +81,14 @@ export class RelationshipPresetSyncModal extends Modal {
 			const location = result.failure.filePath ? ` at “${result.failure.filePath}”` : "";
 			this.statusEl.textContent = `Stopped${location}. Completed ${result.completed}; skipped ${result.skipped}; remaining ${result.remaining}. ${result.failure.message}`;
 		} else {
-			this.statusEl.textContent = `Updated ${result.completed}; skipped ${result.skipped}; none remain from this preview.`;
+			this.statusEl.textContent = this.t.relationshipPresetSyncModal.success({
+				completed: result.completed,
+				skipped: result.skipped,
+			});
 		}
 		const closeButton = this.confirmButton.cloneNode(true) as HTMLButtonElement;
 		closeButton.removeAttribute("aria-busy");
-		closeButton.textContent = "Close";
+		closeButton.textContent = this.t.relationshipPresetSyncModal.close;
 		closeButton.disabled = false;
 		closeButton.addEventListener("click", () => this.close());
 		this.confirmButton.replaceWith(closeButton);
@@ -90,8 +96,10 @@ export class RelationshipPresetSyncModal extends Modal {
 	}
 }
 
-function describe(values: RelationshipPresetSyncChange["before"]): string {
-	return `types: ${values.types.join(", ") || "none"}; first-person role: ${
-		values.fromRole ?? "none"
-	}; second-person role: ${values.toRole ?? "none"}`;
+function describe(values: RelationshipPresetSyncChange["before"], translator: Translator): string {
+	return translator.relationshipPresetSyncModal.preview({
+		types: values.types.join(", ") || translator.relationshipPresetSyncModal.none,
+		fromRole: values.fromRole ?? translator.relationshipPresetSyncModal.none,
+		toRole: values.toRole ?? translator.relationshipPresetSyncModal.none,
+	});
 }

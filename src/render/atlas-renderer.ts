@@ -8,6 +8,7 @@ import type {
 } from "../domain/types";
 import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { personPhotoInitials } from "../domain/person-photo";
+import { createTranslator, type Translator } from "../i18n";
 import type { PeopleAtlasSettings } from "../settings/types";
 import { Camera } from "./camera";
 import {
@@ -192,6 +193,7 @@ export class AtlasRenderer {
 		private readonly container: HTMLElement,
 		private readonly getSettings: () => PeopleAtlasSettings,
 		private readonly callbacks: AtlasRendererCallbacks,
+		private readonly t: Translator = createTranslator("en"),
 	) {
 		this.doc = container.ownerDocument;
 		const owningWindow = this.doc.defaultView as (Window & typeof globalThis) | null;
@@ -218,10 +220,14 @@ export class AtlasRenderer {
 		this.modeControls = this.doc.createElement("fieldset");
 		this.modeControls.className = "people-atlas-view-modes";
 		const legend = this.doc.createElement("legend");
-		legend.textContent = "View";
-		this.graphModeButton = this.createModeButton("Graph", "people-atlas-graph-mode", true);
-		this.listModeButton = this.createModeButton("List", "people-atlas-list-mode", false);
-		this.followUpsModeButton = this.createModeButton("Follow-ups", "people-atlas-follow-ups-mode", false);
+		legend.textContent = this.t.atlasRenderer.view;
+		this.graphModeButton = this.createModeButton(this.t.atlasRenderer.graph, "people-atlas-graph-mode", true);
+		this.listModeButton = this.createModeButton(this.t.atlasRenderer.list, "people-atlas-list-mode", false);
+		this.followUpsModeButton = this.createModeButton(
+			this.t.atlasRenderer.followUps,
+			"people-atlas-follow-ups-mode",
+			false,
+		);
 		this.modeControls.append(legend, this.graphModeButton, this.listModeButton, this.followUpsModeButton);
 
 		this.graphSurface = this.doc.createElement("div");
@@ -230,14 +236,14 @@ export class AtlasRenderer {
 		this.canvas.className = "people-atlas-canvas";
 		this.canvas.tabIndex = 0;
 		this.canvas.setAttribute("role", "application");
-		this.canvas.setAttribute("aria-label", "Interactive people and relationship atlas");
+		this.canvas.setAttribute("aria-label", this.t.atlasRenderer.interactiveAtlas);
 		this.graphActions = this.doc.createElement("div");
 		this.graphActions.className = "people-atlas-graph-actions";
-		this.graphActions.setAttribute("aria-label", "Graph controls");
-		this.zoomOutButton = this.createActionButton("Zoom out");
-		this.zoomInButton = this.createActionButton("Zoom in");
-		this.fitButton = this.createActionButton("Fit");
-		this.detailsButton = this.createActionButton("Details");
+		this.graphActions.setAttribute("aria-label", this.t.atlasRenderer.graphControls);
+		this.zoomOutButton = this.createActionButton(this.t.atlasRenderer.zoomOut);
+		this.zoomInButton = this.createActionButton(this.t.atlasRenderer.zoomIn);
+		this.fitButton = this.createActionButton(this.t.atlasRenderer.fit);
+		this.detailsButton = this.createActionButton(this.t.atlasRenderer.details);
 		this.detailsButton.disabled = true;
 		this.graphActions.append(this.zoomOutButton, this.zoomInButton, this.fitButton, this.detailsButton);
 		this.graphSurface.append(this.canvas, this.graphActions);
@@ -248,7 +254,7 @@ export class AtlasRenderer {
 
 		this.semanticPanel = this.doc.createElement("section");
 		this.semanticPanel.className = "people-atlas-semantic-panel";
-		this.semanticPanel.setAttribute("aria-label", "People atlas list view");
+		this.semanticPanel.setAttribute("aria-label", this.t.atlasRenderer.listView);
 		this.semanticPanel.hidden = true;
 		this.summary = this.doc.createElement("p");
 		this.summary.className = "people-atlas-semantic-summary";
@@ -256,22 +262,22 @@ export class AtlasRenderer {
 		this.summary.setAttribute("aria-live", "polite");
 		this.emptyMessage = this.doc.createElement("p");
 		this.emptyMessage.className = "people-atlas-empty-message";
-		this.emptyMessage.textContent = "No people in the current atlas";
+		this.emptyMessage.textContent = this.t.atlasRenderer.noPeople;
 		this.emptyMessage.hidden = true;
 		this.peopleList = this.doc.createElement("ul");
 		this.peopleList.className = "people-atlas-people-list";
-		this.peopleList.setAttribute("aria-label", "People in the current atlas");
+		this.peopleList.setAttribute("aria-label", this.t.atlasRenderer.peopleInAtlas);
 		this.details = this.doc.createElement("section");
 		this.details.className = "people-atlas-semantic-details";
-		this.details.setAttribute("aria-label", "Selected person details");
+		this.details.setAttribute("aria-label", this.t.atlasRenderer.selectedPersonDetails);
 		this.semanticPanel.append(this.summary, this.emptyMessage, this.peopleList, this.details);
 
 		this.followUpsPanel = this.doc.createElement("section");
 		this.followUpsPanel.className = "people-atlas-follow-ups-panel";
-		this.followUpsPanel.setAttribute("aria-label", "Contact follow-ups");
+		this.followUpsPanel.setAttribute("aria-label", this.t.atlasRenderer.contactFollowUps);
 		this.followUpsPanel.hidden = true;
 		this.followUpsHeading = this.doc.createElement("h2");
-		this.followUpsHeading.textContent = "Contact follow-ups";
+		this.followUpsHeading.textContent = this.t.atlasRenderer.contactFollowUps;
 		this.followUpsHeading.tabIndex = -1;
 		this.followUpsHeading.dataset.followUpsHeading = "true";
 		this.followUpsSummary = this.doc.createElement("p");
@@ -284,7 +290,7 @@ export class AtlasRenderer {
 
 		this.sheet = this.doc.createElement("dialog");
 		this.sheet.className = "people-atlas-details-sheet";
-		this.sheet.setAttribute("aria-label", "Selected person details");
+		this.sheet.setAttribute("aria-label", this.t.atlasRenderer.selectedPersonDetails);
 		this.sheetContent = this.doc.createElement("div");
 		this.sheetContent.className = "people-atlas-details-sheet-content";
 		this.sheet.append(this.sheetContent);
@@ -754,11 +760,11 @@ export class AtlasRenderer {
 	private updateSemanticPanel(): void {
 		this.detailsButton.disabled = !this.selectedId || !this.nodeById(this.selectedId);
 		const hiddenMomentCount = this.hiddenContactMomentCount();
-		const summaryText = `${this.snapshot.nodes.length} people · ${this.snapshot.edges.length} connections${
-			hiddenMomentCount > 0
-				? ` · ${hiddenMomentCount} contact ${hiddenMomentCount === 1 ? "moment" : "moments"} hidden`
-				: ""
-		}`;
+		const summaryText = this.t.atlasRenderer.semanticListSummary({
+			people: this.snapshot.nodes.length,
+			connections: this.snapshot.edges.length,
+			hiddenContactMoments: hiddenMomentCount,
+		});
 		if (this.summary.textContent !== summaryText) this.summary.textContent = summaryText;
 		this.emptyMessage.hidden = this.snapshot.nodes.length > 0;
 		this.peopleList.hidden = this.snapshot.nodes.length === 0;
@@ -780,11 +786,11 @@ export class AtlasRenderer {
 			button.dataset.nodeId = node.id;
 			button.tabIndex = node.id === rovingId ? 0 : -1;
 			button.setAttribute("aria-pressed", String(node.id === this.selectedId));
-			button.setAttribute("aria-label", personAccessibleName(node));
+			button.setAttribute("aria-label", personAccessibleName(node, this.t));
 			const label = this.doc.createElement("span");
 			label.textContent = node.label;
 			button.append(label);
-			const metadata = personMetadata(node);
+			const metadata = personMetadata(node, this.t);
 			if (metadata) {
 				const meta = this.doc.createElement("small");
 				meta.textContent = metadata;
@@ -798,10 +804,11 @@ export class AtlasRenderer {
 	}
 
 	private renderSelectedDetails(): void {
+		const messages = this.t.atlasRenderer;
 		this.details.replaceChildren();
 		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
 		const heading = this.doc.createElement("h3");
-		heading.textContent = selected?.label ?? "Selection";
+		heading.textContent = selected?.label ?? messages.selection;
 		if (selected) {
 			heading.tabIndex = -1;
 			heading.dataset.selectedPersonHeading = selected.id;
@@ -809,7 +816,7 @@ export class AtlasRenderer {
 		this.details.append(heading);
 		if (!selected) {
 			const hint = this.doc.createElement("p");
-			hint.textContent = "Select a person to review their visible relationships and actions.";
+			hint.textContent = messages.selectPersonHint;
 			this.details.append(hint);
 			return;
 		}
@@ -818,6 +825,7 @@ export class AtlasRenderer {
 			const profile = renderPersonProfile(this.doc, selected, {
 				contactHeadingLevel: 4,
 				resolvePhotoResource: this.callbacks.resolvePersonPhoto,
+				translator: this.t,
 			});
 			if (profile) this.details.append(profile);
 			const contactMoments = this.renderSelectedContactMoments(selected, 4, "details");
@@ -826,15 +834,15 @@ export class AtlasRenderer {
 
 		if (isAmbiguousAtlasNode(selected)) {
 			const unavailable = this.doc.createElement("p");
-			unavailable.textContent = "This person record is ambiguous and cannot be opened or centered.";
+			unavailable.textContent = messages.ambiguousNoOpenCenter;
 			this.details.append(unavailable);
 		} else if (selected.kind === "ghost") {
 			const unavailable = this.doc.createElement("p");
-			unavailable.textContent = "No note is available for this unresolved person.";
+			unavailable.textContent = messages.unresolvedNoNote;
 			this.details.append(unavailable);
 		} else if (!selected.filePath) {
 			const unavailable = this.doc.createElement("p");
-			unavailable.textContent = "No note is available for this person.";
+			unavailable.textContent = messages.noNote;
 			this.details.append(unavailable);
 		}
 
@@ -842,10 +850,11 @@ export class AtlasRenderer {
 			this.snapshot,
 			selected,
 			this.getSettings().relationshipRoleFormat,
+			this.t,
 		);
 		if (relationshipRows.length === 0) {
 			const empty = this.doc.createElement("p");
-			empty.textContent = "No visible relationships or linked people";
+			empty.textContent = messages.noVisibleConnections;
 			this.details.append(empty);
 		} else {
 			this.details.append(this.renderRelationshipGroups(relationshipRows, selected, 4));
@@ -857,20 +866,20 @@ export class AtlasRenderer {
 			const open = this.doc.createElement("button");
 			open.type = "button";
 			open.dataset.action = "open";
-			open.setAttribute("aria-label", "Open note");
-			open.textContent = "Open note";
+			open.setAttribute("aria-label", messages.openNote);
+			open.textContent = messages.openNote;
 			const center = this.doc.createElement("button");
 			center.type = "button";
 			center.dataset.action = "center";
-			center.setAttribute("aria-label", "Use as center");
-			center.textContent = "Use as center";
+			center.setAttribute("aria-label", messages.useAsCenter);
+			center.textContent = messages.useAsCenter;
 			actions.append(open, center);
 			if (this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
 				const logContact = this.doc.createElement("button");
 				logContact.type = "button";
 				logContact.dataset.action = "log-contact";
-				logContact.setAttribute("aria-label", "Log contact");
-				logContact.textContent = "Log contact";
+				logContact.setAttribute("aria-label", messages.logContact);
+				logContact.textContent = messages.logContact;
 				actions.append(logContact);
 			}
 			this.details.append(actions);
@@ -887,37 +896,42 @@ export class AtlasRenderer {
 		const relationshipRows = rows.filter((row) => !row.edge.inferred);
 		const linkedPeopleRows = rows.filter((row) => row.edge.inferred);
 		if (relationshipRows.length > 0) {
-			groups.append(this.renderRelationshipGroup("Relationships", relationshipRows, selected, headingLevel));
+			groups.append(this.renderRelationshipGroup("relationships", relationshipRows, selected, headingLevel));
 		}
 		if (linkedPeopleRows.length > 0) {
-			groups.append(this.renderRelationshipGroup("Linked people", linkedPeopleRows, selected, headingLevel));
+			groups.append(this.renderRelationshipGroup("linked-people", linkedPeopleRows, selected, headingLevel));
 		}
 		return groups;
 	}
 
 	private renderRelationshipGroup(
-		label: "Relationships" | "Linked people",
+		label: "relationships" | "linked-people",
 		rows: IncidentRelationshipRow[],
 		selected: AtlasNode,
 		headingLevel: 3 | 4,
 	): HTMLElement {
 		const group = this.doc.createElement("section");
 		group.className = "people-atlas-connection-group";
-		group.dataset.connectionGroup = label === "Relationships" ? "relationships" : "linked-people";
+		group.dataset.connectionGroup = label;
 		const heading = this.doc.createElement(`h${headingLevel}`);
-		heading.textContent = label;
-		group.append(heading, this.renderRelationshipRows(rows, selected, label));
+		const translatedLabel =
+			label === "relationships" ? this.t.atlasRenderer.relationships : this.t.atlasRenderer.linkedPeople;
+		heading.textContent = translatedLabel;
+		group.append(heading, this.renderRelationshipRows(rows, selected, translatedLabel));
 		return group;
 	}
 
 	private renderRelationshipRows(
 		rows: IncidentRelationshipRow[],
 		selected: AtlasNode,
-		groupLabel: "Relationships" | "Linked people",
+		groupLabel: string,
 	): HTMLUListElement {
 		const relationships = this.doc.createElement("ul");
 		relationships.className = "people-atlas-relationship-list";
-		relationships.setAttribute("aria-label", `${groupLabel} for ${selected.label}`);
+		relationships.setAttribute(
+			"aria-label",
+			this.t.atlasRenderer.relationshipListFor({ group: groupLabel, name: selected.label }),
+		);
 		for (const row of rows) {
 			const item = this.doc.createElement("li");
 			item.dataset.edgeId = row.edge.id;
@@ -943,12 +957,12 @@ export class AtlasRenderer {
 	}
 
 	private createRelationshipActionButton(action: RelationshipAction, row: IncidentRelationshipRow): HTMLButtonElement {
-		const label = action === "open" ? "Open relationship note" : "Edit relationship";
+		const label = action === "open" ? this.t.atlasRenderer.openRelationshipNote : this.t.atlasRenderer.editRelationship;
 		const button = this.createActionButton(label);
 		button.dataset.relationshipAction = action;
 		button.dataset.edgeId = row.edge.id;
 		if (row.edge.filePath) button.dataset.relationshipPath = row.edge.filePath;
-		button.setAttribute("aria-label", relationshipActionAccessibleName(action, row));
+		button.setAttribute("aria-label", relationshipActionAccessibleName(action, row, this.t));
 		this.relationshipEdgesByButton.set(button, row.edge);
 		return button;
 	}
@@ -976,7 +990,7 @@ export class AtlasRenderer {
 		heading.textContent = selected.label;
 		heading.tabIndex = -1;
 		heading.dataset.selectedPersonHeading = selected.id;
-		const close = this.createSheetActionButton("Close", "close");
+		const close = this.createSheetActionButton(this.t.atlasRenderer.close, "close");
 		header.append(heading, close);
 		this.sheetContent.append(header);
 
@@ -984,6 +998,7 @@ export class AtlasRenderer {
 			const profile = renderPersonProfile(this.doc, selected, {
 				contactHeadingLevel: 3,
 				resolvePhotoResource: this.callbacks.resolvePersonPhoto,
+				translator: this.t,
 			});
 			if (profile) this.sheetContent.append(profile);
 			const contactMoments = this.renderSelectedContactMoments(selected, 3, "sheet");
@@ -1001,10 +1016,11 @@ export class AtlasRenderer {
 			this.snapshot,
 			selected,
 			this.getSettings().relationshipRoleFormat,
+			this.t,
 		);
 		if (relationshipRows.length === 0) {
 			const empty = this.doc.createElement("p");
-			empty.textContent = "No visible relationships or linked people";
+			empty.textContent = this.t.atlasRenderer.noVisibleConnections;
 			this.sheetContent.append(empty);
 		} else {
 			this.sheetContent.append(this.renderRelationshipGroups(relationshipRows, selected, 3));
@@ -1014,26 +1030,26 @@ export class AtlasRenderer {
 			const actions = this.doc.createElement("div");
 			actions.className = "people-atlas-details-sheet-actions";
 			actions.append(
-				this.createSheetActionButton("Open note", "open"),
-				this.createSheetActionButton("Use as center", "center"),
+				this.createSheetActionButton(this.t.atlasRenderer.openNote, "open"),
+				this.createSheetActionButton(this.t.atlasRenderer.useAsCenter, "center"),
 			);
 			if (this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true) {
-				actions.append(this.createSheetActionButton("Edit person", "edit"));
+				actions.append(this.createSheetActionButton(this.t.atlasRenderer.editPerson, "edit"));
 			}
 			if (this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true) {
-				actions.append(this.createSheetActionButton("Create relationship", "create"));
+				actions.append(this.createSheetActionButton(this.t.atlasRenderer.createRelationship, "create"));
 			}
 			if (this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
-				actions.append(this.createSheetActionButton("Log contact", "log-contact"));
+				actions.append(this.createSheetActionButton(this.t.atlasRenderer.logContact, "log-contact"));
 			}
 			this.sheetContent.append(actions);
 		}
 	}
 
 	private capabilityExplanation(node: AtlasNode): string | undefined {
-		if (isAmbiguousAtlasNode(node)) return "This person record is ambiguous. No actions are available.";
-		if (node.kind === "ghost") return "This unresolved person has no available actions.";
-		if (!node.filePath) return "This person has no note or available actions.";
+		if (isAmbiguousAtlasNode(node)) return this.t.atlasRenderer.ambiguousNoActions;
+		if (node.kind === "ghost") return this.t.atlasRenderer.unresolvedNoActions;
+		if (!node.filePath) return this.t.atlasRenderer.noNoteNoActions;
 		return undefined;
 	}
 
@@ -1059,7 +1075,7 @@ export class AtlasRenderer {
 		section.className = "people-atlas-contact-moment-history";
 		section.dataset.contactMomentPersonId = selected.personId;
 		const heading = this.doc.createElement(`h${headingLevel}`);
-		heading.textContent = "Contact moments";
+		heading.textContent = this.t.atlasRenderer.contactMoments;
 		section.append(heading);
 
 		if (bounded.earliestOpenFollowUp) {
@@ -1067,12 +1083,12 @@ export class AtlasRenderer {
 			nextFollowUp.className = "people-atlas-next-follow-up";
 			const label = this.doc.createElement("p");
 			label.className = "people-atlas-contact-moment-label";
-			label.textContent = "Next follow-up";
+			label.textContent = this.t.atlasRenderer.nextFollowUp;
 			nextFollowUp.append(
 				label,
 				this.renderContactMomentRow(bounded.earliestOpenFollowUp.moment, surface, {
 					followUpOn: bounded.earliestOpenFollowUp.followUpOn,
-					accessibleContext: "next follow-up",
+					accessibleContext: this.t.atlasRenderer.nextFollowUp,
 					accessiblePeers: [bounded.earliestOpenFollowUp.moment],
 				}),
 			);
@@ -1083,16 +1099,22 @@ export class AtlasRenderer {
 		history.className = "people-atlas-contact-moment-recent";
 		const label = this.doc.createElement("p");
 		label.className = "people-atlas-contact-moment-label";
-		label.textContent = expanded ? "All contact moments" : "Recent contact moments";
+		label.textContent = expanded ? this.t.atlasRenderer.allContactMoments : this.t.atlasRenderer.recentContactMoments;
 		history.append(label);
 		if (visibleMoments.length === 0) {
 			const empty = this.doc.createElement("p");
-			empty.textContent = "No contact moments";
+			empty.textContent = this.t.atlasRenderer.noContactMoments;
 			history.append(empty);
 		} else {
 			const list = this.doc.createElement("ul");
 			list.className = "people-atlas-contact-moment-list";
-			list.setAttribute("aria-label", `${expanded ? "All" : "Recent"} contact moments for ${selected.label}`);
+			list.setAttribute(
+				"aria-label",
+				this.t.atlasRenderer.contactMomentListFor({
+					scope: expanded ? this.t.atlasRenderer.allContactMoments : this.t.atlasRenderer.recentContactMoments,
+					name: selected.label,
+				}),
+			);
 			for (const moment of visibleMoments) {
 				list.append(this.renderContactMomentRow(moment, surface, { accessiblePeers: visibleMoments }));
 			}
@@ -1101,7 +1123,9 @@ export class AtlasRenderer {
 		section.append(history);
 
 		if (all.length > bounded.recentMoments.length) {
-			const toggle = this.createActionButton(expanded ? "Show recent contact moments" : "View all contact moments");
+			const toggle = this.createActionButton(
+				expanded ? this.t.atlasRenderer.showRecentContactMoments : this.t.atlasRenderer.viewAllContactMoments,
+			);
 			toggle.dataset.contactMomentToggle = selected.personId;
 			toggle.setAttribute("aria-expanded", String(expanded));
 			const actions = this.doc.createElement("div");
@@ -1117,27 +1141,26 @@ export class AtlasRenderer {
 		const rows = [...groups.overdue, ...groups.dueToday, ...groups.upcoming];
 		const accessiblePeers = rows.map((row) => row.moment);
 		const hiddenMomentCount = this.hiddenContactMomentCount();
-		this.followUpsSummary.textContent = `${rows.length} open ${rows.length === 1 ? "follow-up" : "follow-ups"}${
-			hiddenMomentCount > 0
-				? ` · ${hiddenMomentCount} contact ${hiddenMomentCount === 1 ? "moment" : "moments"} hidden`
-				: ""
-		}`;
+		this.followUpsSummary.textContent = this.t.atlasRenderer.followUpsSummary({
+			openCount: rows.length,
+			hiddenCount: hiddenMomentCount,
+		});
 		this.followUpsContent.replaceChildren();
 		if (rows.length === 0) {
 			const empty = this.doc.createElement("p");
 			empty.className = "people-atlas-empty-message";
-			empty.textContent = "No open follow-ups";
+			empty.textContent = this.t.atlasRenderer.noOpenFollowUps;
 			this.followUpsContent.append(empty);
 			return;
 		}
 		const definitions: ReadonlyArray<{
-			label: "Overdue" | "Due today" | "Upcoming";
+			label: string;
 			key: string;
 			rows: ContactMomentFollowUpRow[];
 		}> = [
-			{ label: "Overdue", key: "overdue", rows: groups.overdue },
-			{ label: "Due today", key: "due-today", rows: groups.dueToday },
-			{ label: "Upcoming", key: "upcoming", rows: groups.upcoming },
+			{ label: this.t.atlasRenderer.overdue, key: "overdue", rows: groups.overdue },
+			{ label: this.t.atlasRenderer.dueToday, key: "due-today", rows: groups.dueToday },
+			{ label: this.t.atlasRenderer.upcoming, key: "upcoming", rows: groups.upcoming },
 		];
 		for (const definition of definitions) {
 			if (definition.rows.length === 0) continue;
@@ -1186,7 +1209,7 @@ export class AtlasRenderer {
 		if (options.followUpOn) {
 			const followUp = this.doc.createElement("p");
 			const prefix = this.doc.createElement("span");
-			prefix.textContent = "Follow up ";
+			prefix.textContent = this.t.atlasRenderer.followUpPrefix;
 			const date = this.doc.createElement("time");
 			date.dateTime = options.followUpOn;
 			date.textContent = options.followUpOn;
@@ -1200,7 +1223,7 @@ export class AtlasRenderer {
 		}
 		const occurred = this.doc.createElement("p");
 		const occurredPrefix = this.doc.createElement("span");
-		occurredPrefix.textContent = "Contact ";
+		occurredPrefix.textContent = this.t.atlasRenderer.contactPrefix;
 		const occurredDate = this.doc.createElement("time");
 		occurredDate.dateTime = moment.occurredOn;
 		occurredDate.textContent = moment.occurredOn;
@@ -1208,7 +1231,7 @@ export class AtlasRenderer {
 		content.append(occurred);
 		if (moment.channel) {
 			const channel = this.doc.createElement("p");
-			channel.textContent = `Channel: ${moment.channel}`;
+			channel.textContent = this.t.atlasRenderer.channel({ channel: moment.channel });
 			content.append(channel);
 		}
 		if (moment.summary) {
@@ -1280,10 +1303,10 @@ export class AtlasRenderer {
 		if (!this.canUseContactMomentAction(action, moment)) return undefined;
 		const people = this.contactMomentPeopleLabel(moment);
 		const actionLabels: Record<ContactMomentAction, string> = {
-			open: "Open contact moment",
-			edit: "Edit contact moment",
-			done: "Mark follow-up done",
-			dismiss: "Dismiss follow-up",
+			open: this.t.atlasRenderer.openContactMoment,
+			edit: this.t.atlasRenderer.editContactMoment,
+			done: this.t.atlasRenderer.markFollowUpDone,
+			dismiss: this.t.atlasRenderer.dismissFollowUp,
 		};
 		const button = this.createActionButton(actionLabels[action]);
 		button.dataset.contactMomentAction = action;
@@ -1292,11 +1315,11 @@ export class AtlasRenderer {
 		button.dataset.contactMomentSurface = surface;
 		const dateContext =
 			action === "done" || action === "dismiss"
-				? `due ${followUpOn ?? moment.followUpOn ?? "unknown date"}`
+				? this.t.atlasRenderer.due({ date: followUpOn ?? moment.followUpOn ?? this.t.atlasRenderer.unknownDate })
 				: moment.occurredOn;
 		const discriminator = this.contactMomentActionDiscriminator(moment, action, accessiblePeers);
 		const accessibleName = [
-			`${actionLabels[action]} for ${people}, ${dateContext}`,
+			this.t.atlasRenderer.contactActionName({ action: actionLabels[action], people, date: dateContext }),
 			discriminator.visible,
 			discriminator.ordinal,
 			accessibleContext,
@@ -1338,7 +1361,7 @@ export class AtlasRenderer {
 		);
 		return {
 			visible,
-			ordinal: `contact ${Math.max(0, index) + 1} of ${collisions.length}`,
+			ordinal: this.t.atlasRenderer.contactOrdinal({ index: Math.max(0, index) + 1, count: collisions.length }),
 		};
 	}
 
@@ -1347,7 +1370,10 @@ export class AtlasRenderer {
 		action: ContactMomentAction,
 		visible: string | undefined,
 	): string {
-		const date = action === "done" || action === "dismiss" ? (moment.followUpOn ?? "unknown date") : moment.occurredOn;
+		const date =
+			action === "done" || action === "dismiss"
+				? (moment.followUpOn ?? this.t.atlasRenderer.unknownDate)
+				: moment.occurredOn;
 		return [this.contactMomentPeopleLabel(moment), date, visible ?? ""].join("\u0000");
 	}
 
@@ -1392,7 +1418,7 @@ export class AtlasRenderer {
 					node.kind === "person" &&
 					(node.personId === personId || (!node.personId && node.id === personId)),
 			);
-			return person?.label ?? "Unavailable person";
+			return person?.label ?? this.t.atlasRenderer.unavailablePerson;
 		});
 		return labels.join(", ");
 	}
@@ -1404,8 +1430,8 @@ export class AtlasRenderer {
 		const source = this.nodeById(edge.sourceId);
 		const target = this.nodeById(edge.targetId);
 		if (!source || !target) return undefined;
-		const kind = edge.types.length > 0 ? edge.types.join(", ") : "relationship";
-		return `Relationship: ${source.label} and ${target.label} · ${kind}`;
+		const kind = edge.types.length > 0 ? edge.types.join(", ") : this.t.atlasRenderer.relationship;
+		return this.t.atlasRenderer.relationshipSummary({ source: source.label, target: target.label, kind });
 	}
 
 	private contactMoments(): readonly ContactMomentSummary[] {
@@ -2144,14 +2170,14 @@ export class AtlasRenderer {
 	};
 }
 
-function personMetadata(node: AtlasNode): string {
-	if (isAmbiguousAtlasNode(node)) return "Ambiguous person";
-	if (node.kind === "ghost") return "Unresolved person";
+function personMetadata(node: AtlasNode, translator: Translator): string {
+	if (isAmbiguousAtlasNode(node)) return translator.atlasRenderer.ambiguousPerson;
+	if (node.kind === "ghost") return translator.atlasRenderer.unresolvedPerson;
 	return node.organisations.join(", ");
 }
 
-function personAccessibleName(node: AtlasNode): string {
-	if (isAmbiguousAtlasNode(node)) return `${node.label}, ambiguous person`;
-	if (node.kind === "ghost") return `${node.label}, unresolved person`;
+function personAccessibleName(node: AtlasNode, translator: Translator): string {
+	if (isAmbiguousAtlasNode(node)) return `${node.label}, ${translator.atlasRenderer.ambiguousPersonListLabel}`;
+	if (node.kind === "ghost") return `${node.label}, ${translator.atlasRenderer.unresolvedPersonListLabel}`;
 	return node.organisations.length > 0 ? `${node.label}, ${node.organisations.join(", ")}` : node.label;
 }

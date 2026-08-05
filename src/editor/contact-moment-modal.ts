@@ -3,6 +3,7 @@ import type { ContactMomentRecord, PersonRecord, RelationshipRecord } from "../d
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
 import type { ContactMomentEditSourceBaseline } from "../mutations/contact-moment";
 import type { PeopleAtlasSettings } from "../settings/types";
+import { createTranslator, type Translator } from "../i18n";
 import {
 	ContactMomentFormSession,
 	createContactMomentFormValues,
@@ -72,6 +73,7 @@ export class ContactMomentModal extends Modal {
 		private readonly getSettings: () => PeopleAtlasSettings,
 		private readonly afterClose?: () => void,
 		getCurrentContext: () => ContactMomentFormContext = () => context,
+		private readonly t: Translator = createTranslator("en"),
 	) {
 		super(app);
 		if (mode.kind === "create") {
@@ -110,7 +112,8 @@ export class ContactMomentModal extends Modal {
 	}
 
 	override onOpen(): void {
-		this.titleEl.textContent = this.mode.kind === "create" ? "Log contact" : "Edit contact moment";
+		this.titleEl.textContent =
+			this.mode.kind === "create" ? this.t.contactMomentModal.titleCreate : this.t.contactMomentModal.titleEdit;
 		this.contentEl.classList.add("people-atlas-contact-moment-modal");
 		this.buildForm();
 	}
@@ -133,21 +136,21 @@ export class ContactMomentModal extends Modal {
 	}
 
 	private buildForm(): void {
+		const t = this.t.contactMomentModal;
 		this.contentEl.replaceChildren();
 		const document = this.contentEl.ownerDocument;
 		const form = document.createElement("form");
 		form.className = "people-atlas-contact-moment-form";
 
-		const peopleGroup = this.addGroup(form, "People");
+		const peopleGroup = this.addGroup(form, t.groupPeople);
 		const peopleDescriptionId = `people-atlas-contact-moment-people-description-${++contactMomentModalSequence}`;
 		const peopleLabel = document.createElement("label");
 		const peopleId = `people-atlas-contact-moment-people-${++contactMomentModalSequence}`;
 		peopleLabel.htmlFor = peopleId;
-		peopleLabel.textContent = "People";
+		peopleLabel.textContent = t.people;
 		const peopleDescription = document.createElement("small");
 		peopleDescription.id = peopleDescriptionId;
-		peopleDescription.textContent =
-			"Choose one or more canonical people. Paths and stable IDs—not display names—are stored as identity.";
+		peopleDescription.textContent = t.peopleDescription;
 		this.peopleSelect = document.createElement("select");
 		this.peopleSelect.id = peopleId;
 		this.peopleSelect.multiple = true;
@@ -172,9 +175,8 @@ export class ContactMomentModal extends Modal {
 		peopleGroup.append(peopleField);
 
 		this.relationshipSelect = this.addSelect(peopleGroup, {
-			label: "Relationship",
-			description:
-				"Optional. Only canonical relationship notes sharing at least one selected person can advance last contact.",
+			label: t.relationship,
+			description: t.relationshipDescription,
 			value: this.values.relationshipPath,
 			options: [],
 			onChange: (value) => {
@@ -184,10 +186,10 @@ export class ContactMomentModal extends Modal {
 			},
 		});
 
-		const momentGroup = this.addGroup(form, "Contact moment");
+		const momentGroup = this.addGroup(form, t.groupMoment);
 		this.addInput(momentGroup, {
-			label: "Occurred on",
-			description: "Required local calendar date in YYYY-MM-DD form.",
+			label: t.occurredOn,
+			description: t.occurredOnDescription,
 			value: this.values.occurredOn,
 			type: "date",
 			onInput: (value) => {
@@ -204,8 +206,8 @@ export class ContactMomentModal extends Modal {
 			channelList.append(option);
 		}
 		this.addInput(momentGroup, {
-			label: "Channel",
-			description: "Optional user-authored channel. Suggestions never infer a value.",
+			label: t.channel,
+			description: t.channelDescription,
 			value: this.values.channel,
 			list: channelListId,
 			onInput: (value) => {
@@ -214,18 +216,18 @@ export class ContactMomentModal extends Modal {
 		});
 		momentGroup.append(channelList);
 		this.addTextarea(momentGroup, {
-			label: "Summary",
-			description: "Optional short summary. The Markdown body remains free content.",
+			label: t.summary,
+			description: t.summaryDescription,
 			value: this.values.summary,
 			onInput: (value) => {
 				this.values.summary = value;
 			},
 		});
 
-		const followUpGroup = this.addGroup(form, "Follow-up");
+		const followUpGroup = this.addGroup(form, t.groupFollowUp);
 		this.addInput(followUpGroup, {
-			label: "Follow-up on",
-			description: "Optional local calendar date.",
+			label: t.followUpOn,
+			description: t.followUpOnDescription,
 			value: this.values.followUpOn,
 			type: "date",
 			onInput: (value) => {
@@ -241,14 +243,14 @@ export class ContactMomentModal extends Modal {
 			},
 		});
 		this.followUpStatusSelect = this.addSelect(followUpGroup, {
-			label: "Follow-up status",
-			description: "Open, done and dismissed apply only to this follow-up and never change relationship status.",
+			label: t.followUpStatus,
+			description: t.followUpStatusDescription,
 			value: this.values.followUpStatus,
 			options: [
-				{ value: "", label: "Not set" },
-				{ value: "open", label: "Open" },
-				{ value: "done", label: "Done" },
-				{ value: "dismissed", label: "Dismissed" },
+				{ value: "", label: t.statusNotSet },
+				{ value: "open", label: t.statusOpen },
+				{ value: "done", label: t.statusDone },
+				{ value: "dismissed", label: t.statusDismissed },
 			],
 			onChange: (value) => {
 				this.values.followUpStatus = value === "open" || value === "done" || value === "dismissed" ? value : "";
@@ -266,22 +268,19 @@ export class ContactMomentModal extends Modal {
 		});
 		const advanceLabel = document.createElement("label");
 		advanceLabel.htmlFor = this.advanceCheckbox.id;
-		advanceLabel.textContent = "Advance linked relationship's last contact to this date";
+		advanceLabel.textContent = t.advanceRelationshipLastContact;
 		this.advanceContainer.append(this.advanceCheckbox, advanceLabel);
 		form.append(this.advanceContainer);
 
 		const advanced = document.createElement("details");
 		advanced.className = "people-atlas-contact-moment-advanced";
 		const advancedSummary = document.createElement("summary");
-		advancedSummary.textContent = "Advanced";
+		advancedSummary.textContent = t.advanced;
 		const advancedBody = document.createElement("div");
 		advancedBody.className = "people-atlas-contact-moment-advanced-body";
 		this.pathInput = this.addInput(advancedBody, {
-			label: this.mode.kind === "create" ? "Contact moment note path" : "Source note path",
-			description:
-				this.mode.kind === "create"
-					? "Review or edit the proposed Markdown path. Existing notes are never overwritten."
-					: "The current source path is read-only; moving or renaming is outside this editor.",
+			label: this.mode.kind === "create" ? t.contactMomentNotePath : t.sourceNotePath,
+			description: this.mode.kind === "create" ? t.contactMomentNotePathDescription : t.sourceNotePathDescription,
 			value: this.values.path,
 			readOnly: this.mode.kind === "edit",
 			onInput: (value) => {
@@ -290,8 +289,8 @@ export class ContactMomentModal extends Modal {
 			},
 		});
 		this.addInput(advancedBody, {
-			label: "Contact moment ID",
-			description: "Stable explicit identity assigned before the note is written.",
+			label: t.contactMomentId,
+			description: t.contactMomentIdDescription,
 			value: this.values.contactMomentId,
 			readOnly: true,
 			onInput: () => undefined,
@@ -313,17 +312,17 @@ export class ContactMomentModal extends Modal {
 		actions.className = "people-atlas-form-actions";
 		const cancelButton = document.createElement("button");
 		cancelButton.type = "button";
-		cancelButton.textContent = "Cancel";
+		cancelButton.textContent = t.cancel;
 		cancelButton.addEventListener("click", () => this.close());
 		this.retryButton = document.createElement("button");
 		this.retryButton.type = "button";
-		this.retryButton.textContent = "Retry relationship update";
+		this.retryButton.textContent = t.retryRelationshipUpdate;
 		this.retryButton.hidden = true;
 		this.retryButton.addEventListener("click", () => void this.retryRelationship());
 		this.saveButton = document.createElement("button");
 		this.saveButton.type = "submit";
 		this.saveButton.className = "mod-cta";
-		this.saveButton.textContent = "Save";
+		this.saveButton.textContent = t.save;
 		actions.append(cancelButton, this.retryButton, this.saveButton);
 		form.addEventListener("submit", (event) => {
 			event.preventDefault();
@@ -402,12 +401,12 @@ export class ContactMomentModal extends Modal {
 		if (!this.relationshipSelect) return;
 		const relationships = matchingContactMomentRelationships(this.values.peoplePaths, this.context);
 		const options: Array<{ value: string; label: string; disabled?: boolean }> = [
-			{ value: "", label: "No linked relationship" },
+			{ value: "", label: this.t.contactMomentModal.noLinkedRelationship },
 		];
 		for (const relationship of relationships) {
 			options.push({
 				value: relationship.filePath,
-				label: `${relationshipLabel(relationship, this.context)} — ${relationship.filePath}`,
+				label: `${relationshipLabel(relationship, this.context, this.t.contactMomentModal.unknownPerson)} — ${relationship.filePath}`,
 			});
 		}
 		const selectedIsCanonical = relationships.some(
@@ -535,9 +534,13 @@ function comparePeople(left: PersonRecord, right: PersonRecord): number {
 	return left.name.localeCompare(right.name) || left.filePath.localeCompare(right.filePath);
 }
 
-function relationshipLabel(relationship: RelationshipRecord, context: ContactMomentFormContext): string {
-	const from = relationshipPersonLabel(relationship.from, relationship.filePath, context);
-	const to = relationshipPersonLabel(relationship.to, relationship.filePath, context);
+function relationshipLabel(
+	relationship: RelationshipRecord,
+	context: ContactMomentFormContext,
+	unknownPerson: string,
+): string {
+	const from = relationshipPersonLabel(relationship.from, relationship.filePath, context, unknownPerson);
+	const to = relationshipPersonLabel(relationship.to, relationship.filePath, context, unknownPerson);
 	return `${from} ↔ ${to}`;
 }
 
@@ -545,16 +548,17 @@ function relationshipPersonLabel(
 	reference: RelationshipRecord["from"],
 	sourcePath: string,
 	context: ContactMomentFormContext,
+	unknownPerson: string,
 ): string {
 	const byId = context.people.filter((person) => person.id === reference.target);
-	if (byId.length === 1) return byId[0]?.name ?? reference.label ?? "Unknown";
+	if (byId.length === 1) return byId[0]?.name ?? reference.label ?? unknownPerson;
 	const path = reference.resolvedPath ?? context.resolveLink(reference.target, sourcePath);
 	const byPath = path ? context.people.filter((person) => person.filePath === path) : [];
-	if (byPath.length === 1) return byPath[0]?.name ?? reference.label ?? "Unknown";
+	if (byPath.length === 1) return byPath[0]?.name ?? reference.label ?? unknownPerson;
 	const exact = context.people.filter(
 		(person) => person.filePath === reference.target || person.filePath.replace(/\.md$/i, "") === reference.target,
 	);
-	return exact.length === 1 ? (exact[0]?.name ?? reference.label ?? "Unknown") : (reference.label ?? "Unknown");
+	return exact.length === 1 ? (exact[0]?.name ?? reference.label ?? unknownPerson) : (reference.label ?? unknownPerson);
 }
 
 function localToday(): string {

@@ -19,22 +19,44 @@ import {
 
 export class PeopleAtlasSettingTab extends PluginSettingTab {
 	plugin: PeopleAtlasPlugin;
+	private unsubscribeMyPersonIndex: (() => void) | undefined;
 
 	constructor(plugin: PeopleAtlasPlugin) {
 		super(plugin.app, plugin);
 		this.plugin = plugin;
 	}
 
+	override display(): void {
+		super.display();
+		this.unsubscribeMyPersonIndex ??= this.plugin.index.subscribe(() => this.update());
+	}
+
+	override hide(): void {
+		this.unsubscribeMyPersonIndex?.();
+		this.unsubscribeMyPersonIndex = undefined;
+		super.hide();
+	}
+
 	override getControlValue(key: string): unknown {
+		if (key === "myPersonId") return this.resolveMyPersonCandidateById()?.filePath ?? "";
 		return this.plugin.settings[key as keyof PeopleAtlasSettings];
 	}
 
 	override async setControlValue(key: string, value: unknown): Promise<void> {
+		if (key === "myPersonId") {
+			if (typeof value !== "string") return;
+			const filePath = value;
+			const candidate = filePath === "" ? undefined : this.resolveMyPersonCandidateByFilePath(filePath);
+			if (filePath !== "" && !candidate) return;
+			await this.plugin.updateSetting("myPersonId", candidate?.id ?? "");
+			return;
+		}
 		await this.plugin.updateSetting(key as keyof PeopleAtlasSettings, value);
 	}
 
 	override getSettingDefinitions(): SettingDefinitionItem[] {
 		const writesEnabled = this.plugin.canWritePeopleAtlasData();
+		const t = this.plugin.t;
 		const settingsWithTextValue = (key: keyof PeopleAtlasSettings, value: string): PeopleAtlasSettings => ({
 			...this.plugin.settings,
 			[key]: value.trim(),
@@ -92,8 +114,8 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 
 		const flatDefinitions: SettingDefinitionItem[] = [
 			{
-				name: "People root folder",
-				desc: "Vault-relative root for the fixed Profiles, Relationships and Contact moments collections.",
+				name: t.settingsPeopleRootFolderName,
+				desc: t.settingsPeopleRootFolderDescription,
 				control: {
 					type: "text",
 					key: "peopleRootFolder",
@@ -241,14 +263,15 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 			},
 			{
 				type: "list",
-				heading: "Relationship templates",
-				emptyState: `No relationship templates yet. Relationship types and roles can still be entered manually. Templates copy repeatable types and both roles; they are not live links.${
-					writesEnabled ? "" : " Template settings are read-only until the People Atlas plugin data is repaired."
-				}`,
+				heading: t.settingsRelationshipTemplatesHeading,
+				emptyState: t.settingsRelationshipTemplatesEmpty({ readOnly: !writesEnabled }),
 				items: this.plugin.settings.relationshipPresets.map((preset) => {
-					const description = `${preset.id} · types: ${preset.types.join(", ")} · first-person role: ${
-						preset.fromRole
-					} · second-person role: ${preset.toRole}`;
+					const description = t.settingsRelationshipTemplateDescription({
+						id: preset.id,
+						types: preset.types.join(", "),
+						fromRole: preset.fromRole,
+						toRole: preset.toRole,
+					});
 					return {
 						name: preset.name,
 						desc: description,
@@ -258,11 +281,9 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 								.setDesc(description)
 								.addButton((button) =>
 									button
-										.setButtonText("Edit")
+										.setButtonText(t.settingsEdit)
 										.setTooltip(
-											writesEnabled
-												? `Edit ${preset.name} relationship template`
-												: "Relationship template settings are read-only until the plugin data is repaired",
+											writesEnabled ? t.settingsEditTemplateTooltip({ name: preset.name }) : t.settingsTemplateReadOnly,
 										)
 										.setDisabled(!writesEnabled)
 										.onClick(() => this.openPresetEditor(preset.id)),
@@ -270,13 +291,13 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 								.addButton((button) => {
 									const count = this.plugin.getRelationshipPresetSyncChanges(preset.id).length;
 									return button
-										.setButtonText("Update linked relationships from template")
+										.setButtonText(t.settingsUpdateLinkedRelationships)
 										.setTooltip(
 											!writesEnabled
-												? "Relationship template updates are read-only until the plugin data is repaired"
+												? t.settingsUpdateTemplateReadOnly
 												: count > 0
-													? `Review ${count} relationship note${count === 1 ? "" : "s"} with this template provenance`
-													: "All indexed relationship notes with this template provenance already match its copied values",
+													? t.settingsReviewTemplateChanges({ count })
+													: t.settingsTemplateAlreadyMatches,
 										)
 										.setDisabled(!writesEnabled || count === 0)
 										.onClick(() => this.openPresetSync(preset.id));
@@ -288,7 +309,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				onDelete: writesEnabled ? (index) => void this.deletePreset(index) : undefined,
 				addItem: writesEnabled
 					? {
-							name: "Add relationship template",
+							name: t.settingsAddRelationshipTemplate,
 							action: () => this.openPresetEditor(),
 						}
 					: undefined,
@@ -305,8 +326,8 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				control: { type: "toggle", key: "enableBases" },
 			},
 			{
-				name: "Show labels",
-				desc: "Draw person names below nodes by default.",
+				name: t.settingsShowLabelsName,
+				desc: t.settingsShowLabelsDescription,
 				control: { type: "toggle", key: "showLabels" },
 			},
 			{
@@ -333,7 +354,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: "group",
-				heading: "General",
+				heading: t.settingsGeneral,
 				items: [
 					peopleRootFolder as SettingDefinition,
 					myPerson as SettingDefinition,
@@ -346,26 +367,36 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 
 	private myPersonSettingDefinition(): SettingDefinitionItem {
 		const candidates = this.plugin.getMyPersonCandidates();
-		const entries: Array<[string, string]> = [
-			["", "None"],
-			...candidates.map((person): [string, string] => [person.id, `${person.name} — ${person.filePath}`]),
-		];
-		const stored = this.plugin.settings.myPersonId;
-		if (stored && !candidates.some((person) => person.id === stored)) {
-			entries.push([stored, `Unavailable: ${stored}`]);
-		}
+		const selected = this.resolveMyPersonCandidateById(candidates);
 		const warning = this.plugin.getMyPersonWarning();
-		const description =
-			"Perspective anchor selected only by one unique explicit person_id. It stays independent from graph navigation.";
+		const t = this.plugin.t;
+		const description = selected
+			? t.settingsMyPersonSelectedDescription({ name: selected.name, filePath: selected.filePath })
+			: candidates.length === 0
+				? t.settingsMyPersonNoCandidatesDescription
+				: t.settingsMyPersonChooseDescription;
 		return {
-			name: "My person",
-			desc: warning ? `${description} Warning: ${warning}` : description,
+			name: t.settingsMyPersonName,
+			desc: warning ? `${description} ${t.settingsWarningPrefix}: ${warning}` : description,
 			control: {
-				type: "dropdown",
+				type: "file",
 				key: "myPersonId",
-				options: Object.fromEntries(entries),
+				placeholder: t.settingsMyPersonPlaceholder,
+				filter: (file) => this.resolveMyPersonCandidateByFilePath(file.path, candidates) !== undefined,
 			},
 		};
+	}
+
+	private resolveMyPersonCandidateById(candidates = this.plugin.getMyPersonCandidates()) {
+		const storedId = this.plugin.settings.myPersonId.trim();
+		if (!storedId) return undefined;
+		const matches = candidates.filter((candidate) => candidate.id === storedId);
+		return matches.length === 1 ? matches[0] : undefined;
+	}
+
+	private resolveMyPersonCandidateByFilePath(filePath: string, candidates = this.plugin.getMyPersonCandidates()) {
+		const matches = candidates.filter((candidate) => candidate.filePath === filePath);
+		return matches.length === 1 ? matches[0] : undefined;
 	}
 
 	private openPresetEditor(presetId?: string): void {
@@ -374,7 +405,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 			? this.plugin.settings.relationshipPresets.find((candidate) => candidate.id === presetId)
 			: undefined;
 		if (presetId && !preset) {
-			new Notice(`Relationship template “${presetId}” is no longer available.`);
+			new Notice(this.plugin.t.noticeTemplateUnavailable({ presetId }));
 			return;
 		}
 		const existingIds = this.plugin.settings.relationshipPresets
@@ -395,6 +426,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				if (saved) this.update();
 				return saved;
 			},
+			this.plugin.t,
 		).open();
 	}
 
@@ -402,16 +434,20 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		if (!this.canManageRelationshipTemplates()) return;
 		const preset = this.plugin.settings.relationshipPresets.find((candidate) => candidate.id === presetId);
 		if (!preset) {
-			new Notice(`Relationship template “${presetId}” is no longer available.`);
+			new Notice(this.plugin.t.noticeTemplateUnavailable({ presetId }));
 			return;
 		}
 		const changes = this.plugin.getRelationshipPresetSyncChanges(presetId);
 		if (changes.length === 0) {
-			new Notice("All indexed relationship notes with this template provenance already match its copied values.");
+			new Notice(this.plugin.t.noticeTemplateAlreadyMatches);
 			return;
 		}
-		new RelationshipPresetSyncModal(this.app, preset, changes, (approved) =>
-			this.plugin.syncRelationshipPreset(presetId, approved),
+		new RelationshipPresetSyncModal(
+			this.app,
+			preset,
+			changes,
+			(approved) => this.plugin.syncRelationshipPreset(presetId, approved),
+			this.plugin.t,
 		).open();
 	}
 
@@ -445,16 +481,12 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		}
 
 		const modal = new ConfirmationModal(this.app)
-			.setTitle(`Delete “${preset.name}” relationship template?`)
-			.setContent(
-				`This template is linked to ${linked} relationship note${
-					linked === 1 ? "" : "s"
-				}. Those notes will keep their copied types and roles. Their template provenance will no longer refer to an existing template.`,
-			);
-		modal.addCancelButton("Cancel");
+			.setTitle(this.plugin.t.relationshipPresetDelete.title({ presetName: preset.name }))
+			.setContent(this.plugin.t.relationshipPresetDelete.content({ linked }));
+		modal.addCancelButton(this.plugin.t.relationshipPresetDelete.cancel);
 		modal.addButton((button) =>
 			button
-				.setButtonText("Delete relationship template")
+				.setButtonText(this.plugin.t.relationshipPresetDelete.confirm)
 				.setDestructive()
 				.setCta()
 				.onClick(async () => {
@@ -467,7 +499,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 
 	private canManageRelationshipTemplates(): boolean {
 		if (this.plugin.canWritePeopleAtlasData()) return true;
-		new Notice("Relationship template settings are read-only until the People Atlas plugin data is repaired.");
+		new Notice(this.plugin.t.settingsTemplateReadOnly);
 		return false;
 	}
 }

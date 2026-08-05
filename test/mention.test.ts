@@ -2,6 +2,7 @@ import type { App, EditorSuggestContext, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { findMentionTrigger, formatMentionLink } from "../src/editor/mention";
 import { PersonMentionSuggest } from "../src/editor/person-mention-suggest";
+import { createTranslator } from "../src/i18n";
 import type { AtlasMutationService } from "../src/mutations/atlas-mutation-service";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 
@@ -29,6 +30,23 @@ describe("person mention parsing", () => {
 
 	it("formats a normal Markdown wikilink with an @ display alias", () => {
 		expect(formatMentionLink("People/Jan Jansen.md", "Jan Jansen")).toBe("[[People/Jan Jansen|@Jan Jansen]]");
+	});
+
+	it("localizes the @ create suggestion while preserving the requested name and computed dossier path", () => {
+		const suggest = new PersonMentionSuggest(
+			{ vault: { getAllLoadedFiles: () => [] } } as unknown as App,
+			{ getSnapshot: () => ({ people: [], relationships: [], contactMoments: [], diagnostics: [] }) },
+			{ createPerson: vi.fn() } as unknown as AtlasMutationService,
+			() => DEFAULT_SETTINGS,
+			createTranslator("nl"),
+		);
+		const element = { createDiv: vi.fn() } as unknown as HTMLElement & { createDiv: ReturnType<typeof vi.fn> };
+
+		suggest.renderSuggestion({ kind: "create", name: "Zoë Example" }, element);
+
+		expect(element.createDiv).toHaveBeenCalledExactlyOnceWith({
+			text: "Persoon “Zoë Example” aanmaken in People/Profiles/",
+		});
 	});
 
 	it("plans one explicit UUID-backed person ID before an @ create action writes", async () => {

@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import { TFile as StubTFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTranslator, type Translator } from "../../src/i18n";
 import type { PersonRecord, RelationshipRecord } from "../../src/domain/types";
 import { ContactMomentModal, type ContactMomentModalMode } from "../../src/editor/contact-moment-modal";
 import type { ContactMomentFormContext } from "../../src/editor/contact-moment-form";
@@ -80,6 +81,7 @@ function mountModal(
 		createContactMoment?: ReturnType<typeof vi.fn>;
 		updateContactMoment?: ReturnType<typeof vi.fn>;
 		retryContactMomentRelationship?: ReturnType<typeof vi.fn>;
+		translator?: Translator;
 	} = {},
 ): MountedContactMomentModal {
 	const createdFile = mountedFile("People/Contact moments/2026-07-30 - Alice - 12345678.md");
@@ -112,7 +114,17 @@ function mountModal(
 			getLeaf: () => ({ openFile }),
 		},
 	} as unknown as App;
-	const modal = new ContactMomentModal(
+	const ContactMomentModalWithTranslator = ContactMomentModal as unknown as new (
+		app: App,
+		mode: ContactMomentModalMode,
+		context: ContactMomentFormContext,
+		mutations: AtlasMutationService,
+		getSettings: () => typeof DEFAULT_SETTINGS,
+		afterClose?: () => void,
+		getCurrentContext?: () => ContactMomentFormContext,
+		translator?: Translator,
+	) => ContactMomentModal;
+	const modal = new ContactMomentModalWithTranslator(
 		app,
 		options.mode ?? {
 			kind: "create",
@@ -127,6 +139,9 @@ function mountModal(
 			retryContactMomentRelationship,
 		} as unknown as AtlasMutationService,
 		() => structuredClone(DEFAULT_SETTINGS),
+		undefined,
+		undefined,
+		options.translator,
 	);
 	const title = document.createElement("h2");
 	const content = document.createElement("div");
@@ -176,6 +191,33 @@ afterEach(() => {
 });
 
 describe("contact-moment modal", () => {
+	it("localizes fixed contact-moment-modal and accessible form text without changing stored values", () => {
+		const mounted = mountModal({ translator: createTranslator("nl-NL") });
+
+		expect(mounted.modal.titleEl.textContent).toBe("Contactmoment vastleggen");
+		expect(Array.from(mounted.content.querySelectorAll("legend"), (item) => item.textContent)).toEqual([
+			"Personen",
+			"Contactmoment",
+			"Opvolging",
+		]);
+		expect(selectForLabel(mounted.content, "Relatie").value).toBe("");
+		expect(inputForLabel(mounted.content, "Datum contactmoment").value).toBe("2026-07-30");
+		expect(selectForLabel(mounted.content, "Personen").selectedOptions[0]?.value).toBe(alice.filePath);
+		expect(
+			Array.from(selectForLabel(mounted.content, "Status opvolging").options, ({ value, textContent }) => ({
+				value,
+				textContent,
+			})),
+		).toEqual([
+			{ value: "", textContent: "Niet ingesteld" },
+			{ value: "open", textContent: "Open" },
+			{ value: "done", textContent: "Afgerond" },
+			{ value: "dismissed", textContent: "Afgewezen" },
+		]);
+		expect(buttonWithText(mounted.content, "Annuleren")).toBeInstanceOf(HTMLButtonElement);
+		expect(buttonWithText(mounted.content, "Opslaan")).toBeInstanceOf(HTMLButtonElement);
+	});
+
 	it("uses explicit accessible labels, focuses people and keeps advancement unchecked on every open", () => {
 		const first = mountModal();
 		const firstPeople = selectForLabel(first.content, "People");

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelationshipModal } from "../../src/editor/relationship-modal";
 import PeopleAtlasPlugin from "../../src/main";
 import "../../styles.css";
-import { type Component, ControlledObsidianRuntime, notices } from "../obsidian-stub";
+import { type Component, ControlledObsidianRuntime, notices, setTestLanguage } from "../obsidian-stub";
 
 const manifest = {
 	id: "people-atlas",
@@ -23,6 +23,7 @@ async function waitForObservation(observation: () => boolean, message: string): 
 }
 
 afterEach(() => {
+	setTestLanguage("en");
 	document.body.replaceChildren();
 	notices.length = 0;
 	vi.restoreAllMocks();
@@ -74,6 +75,37 @@ describe("controlled note-context actions integration", () => {
 		} finally {
 			await second.unload();
 			await first.unload();
+			await component.unload();
+		}
+	});
+
+	it("localizes native Reading View action labels without changing the canonical source path", async () => {
+		setTestLanguage("nl-NL");
+		const runtime = new ControlledObsidianRuntime(document);
+		const alice = runtime.seedFile("People/Alice.md", {
+			type: "person",
+			person_id: "person-alice",
+			name: "Alice",
+		});
+		const plugin = new PeopleAtlasPlugin(runtime.app as unknown as App, manifest);
+		const component = plugin as unknown as Component;
+		await component.load();
+		runtime.triggerLayoutReady();
+		await waitForObservation(
+			() => plugin.index.getSnapshot().people.some((person) => person.filePath === alice.path),
+			"The current canonical person was not indexed.",
+		);
+
+		const rendered = await runtime.renderMarkdown(alice.path, "localized-person-action-doc");
+		try {
+			const panel = rendered.section.querySelector<HTMLElement>(".people-atlas-note-actions");
+			const actions = Array.from(panel?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+			expect(panel?.getAttribute("aria-label")).toBe("People Atlas-acties");
+			expect(actions.map((action) => action.textContent)).toEqual(["Persoon bewerken", "Relatie toevoegen"]);
+			expect(alice.path).toBe("People/Alice.md");
+			expect(runtime.savedPluginData).toEqual([]);
+		} finally {
+			await rendered.unload();
 			await component.unload();
 		}
 	});

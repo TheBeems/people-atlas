@@ -191,7 +191,7 @@ describe("relationship form contract", () => {
 		expect(resolveCanonicalPersonByPath(ambiguousPeople, "People/Alice.md")).toBeUndefined();
 	});
 
-	it("provides dynamic person and role labels without changing fixed endpoint slots", () => {
+	it("provides locale-neutral dynamic person and role presentation data without changing endpoint slots", () => {
 		const values = {
 			...createRelationshipFormValues(people, "People/Mathijs.md", "People/Alice.md"),
 			fromRole: "colleague",
@@ -199,11 +199,10 @@ describe("relationship form contract", () => {
 		};
 
 		expect(getRelationshipFormPresentation(values, people, "People/Mathijs.md")).toEqual({
-			fromPersonLabel: "First person — Mathijs",
-			toPersonLabel: "Second person — Alice / Admin",
-			fromRoleLabel: "My role",
-			toRoleLabel: "Alice / Admin's role",
-			rolePreview: "In this relationship, Mathijs's role is colleague and Alice / Admin's role is manager.",
+			fromPerson: { name: "Mathijs", isMyPerson: true },
+			toPerson: { name: "Alice / Admin", isMyPerson: false },
+			fromRoleTerm: "colleague",
+			toRoleTerm: "manager",
 		});
 		expect(values).toMatchObject({
 			fromPath: "People/Mathijs.md",
@@ -211,22 +210,17 @@ describe("relationship form contract", () => {
 		});
 	});
 
-	it("uses actual names for both roles without My person and neutral labels for blank slots", () => {
+	it("keeps actual names and neutral omissions locale-neutral", () => {
 		const thirdParty = {
 			...createRelationshipFormValues(people, "People/Alice.md", "People/Bob.md"),
 			fromRole: "mentor",
 			toRole: "mentee",
 		};
 		expect(getRelationshipFormPresentation(thirdParty, people, "People/Mathijs.md")).toMatchObject({
-			fromRoleLabel: "Alice / Admin's role",
-			toRoleLabel: "Bob's role",
+			fromPerson: { name: "Alice / Admin", isMyPerson: false },
+			toPerson: { name: "Bob", isMyPerson: false },
 		});
-		expect(getRelationshipFormPresentation(createRelationshipFormValues(people), people)).toEqual({
-			fromPersonLabel: "First person",
-			toPersonLabel: "Second person",
-			fromRoleLabel: "First person's role",
-			toRoleLabel: "Second person's role",
-		});
+		expect(getRelationshipFormPresentation(createRelationshipFormValues(people), people)).toEqual({});
 	});
 
 	it("applies simple choices to only the two unsaved roles and derives Custom without rewriting values", () => {
@@ -261,14 +255,16 @@ describe("relationship form contract", () => {
 			fromRole: "parent",
 			toRole: "child",
 		};
-		expect(getRelationshipFormPresentation(parentChild, people).rolePreview).toBe(
-			"In this relationship, Alice / Admin's role is mother and Bob's role is son.",
-		);
+		expect(getRelationshipFormPresentation(parentChild, people)).toMatchObject({
+			fromRoleTerm: "mother",
+			toRoleTerm: "son",
+		});
 
 		const literal = { ...parentChild, fromRole: "mother", toRole: "daughter" };
-		expect(getRelationshipFormPresentation(literal, people).rolePreview).toBe(
-			"In this relationship, Alice / Admin's role is mother and Bob's role is daughter.",
-		);
+		expect(getRelationshipFormPresentation(literal, people)).toMatchObject({
+			fromRoleTerm: "mother",
+			toRoleTerm: "daughter",
+		});
 	});
 
 	it("maps canonical endpoint paths and optional fields to a create input", () => {
@@ -385,8 +381,10 @@ describe("relationship form contract", () => {
 			toRole: "colleague",
 		});
 		expect(getRelationshipFormPresentation(values, people, "People/Mathijs.md")).toMatchObject({
-			fromRoleLabel: "Alice / Admin's role",
-			toRoleLabel: "My role",
+			fromPerson: { name: "Alice / Admin", isMyPerson: false },
+			toPerson: { name: "Mathijs", isMyPerson: true },
+			fromRoleTerm: "manager",
+			toRoleTerm: "colleague",
 		});
 	});
 

@@ -111,6 +111,7 @@ export class PeopleAtlasBasesView extends BasesView {
 				onLayoutChanged: (layout) => this.persistLayout(layout),
 				resolvePersonPhoto: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
 			},
+			this.plugin.t,
 		);
 		this.selectionActionsEl = this.root.ownerDocument.createElement("div");
 		this.selectionActionsEl.className = "people-atlas-selection-actions";
@@ -454,15 +455,15 @@ export class PeopleAtlasBasesView extends BasesView {
 		}
 		const editButton = this.selectionActionsEl.ownerDocument.createElement("button");
 		editButton.type = "button";
-		editButton.textContent = `Edit ${node.label}`;
+		editButton.textContent = this.plugin.t.basesView.edit({ name: node.label });
 		editButton.addEventListener("click", () => this.plugin.openEditPerson(node.filePath));
 		const relationshipButton = this.selectionActionsEl.ownerDocument.createElement("button");
 		relationshipButton.type = "button";
-		relationshipButton.textContent = `Create relationship with ${node.label}`;
+		relationshipButton.textContent = this.plugin.t.basesView.createRelationshipWith({ name: node.label });
 		relationshipButton.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
 		const logContactButton = this.selectionActionsEl.ownerDocument.createElement("button");
 		logContactButton.type = "button";
-		logContactButton.textContent = `Log contact with ${node.label}`;
+		logContactButton.textContent = this.plugin.t.basesView.logContactWith({ name: node.label });
 		logContactButton.addEventListener("click", () => this.plugin.openLogContact(node.filePath));
 		this.selectionActionsEl.append(editButton, relationshipButton, logContactButton);
 		this.selectionActionsEl.hidden = false;

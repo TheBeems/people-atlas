@@ -1,5 +1,6 @@
-import { ConfirmationModal } from "obsidian";
+import { ConfirmationModal, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTranslator } from "../src/i18n";
 import type PeopleAtlasPlugin from "../src/main";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { RelationshipPreset } from "../src/settings/relationship-presets";
@@ -45,6 +46,7 @@ type DeclarativeSettingDefinition = {
 		placeholder?: string;
 		validate?: unknown;
 		options?: Record<string, string>;
+		filter?: (file: TFile) => boolean;
 	};
 };
 
@@ -95,6 +97,7 @@ function createRelationshipTemplateTab({
 	const updateSetting = vi.fn(async () => saved);
 	const plugin = {
 		app: {},
+		t: createTranslator("en"),
 		settings: {
 			...structuredClone(DEFAULT_SETTINGS),
 			relationshipPresets: structuredClone(presets),
@@ -121,6 +124,7 @@ afterEach(() => {
 function createTab(myPersonId = "", writesEnabled = true): PeopleAtlasSettingTab {
 	const plugin = {
 		app: {},
+		t: createTranslator("en"),
 		settings: {
 			...structuredClone(DEFAULT_SETTINGS),
 			myPersonId,
@@ -144,6 +148,32 @@ function createTab(myPersonId = "", writesEnabled = true): PeopleAtlasSettingTab
 		canWritePeopleAtlasData: vi.fn(() => writesEnabled),
 	} as unknown as PeopleAtlasPlugin;
 	return new PeopleAtlasSettingTab(plugin);
+}
+
+function createMyPersonPickerTab({
+	myPersonId = "",
+	candidates = [
+		{ id: "alice-id", name: "Alice", filePath: "People/Alice.md" },
+		{ id: "bob-id", name: "Bob", filePath: "Archive/Bob.md" },
+	],
+}: {
+	myPersonId?: string;
+	candidates?: Array<{ id: string; name: string; filePath: string }>;
+} = {}): {
+	tab: PeopleAtlasSettingTab;
+	updateSetting: ReturnType<typeof vi.fn>;
+} {
+	const updateSetting = vi.fn(async () => true);
+	const plugin = {
+		app: {},
+		t: createTranslator("en"),
+		settings: { ...structuredClone(DEFAULT_SETTINGS), myPersonId },
+		getMyPersonCandidates: vi.fn(() => candidates),
+		getMyPersonWarning: vi.fn(() => undefined),
+		canWritePeopleAtlasData: vi.fn(() => true),
+		updateSetting,
+	} as unknown as PeopleAtlasPlugin;
+	return { tab: new PeopleAtlasSettingTab(plugin), updateSetting };
 }
 
 describe("People Atlas declarative setting persistence", () => {
@@ -282,6 +312,57 @@ describe("People Atlas relationship-template deletion confirmation", () => {
 });
 
 describe("People Atlas settings definitions", () => {
+	it("adapts a selected canonical person note path to the stable My person ID", async () => {
+		const { tab, updateSetting } = createMyPersonPickerTab({ myPersonId: "alice-id" });
+		const myPerson = flattenedSettingDefinitions(tab).find((definition) => definition.control?.key === "myPersonId");
+
+		expect(myPerson).toMatchObject({
+			name: "My person",
+			control: { type: "file", key: "myPersonId" },
+		});
+		const canonicalFile = Object.assign(new TFile(), { path: "People/Alice.md" });
+		const ordinaryFile = Object.assign(new TFile(), { path: "Notes/Ordinary.md" });
+		expect(myPerson?.control?.filter?.(canonicalFile)).toBe(true);
+		expect(myPerson?.control?.filter?.(ordinaryFile)).toBe(false);
+		expect(tab.getControlValue("myPersonId")).toBe("People/Alice.md");
+
+		await tab.setControlValue("myPersonId", "People/Alice.md");
+
+		expect(updateSetting).toHaveBeenCalledExactlyOnceWith("myPersonId", "alice-id");
+	});
+
+	it("rejects ordinary, stale and ambiguous picker paths without writing, while explicit clear only clears My person", async () => {
+		const { tab, updateSetting } = createMyPersonPickerTab({
+			myPersonId: "alice-id",
+			candidates: [
+				{ id: "alice-id", name: "Alice", filePath: "People/Alice.md" },
+				{ id: "duplicate-one", name: "Duplicate one", filePath: "People/Ambiguous.md" },
+				{ id: "duplicate-two", name: "Duplicate two", filePath: "People/Ambiguous.md" },
+			],
+		});
+		const myPerson = flattenedSettingDefinitions(tab).find((definition) => definition.control?.key === "myPersonId");
+		const ambiguousFile = Object.assign(new TFile(), { path: "People/Ambiguous.md" });
+
+		expect(myPerson?.control?.filter?.(ambiguousFile)).toBe(false);
+		await tab.setControlValue("myPersonId", "Notes/Ordinary.md");
+		await tab.setControlValue("myPersonId", "People/Stale.md");
+		await tab.setControlValue("myPersonId", "People/Ambiguous.md");
+		expect(updateSetting).not.toHaveBeenCalled();
+
+		await tab.setControlValue("myPersonId", "");
+		expect(updateSetting).toHaveBeenCalledExactlyOnceWith("myPersonId", "");
+	});
+
+	it("requires byte-exact picker paths and treats whitespace-only input as invalid rather than clear", async () => {
+		const { tab, updateSetting } = createMyPersonPickerTab({ myPersonId: "alice-id" });
+
+		await tab.setControlValue("myPersonId", " People/Alice.md");
+		await tab.setControlValue("myPersonId", "People/Alice.md ");
+		await tab.setControlValue("myPersonId", "	 ");
+
+		expect(updateSetting).not.toHaveBeenCalled();
+	});
+
 	it("exposes one People root control and no independent person or contact-moment folder controls", () => {
 		const definitions = flattenedSettingDefinitions(createTab());
 		const folderDefinitions = definitions.filter((definition) =>
@@ -358,10 +439,10 @@ describe("People Atlas settings definitions", () => {
 			{ key: "peopleRootFolder", type: "text", placeholder: "People", validates: true, optionKeys: [] },
 			{
 				key: "myPersonId",
-				type: "dropdown",
-				placeholder: null,
+				type: "file",
+				placeholder: "Select a person note",
 				validates: false,
-				optionKeys: ["", "alice-id", "bob-id"],
+				optionKeys: [],
 			},
 			{ key: "showLabels", type: "toggle", placeholder: null, validates: false, optionKeys: [] },
 		]);
@@ -377,7 +458,7 @@ describe("People Atlas settings definitions", () => {
 		expect(technicalKeys).toEqual([]);
 	});
 
-	it("offers None and canonical explicit My person candidates without direction or Person A/B settings", () => {
+	it("offers a native canonical My person note picker without direction or Person A/B settings", () => {
 		const definitions = flattenedSettingDefinitions(createTab()) as Array<Record<string, unknown>>;
 		const myPerson = definitions.find((definition) => definition.name === "My person");
 		const direction = definitions.find((definition) => definition.name === "Relationship direction property");
@@ -392,13 +473,9 @@ describe("People Atlas settings definitions", () => {
 		expect(myPerson).toMatchObject({
 			name: "My person",
 			control: {
-				type: "dropdown",
+				type: "file",
 				key: "myPersonId",
-				options: {
-					"": "None",
-					"alice-id": "Alice — People/Alice.md",
-					"bob-id": "Bob — Archive/Bob.md",
-				},
+				placeholder: "Select a person note",
 			},
 		});
 	});
@@ -431,15 +508,17 @@ describe("People Atlas settings definitions", () => {
 	});
 
 	it("keeps an unavailable stored My person visible and reports the recoverable warning", () => {
-		const definitions = flattenedSettingDefinitions(createTab("missing-id")) as Array<Record<string, unknown>>;
+		const tab = createTab("missing-id");
+		const definitions = flattenedSettingDefinitions(tab) as Array<Record<string, unknown>>;
 		const myPerson = definitions.find((definition) => definition.name === "My person");
 
 		expect(myPerson?.desc).toContain("Warning: The stored person_id is missing or ambiguous.");
+		expect(tab.getControlValue("myPersonId")).toBe("");
 		expect(myPerson).toMatchObject({
 			control: {
-				options: {
-					"missing-id": "Unavailable: missing-id",
-				},
+				type: "file",
+				key: "myPersonId",
+				placeholder: "Select a person note",
 			},
 		});
 	});

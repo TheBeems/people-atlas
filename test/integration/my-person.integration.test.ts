@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { App, PluginManifest } from "obsidian";
 import { BASES_OPTION_KEYS } from "../../src/bases/options";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "../../src/constants";
 import PeopleAtlasPlugin from "../../src/main";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
+import { PeopleAtlasSettingTab } from "../../src/settings/settings-tab";
 import { DEFAULT_VIEW_STATE } from "../../src/settings/view-state";
 import { type Component, ControlledObsidianRuntime } from "../obsidian-stub";
 
@@ -40,6 +41,37 @@ afterEach(() => {
 });
 
 describe("My person identity and navigation boundary", () => {
+	it("refreshes an open My person picker after index publication without a plugin-data write or index rebuild", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		const plugin = await loadPlugin(runtime);
+
+		try {
+			const tab = [...runtime.settingTabs].find((candidate) => candidate instanceof PeopleAtlasSettingTab);
+			if (!tab) throw new Error("Expected the People Atlas Settings tab.");
+			const update = vi.spyOn(tab, "update");
+			tab.display();
+			tab.display();
+			update.mockClear();
+			const scansBefore = runtime.vault.markdownScanCount;
+			const writesBefore = runtime.savedPluginData.length;
+
+			runtime.createFile("People/Alice.md", person("alice-id", "Alice"));
+
+			expect(update).toHaveBeenCalledOnce();
+			expect(tab.getControlValue("myPersonId")).toBe("");
+			expect(plugin.getMyPersonCandidates()).toEqual([{ id: "alice-id", name: "Alice", filePath: "People/Alice.md" }]);
+			expect(runtime.vault.markdownScanCount).toBe(scansBefore);
+			expect(runtime.savedPluginData).toHaveLength(writesBefore);
+
+			tab.hide();
+			update.mockClear();
+			runtime.createFile("People/Bob.md", person("bob-id", "Bob"));
+			expect(update).not.toHaveBeenCalled();
+		} finally {
+			await unloadPlugin(plugin);
+		}
+	});
+
 	it("offers only unique explicit person IDs and ignores notes without one", async () => {
 		const runtime = new ControlledObsidianRuntime(document);
 		runtime.seedFile("People/Me.md", person("me-123", "Me"));

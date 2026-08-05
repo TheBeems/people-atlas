@@ -1,6 +1,7 @@
 import type { AtlasNode } from "../domain/types";
 import { formatPersonBirthDateForDisplay, parsePersonBirthDate } from "../domain/person-profile";
 import { personPhotoInitials } from "../domain/person-photo";
+import { createTranslator, type Translator } from "../i18n";
 
 export type PersonProfileFieldKey =
 	| "pronouns"
@@ -38,22 +39,28 @@ export type PersonPhotoResourceResolver = (photoPath: string) => PersonPhotoReso
 export interface PersonProfileRenderOptions {
 	contactHeadingLevel: 3 | 4;
 	resolvePhotoResource?: PersonPhotoResourceResolver | undefined;
+	translator?: Translator | undefined;
 }
 
-export function buildPersonProfilePresentation(node: AtlasNode): PersonProfilePresentation {
+export function buildPersonProfilePresentation(
+	node: AtlasNode,
+	translator: Translator = createTranslator("en"),
+): PersonProfilePresentation {
 	const profileFields: PersonProfileField[] = [];
 	const contactFields: PersonProfileField[] = [];
 
-	appendTextField(profileFields, "pronouns", "Pronouns", node.pronouns);
-	appendTextField(profileFields, "job-title", "Job title", node.jobTitle);
-	appendListField(profileFields, "organisations", "Organisations", node.organisations);
+	appendTextField(profileFields, "pronouns", translator.personProfile.pronouns, node.pronouns);
+	appendTextField(profileFields, "job-title", translator.personProfile.jobTitle, node.jobTitle);
+	appendListField(profileFields, "organisations", translator.personProfile.organisations, node.organisations);
 	const birthDate = node.birthDate ? parsePersonBirthDate(node.birthDate) : undefined;
 	if (birthDate?.valid) {
-		appendListField(profileFields, "birth-date", "Birth date", [formatPersonBirthDateForDisplay(birthDate.value)]);
+		appendListField(profileFields, "birth-date", translator.personProfile.birthDate, [
+			formatPersonBirthDateForDisplay(birthDate.value),
+		]);
 	}
-	appendTextField(profileFields, "gender", "Gender", node.gender);
-	appendListField(contactFields, "emails", "Email", node.emails ?? [], "mailto");
-	appendListField(contactFields, "phones", "Phone", node.phones ?? [], "tel");
+	appendTextField(profileFields, "gender", translator.personProfile.gender, node.gender);
+	appendListField(contactFields, "emails", translator.personProfile.email, node.emails ?? [], "mailto");
+	appendListField(contactFields, "phones", translator.personProfile.phone, node.phones ?? [], "tel");
 
 	return { profileFields, contactFields };
 }
@@ -63,19 +70,20 @@ export function renderPersonProfile(
 	node: AtlasNode,
 	options: PersonProfileRenderOptions,
 ): HTMLDivElement {
-	const presentation = buildPersonProfilePresentation(node);
+	const translator = options.translator ?? createTranslator("en");
+	const presentation = buildPersonProfilePresentation(node, translator);
 	const profile = doc.createElement("div");
 	profile.className = "people-atlas-profile";
-	profile.append(renderProfilePhoto(doc, node, options.resolvePhotoResource));
+	profile.append(renderProfilePhoto(doc, node, options.resolvePhotoResource, translator));
 	if (presentation.profileFields.length > 0) {
 		profile.append(renderDefinitionList(doc, presentation.profileFields, "people-atlas-profile-fields"));
 	}
 	if (presentation.contactFields.length > 0) {
 		const contactDetails = doc.createElement("section");
 		contactDetails.className = "people-atlas-contact-details";
-		contactDetails.setAttribute("aria-label", "Contact details");
+		contactDetails.setAttribute("aria-label", translator.personProfile.contactDetails);
 		const heading = doc.createElement(`h${options.contactHeadingLevel}`);
-		heading.textContent = "Contact details";
+		heading.textContent = translator.personProfile.contactDetails;
 		contactDetails.append(
 			heading,
 			renderDefinitionList(doc, presentation.contactFields, "people-atlas-contact-fields"),
@@ -89,6 +97,7 @@ function renderProfilePhoto(
 	doc: Document,
 	node: AtlasNode,
 	resolvePhotoResource: PersonPhotoResourceResolver | undefined,
+	translator: Translator,
 ): HTMLDivElement {
 	const photo = doc.createElement("div");
 	photo.className = "people-atlas-profile-photo";
@@ -119,12 +128,12 @@ function renderProfilePhoto(
 	}
 	if (!resolution) resolution = { status: "unavailable" };
 	if (resolution.status !== "ready") {
-		showPhotoExplanation(photo, explanation, resolution.status);
+		showPhotoExplanation(photo, explanation, resolution.status, translator);
 		return photo;
 	}
 	const resourceUrl = safeLocalPhotoResourceUrl(resolution.resourceUrl, node.photoPath);
 	if (!resourceUrl) {
-		showPhotoExplanation(photo, explanation, "unavailable");
+		showPhotoExplanation(photo, explanation, "unavailable", translator);
 		return photo;
 	}
 
@@ -152,7 +161,7 @@ function renderProfilePhoto(
 		if (!image.isConnected) return;
 		image.remove();
 		fallback.hidden = false;
-		showPhotoExplanation(photo, explanation, "decode-error");
+		showPhotoExplanation(photo, explanation, "decode-error", translator);
 	};
 	image.addEventListener("load", onLoad);
 	image.addEventListener("error", onError);
@@ -172,17 +181,18 @@ function showPhotoExplanation(
 	photo: HTMLElement,
 	explanation: HTMLElement,
 	status: "missing" | "unsupported" | "unavailable" | "decode-error",
+	translator: Translator,
 ): void {
 	photo.dataset.photoStatus = status;
 	explanation.hidden = false;
 	explanation.textContent =
 		status === "missing"
-			? "Photo unavailable: the referenced vault image could not be found."
+			? translator.personProfile.photoMissing
 			: status === "unsupported"
-				? "Photo unavailable: this file type is not supported."
+				? translator.personProfile.photoUnsupported
 				: status === "decode-error"
-					? "Photo unavailable: the image could not be decoded."
-					: "Photo unavailable: a safe vault resource could not be prepared.";
+					? translator.personProfile.photoDecodeError
+					: translator.personProfile.photoUnavailable;
 }
 
 function appendTextField(

@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import { TFile as StubTFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTranslator, type Translator } from "../../src/i18n";
 import type { PersonRecord } from "../../src/domain/types";
 import { PersonModal, type PersonModalMode } from "../../src/editor/person-modal";
 import type { AtlasMutationService } from "../../src/mutations/atlas-mutation-service";
@@ -77,6 +78,7 @@ function mountModal(options?: {
 	width?: number;
 	ownerDocument?: Document;
 	getSettings?: () => typeof DEFAULT_SETTINGS;
+	translator?: Translator;
 }): MountedPersonModal {
 	const people = options?.people ?? [alice, bob];
 	const createPerson = options?.createPerson ?? vi.fn(async () => personFile("People/Created.md"));
@@ -132,13 +134,23 @@ function mountModal(options?: {
 			getLeaf: () => ({ openFile }),
 		},
 	} as unknown as App;
-	const modal = new PersonModal(
+	const PersonModalWithTranslator = PersonModal as unknown as new (
+		app: App,
+		mode: PersonModalMode,
+		people: PersonRecord[],
+		mutations: AtlasMutationService,
+		getSettings: () => typeof DEFAULT_SETTINGS,
+		getCurrentPeople?: () => PersonRecord[],
+		translator?: Translator,
+	) => PersonModal;
+	const modal = new PersonModalWithTranslator(
 		app,
 		options?.mode ?? { kind: "create" },
 		people,
 		{ createPerson, updatePerson } as unknown as AtlasMutationService,
 		options?.getSettings ?? (() => DEFAULT_SETTINGS),
 		options?.getCurrentPeople,
+		options?.translator,
 	);
 	const ownerDocument = options?.ownerDocument ?? document;
 	const title = ownerDocument.createElement("h2");
@@ -235,6 +247,26 @@ afterEach(() => {
 });
 
 describe("person modal", () => {
+	it("localizes fixed person-modal and accessible form text without changing user-authored values", () => {
+		const { content, form, title } = mountModal({
+			mode: { kind: "edit", file: personFile(alice.filePath), person: alice, rawPhoto: "[[Assets/alice.png]]" },
+			translator: createTranslator("nl"),
+		});
+
+		expect(title.textContent).toBe("Huidige persoon bewerken");
+		expect(
+			Array.from(form.children)
+				.filter((child) => child.matches("fieldset, details"))
+				.map((child) => child.querySelector("legend, summary")?.textContent?.split(" — ")[0]),
+		).toEqual(["Basis", "Profiel", "Contactgegevens", "Gekoppelde personen", "Geavanceerd"]);
+		expect(Array.from(content.querySelectorAll("label")).map((label) => label.textContent)).toContain("Naam");
+		expect(Array.from(content.querySelectorAll("label")).map((label) => label.textContent)).toContain("Foto");
+		expect(buttonWithText(content, "Annuleren")).toBeInstanceOf(HTMLButtonElement);
+		expect(buttonWithText(content, "Opslaan")).toBeInstanceOf(HTMLButtonElement);
+		expect(inputForLabel(content, "Naam").value).toBe("Alice");
+		expect(inputForLabel(content, "Person-ID").value).toBe("person-alice");
+	});
+
 	it("renders the curated semantic sections in order with Advanced collapsed and reviewable identity", () => {
 		const file = personFile(alice.filePath);
 		const { content, form, title } = mountModal({
@@ -659,6 +691,64 @@ describe("person modal", () => {
 		expect(decode.content.textContent).toContain("could not be decoded");
 		expect(decode.content.querySelector<HTMLElement>(".people-atlas-person-photo-initials")?.hidden).toBe(false);
 		buttonWithText(decode.content, "Cancel").click();
+	});
+
+	it("localizes photo preview live-region messages without changing the selected photo path", () => {
+		const editFile = personFile(alice.filePath);
+		const missing = mountModal({
+			mode: { kind: "edit", file: editFile, person: alice, rawPhoto: "[[Assets/missing.webp]]" },
+			translator: createTranslator("nl"),
+		});
+		expect(missing.content.textContent).toContain("De verwezen vaultafbeelding ontbreekt");
+		expect(inputForLabel(missing.content, "Foto").value).toBe("[[Assets/missing.webp]]");
+		buttonWithText(missing.content, "Annuleren").click();
+
+		const portrait = personFile("Assets/alice.png");
+		const decode = mountModal({
+			mode: { kind: "edit", file: editFile, person: alice, rawPhoto: "[[Assets/alice.png]]" },
+			photoFiles: [portrait],
+			translator: createTranslator("nl"),
+		});
+		expect(decode.content.textContent).toContain("De geselecteerde vaultafbeelding wordt geladen");
+		const image = decode.content.querySelector<HTMLImageElement>(".people-atlas-person-photo-image");
+		if (!image) throw new Error("Expected a vault image preview.");
+		dispatchImageEvent(image, "error");
+		expect(decode.content.textContent).toContain("kon niet worden gedecodeerd");
+		expect(inputForLabel(decode.content, "Foto").value).toBe("[[Assets/alice.png]]");
+		buttonWithText(decode.content, "Annuleren").click();
+	});
+
+	it("covers every remaining localized photo fallback without altering raw photo references", () => {
+		const editFile = personFile(alice.filePath);
+		const portrait = personFile("Assets/alice.png");
+		const vector = personFile("Assets/alice.svg");
+		const cases = [
+			{ rawPhoto: "", expected: "Er is geen foto geselecteerd" },
+			{
+				rawPhoto: "https://example.test/alice.jpg",
+				expected: "Externe of netwerkfotoreferenties worden niet ondersteund",
+			},
+			{ rawPhoto: "[[]]", expected: "De fotoreferentie is niet leesbaar" },
+			{ rawPhoto: "[[Assets/alice.svg]]", expected: "Deze foto-indeling wordt niet ondersteund", photoFiles: [vector] },
+			{
+				rawPhoto: "[[Assets/alice.png]]",
+				expected: "De geselecteerde vaultafbeelding is tijdelijk niet beschikbaar",
+				photoFiles: [portrait],
+				getResourcePath: vi.fn(() => "https://example.test/alice.png"),
+			},
+		];
+
+		for (const testCase of cases) {
+			const mounted = mountModal({
+				mode: { kind: "edit", file: editFile, person: alice, rawPhoto: testCase.rawPhoto },
+				...(testCase.photoFiles ? { photoFiles: testCase.photoFiles } : {}),
+				...(testCase.getResourcePath ? { getResourcePath: testCase.getResourcePath } : {}),
+				translator: createTranslator("nl"),
+			});
+			expect(mounted.content.textContent).toContain(testCase.expected);
+			expect(inputForLabel(mounted.content, "Foto").value).toBe(testCase.rawPhoto);
+			buttonWithText(mounted.content, "Annuleren").click();
+		}
 	});
 
 	it("clears only the photo property after explicit Save", async () => {

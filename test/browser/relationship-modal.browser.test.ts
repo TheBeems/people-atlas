@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import { TFile as StubTFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTranslator, type Translator } from "../../src/i18n";
 import type { PersonRecord, RelationshipRecord } from "../../src/domain/types";
 import {
 	RelationshipModal,
@@ -83,6 +84,7 @@ function mountModal(options?: {
 	getCurrentPeople?: () => PersonRecord[];
 	width?: number;
 	ownerDocument?: Document;
+	translator?: Translator;
 }): MountedRelationshipModal {
 	const settings = { current: structuredClone(options?.settings ?? DEFAULT_SETTINGS) };
 	const createRelationship = options?.createRelationship ?? vi.fn(async () => relationshipFile("Created.md"));
@@ -105,7 +107,19 @@ function mountModal(options?: {
 		},
 	} as unknown as App;
 	const afterClose = vi.fn();
-	const modal = new RelationshipModal(
+	const RelationshipModalWithTranslator = RelationshipModal as unknown as new (
+		app: App,
+		mode: RelationshipModalMode,
+		people: PersonRecord[],
+		mutations: AtlasMutationService,
+		getSettings: () => PeopleAtlasSettings,
+		afterClose?: () => void,
+		templateCreation?: RelationshipTemplateCreation,
+		getCurrentPeople?: () => PersonRecord[],
+		onCreateSuccess?: undefined,
+		translator?: Translator,
+	) => RelationshipModal;
+	const modal = new RelationshipModalWithTranslator(
 		app,
 		options?.mode ?? {
 			kind: "create",
@@ -119,6 +133,8 @@ function mountModal(options?: {
 		afterClose,
 		options?.templateCreation,
 		options?.getCurrentPeople,
+		undefined,
+		options?.translator,
 	);
 	const ownerDocument = options?.ownerDocument ?? document;
 	const title = ownerDocument.createElement("h2");
@@ -190,6 +206,29 @@ afterEach(() => {
 });
 
 describe("relationship modal", () => {
+	it("localizes fixed relationship-modal and accessible form text without changing stored values", () => {
+		const { content } = mountModal({ translator: createTranslator("nl") });
+
+		expect(content.ownerDocument.querySelector("h2")?.textContent).toBe("Relatie aanmaken");
+		expect(Array.from(content.querySelectorAll("fieldset > legend")).map((legend) => legend.textContent)).toEqual([
+			"Personen",
+			"Relatie",
+			"Context",
+		]);
+		expect(selectForLabel(content, "Eenvoudige relatie").value).toBe("custom");
+		expect(
+			Array.from(selectForLabel(content, "Status").options).map((option) => [option.value, option.textContent]),
+		).toEqual([
+			["", "Niet ingesteld"],
+			["active", "Actief"],
+			["dormant", "Inactief"],
+			["ended", "Beëindigd"],
+		]);
+		expect(buttonWithText(content, "Annuleren")).toBeInstanceOf(HTMLButtonElement);
+		expect(buttonWithText(content, "Opslaan")).toBeInstanceOf(HTMLButtonElement);
+		expect(inputForLabel(content, "Eerste persoon — Alice").value).toBe(alice.filePath);
+	});
+
 	it("applies explicit simple relationships in place for two other people without writing before Save", () => {
 		const { content, form, createRelationship, updateRelationship } = mountModal({
 			mode: {
@@ -265,6 +304,25 @@ describe("relationship modal", () => {
 		expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth);
 		expect(createRelationship).not.toHaveBeenCalled();
 		expect(updateRelationship).not.toHaveBeenCalled();
+	});
+
+	it("localizes generated family-role previews while preserving stored canonical roles", () => {
+		const { content, createRelationship } = mountModal({ translator: createTranslator("nl") });
+		const simple = Array.from(content.querySelectorAll<HTMLSelectElement>("select")).find((select) =>
+			Array.from(select.options).some((option) => option.value === "parent"),
+		);
+		if (!simple) throw new Error("Expected simple relationship selector.");
+
+		choose(simple, "parent");
+
+		expect(content.textContent).toContain("In deze relatie is de rol van Alice moeder en de rol van Bob zoon.");
+		expect(Array.from(content.querySelectorAll<HTMLInputElement>("input")).map((input) => input.value)).toContain(
+			"parent",
+		);
+		expect(Array.from(content.querySelectorAll<HTMLInputElement>("input")).map((input) => input.value)).toContain(
+			"child",
+		);
+		expect(createRelationship).not.toHaveBeenCalled();
 	});
 
 	it("derives the simple choice after manual and template role changes without changing template provenance", () => {

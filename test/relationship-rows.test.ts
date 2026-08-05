@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AtlasEdge, AtlasNode, AtlasSnapshot } from "../src/domain/types";
+import { createTranslator } from "../src/i18n";
 import { buildIncidentRelationshipRows, relationshipActionAccessibleName } from "../src/render/relationship-rows";
 
 const alice: AtlasNode = {
@@ -175,6 +176,29 @@ describe("incident relationship rows", () => {
 		expect(buildIncidentRelationshipRows(snapshot([sibling]), bob, "{role} of {person}")[0]?.description).toBe(
 			"brother of Alice. Types: family.",
 		);
+	});
+
+	it("localizes only generated canonical family terms in relationship rows", () => {
+		const parentChild: AtlasEdge = {
+			id: "relationship-parent-child-nl",
+			sourceId: alice.id,
+			targetId: bob.id,
+			types: ["family"],
+			fromRole: "parent",
+			toRole: "child",
+			filePath: "Relationships/Alice Bob family.md",
+			inferred: false,
+		};
+		const literal: AtlasEdge = { ...parentChild, id: "relationship-literal-nl", fromRole: "Moeder", toRole: "Dochter" };
+
+		expect(
+			buildIncidentRelationshipRows(snapshot([parentChild]), alice, "{person}: {role}", createTranslator("nl"))[0]
+				?.description,
+		).toBe("Bob: moeder. Typen: family.");
+		expect(
+			buildIncidentRelationshipRows(snapshot([literal]), alice, "{person}: {role}", createTranslator("nl"))[0]
+				?.description,
+		).toBe("Bob: Moeder. Typen: family.");
 	});
 
 	it("keeps canonical partner roles literal rather than deriving a gendered family term", () => {

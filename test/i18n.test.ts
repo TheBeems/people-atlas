@@ -15,6 +15,11 @@ describe("People Atlas i18n foundation", () => {
 		const dutch = createTranslator("nl-NL");
 		expect(english.commandOpenAtlas).toBe("Open atlas");
 		expect(dutch.commandOpenAtlas).toBe("Atlas openen");
+		expect(dutch.personModal.save).toBe("Opslaan");
+		expect(english.relationshipModal.titleCreate).toBe("Create relationship");
+		expect(dutch.atlasRenderer.semanticListSummary({ people: 2, connections: 1, hiddenContactMoments: 0 })).toBe(
+			"2 personen · 1 verbindingen",
+		);
 		expect(english.settingsMyPersonSelectedDescription({ name: "Alice", filePath: "People/Alice.md" })).toBe(
 			"Perspective anchor: Alice — People/Alice.md. It stays independent from graph navigation.",
 		);

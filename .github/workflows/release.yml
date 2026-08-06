@@ -68,12 +68,23 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          channel="stable"
+          if [[ -f ".github/release-notes/${TAG}.md" ]] && grep -qx "Channel: alpha" ".github/release-notes/${TAG}.md"; then
+            channel="alpha"
+          fi
+          title="People Atlas ${TAG}"
+          if [[ "$channel" == "alpha" ]]; then
+            title="People Atlas ${TAG} (Alpha)"
+          fi
           release_args=(
             "$TAG"
             --verify-tag
-            --title "People Atlas $TAG"
+            --title "$title"
             --generate-notes
           )
+          if [[ "$channel" == "alpha" ]]; then
+            release_args+=(--prerelease)
+          fi
           release_notes_file=".github/release-notes/${TAG}.md"
           if [[ -f "$release_notes_file" ]]; then
             release_args+=(--notes "$(cat "$release_notes_file")")

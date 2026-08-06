@@ -190,6 +190,18 @@ describe("release workflow tag guard", () => {
 		expect(workflow).toContain(`gh release create "\${release_args[@]}" main.js manifest.json styles.css`);
 	});
 
+	test("declares the alpha channel opt-in and branches on the release-notes marker", async () => {
+		const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "release.yml"), "utf8");
+		expect(workflow).toContain('grep -qx "Channel: alpha"');
+		expect(workflow).toContain('if [[ "$channel" == "alpha" ]]');
+		expect(workflow).toContain('title="People Atlas ${TAG} (Alpha)"');
+		expect(workflow).toContain("release_args+=(--prerelease)");
+		const publishLine = workflow.split("\n").find((line) => line.includes('gh release create "'));
+		expect(publishLine).toBeTruthy();
+		expect(publishLine).not.toContain("--prerelease");
+		expect(workflow).toContain('title="People Atlas ${TAG}"');
+	});
+
 	test("0.1.0 release notes state the exact Obsidian compatibility boundary", async () => {
 		const notes = await readFile(path.join(process.cwd(), ".github", "release-notes", "0.1.0.md"), "utf8");
 

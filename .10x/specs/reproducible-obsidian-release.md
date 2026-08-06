@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-27
-Updated: 2026-07-31
+Updated: 2026-08-06
 
 # P8 — Reproducible Obsidian release
 
@@ -128,6 +128,23 @@ reproducibility and release provenance. It does not authorize publishing.
     reproducibility check or attestation MUST prevent release creation.
 36. No workflow, script or documentation change in P8 MAY push a tag, create a
     release, configure a remote or submit to the Obsidian Community directory.
+
+### Release channel (opt-in alpha prerelease)
+
+37. A release's channel is declared explicitly per version in its release
+    notes file `.github/release-notes/<version>.md`. An exact marker line
+    `Channel: alpha` declares an alpha prerelease; its absence (or any other
+    value) declares a stable release. The release tag itself MUST remain strict
+    `x.y.z`; alpha is represented by the GitHub prerelease flag and the
+    `(Alpha)` title branding, NOT by a SemVer prerelease suffix (which the
+    release contract rejects for `manifest.json.version` and the tag).
+38. For an `alpha` channel the tag workflow MUST create the GitHub release with
+    `gh release create --prerelease` and title `People Atlas <version> (Alpha)`.
+    For a non-alpha channel it MUST create a stable release titled
+    `People Atlas <version>` without `--prerelease`. The release-workflow guard
+    test in `test/release-contract.test.ts` MUST assert the marker read and
+    both channel branches, so the declared channel cannot drift from the
+    published release.
 
 ## Error behavior
 

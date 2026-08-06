@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.0 (Alpha)
+
+- The **Relationship** section of the relationship editor is now grouped into
+  three clear sub-sections: an always-visible **Core** (relationship types,
+  both people's roles, and the natural-language role preview) plus two native,
+  collapsed-by-default disclosures for the **Simple relationship** shortcut and
+  the **Relationship template** machinery. When you edit a relationship whose
+  note already carries a template, that template disclosure opens automatically
+  so you can see it immediately. All template copy-not-live semantics, the
+  write-free-until-Save behavior, focus/scroll/disclosure state and
+  accessibility guarantees are unchanged.
+- **Breaking:** 0.12.0 continues the fresh-vault-only presentation-first
+  dossier boundary without migration or backward compatibility for older
+  folder layouts.
+
 ## 0.11.0 (Alpha)
 
 - Added a multilingual user interface with **English** and **Dutch (Nederlands)**

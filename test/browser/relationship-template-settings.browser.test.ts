@@ -5,7 +5,10 @@ import type PeopleAtlasPlugin from "../../src/main";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
 import { RelationshipPresetModal } from "../../src/settings/relationship-preset-modal";
 import { RelationshipPresetSyncModal } from "../../src/settings/relationship-preset-sync-modal";
-import type { RelationshipPresetSyncChange } from "../../src/settings/relationship-preset-sync";
+import type {
+	RelationshipPresetSyncChange,
+	RelationshipPresetSyncResult,
+} from "../../src/settings/relationship-preset-sync";
 import type { RelationshipPreset } from "../../src/settings/relationship-presets";
 import { PeopleAtlasSettingTab } from "../../src/settings/settings-tab";
 
@@ -111,6 +114,54 @@ describe("relationship template settings", () => {
 		expect(buttonWithText(content, "Opslaan")).toBeInstanceOf(HTMLButtonElement);
 	});
 
+	it("localizes a rejected template save in Dutch", async () => {
+		const modal = new RelationshipPresetModal(
+			{} as App,
+			{ kind: "create" },
+			[],
+			async () => false,
+			createTranslator("nl"),
+		);
+		const { content } = mountModal(modal);
+
+		enter(inputForLabel(content, "Naam"), "Vrienden");
+		enter(inputForLabel(content, "Relatietypen"), "vriend");
+		enter(inputForLabel(content, "Rol eerste persoon"), "Vriend");
+		enter(inputForLabel(content, "Rol tweede persoon"), "Vriend");
+		buttonWithText(content, "Opslaan").click();
+
+		await vi.waitFor(() =>
+			expect(content.querySelector("[role=alert]")?.textContent).toBe(
+				"Het relatiesjabloon kon niet worden opgeslagen. De People Atlas-instellingen kunnen alleen-lezen of ongeldig zijn geworden; controleer de instellingen en probeer het opnieuw.",
+			),
+		);
+	});
+
+	it("localizes the prefix of a template-save exception while keeping its external detail", async () => {
+		const modal = new RelationshipPresetModal(
+			{} as App,
+			{ kind: "create" },
+			[],
+			async () => {
+				throw new Error("schijf vol");
+			},
+			createTranslator("nl"),
+		);
+		const { content } = mountModal(modal);
+
+		enter(inputForLabel(content, "Naam"), "Vrienden");
+		enter(inputForLabel(content, "Relatietypen"), "vriend");
+		enter(inputForLabel(content, "Rol eerste persoon"), "Vriend");
+		enter(inputForLabel(content, "Rol tweede persoon"), "Vriend");
+		buttonWithText(content, "Opslaan").click();
+
+		await vi.waitFor(() =>
+			expect(content.querySelector("[role=alert]")?.textContent).toBe(
+				"Het relatiesjabloon kon niet worden opgeslagen: schijf vol",
+			),
+		);
+	});
+
 	it("creates a template with copy-not-live and fixed endpoint-slot language", async () => {
 		const onSave = vi.fn(async () => true);
 		const modal = new RelationshipPresetModal({} as App, { kind: "create" }, [], onSave);
@@ -167,14 +218,14 @@ describe("relationship template settings", () => {
 				},
 			},
 		];
-		const onConfirm = vi.fn(async (approved: RelationshipPresetSyncChange[]) => {
+		const onConfirm = vi.fn(async (approved: RelationshipPresetSyncChange[]): Promise<RelationshipPresetSyncResult> => {
 			approved[0]?.before.types.push("changed-only-in-callback");
 			return {
 				completed: 0,
 				skipped: 2,
 				remaining: 1,
 				failure: {
-					filePath: changes[0]?.filePath,
+					filePath: "People/Relationships/Alice - Bob.md",
 					message: "The relationship changed after this preview was opened. Review a new preview.",
 				},
 			};

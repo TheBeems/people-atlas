@@ -31,6 +31,16 @@ type TemplateUnavailableParameters = {
 	presetId: string;
 };
 
+type NoticeErrorParameters = {
+	error: string;
+};
+
+type NoteKind = "person" | "relationship" | "contact-moment";
+
+type NoteOpenFailureParameters = NoticeErrorParameters & {
+	kind: NoteKind;
+};
+
 export const englishCatalog = {
 	commandOpenAtlas: "Open atlas",
 	commandOpenFollowUps: "Open follow-ups",
@@ -85,6 +95,32 @@ export const englishCatalog = {
 		`Relationship template “${presetId}” is no longer available.`,
 	noticeTemplateAlreadyMatches:
 		"All indexed relationship notes with this template provenance already match its copied values.",
+	noticePersonUnavailable: "The selected person is no longer available in the People Atlas index.",
+	noticeRelationshipRoleFormatMustBeText: "The relationship role format must be text.",
+	noticeViewStateReadOnly: "People Atlas view state is read-only until the plugin data is repaired.",
+	noticeViewStateSaveFailed: ({ error }: NoticeErrorParameters) =>
+		`People Atlas view state could not be saved: ${error}`,
+	noticeNoEditablePersonActive: "No editable person note is active.",
+	noticePersonSourceChanged:
+		"The selected person changed while its source was being verified. Reopen it before editing.",
+	noticeNoEditableRelationshipActive: "No editable relationship note is active.",
+	noticeNoEditableContactMomentActive: "No editable contact-moment note is active.",
+	noticeOpenNoteFailed: ({ kind, error }: NoteOpenFailureParameters) =>
+		`The ${kind} note could not be opened: ${error}`,
+	noticeCreatedNoteOpenFailed: ({ kind, error }: NoteOpenFailureParameters) =>
+		`The ${kind} was created but could not be opened: ${error}`,
+	noticeContactMomentActionUnavailable:
+		"The selected contact moment changed or is no longer available. Review the current atlas data.",
+	noticeFollowUpUnavailable:
+		"The selected follow-up changed or is no longer available. Review the current contact moment.",
+	noticePersonWritesReadOnly:
+		"Person creation and editing are read-only until the People Atlas plugin data is repaired.",
+	noticeRelationshipUnavailable: "The selected relationship is no longer available in the People Atlas index.",
+	noticeRelationshipWritesReadOnly:
+		"Relationship creation and editing are read-only until the People Atlas plugin data is repaired.",
+	noticeContactMomentUnavailable: "The selected contact moment is no longer available in the People Atlas index.",
+	noticeContactMomentWritesReadOnly:
+		"Contact-moment creation and editing are read-only until the People Atlas plugin data is repaired.",
 	noticeFollowUpMarkedDone: "Follow-up marked done.",
 	noticeFollowUpDismissed: "Follow-up dismissed.",
 	relationshipModal: {
@@ -196,6 +232,9 @@ export const englishCatalog = {
 		secondPersonRole: "Second-person role",
 		cancel: "Cancel",
 		save: "Save",
+		saveRejected:
+			"The relationship template could not be saved. People Atlas settings may have become read-only or invalid; review the settings and try again.",
+		saveFailed: ({ error }: NoticeErrorParameters) => `The relationship template could not be saved: ${error}`,
 	},
 	relationshipPresetSyncModal: {
 		title: "Update linked relationships from template",
@@ -209,6 +248,7 @@ export const englishCatalog = {
 		none: "none",
 		success: ({ completed, skipped }: { completed: number; skipped: number }) =>
 			`Updated ${completed}; skipped ${skipped}; none remain from this preview.`,
+		updateFailed: ({ error }: NoticeErrorParameters) => `Update failed before completion: ${error}`,
 	},
 	relationshipPresetDelete: {
 		title: ({ presetName }: { presetName: string }) => `Delete “${presetName}” relationship template?`,
@@ -296,16 +336,24 @@ export const englishCatalog = {
 		unresolvedPersonListLabel: "unresolved person",
 		semanticListSummary: ({
 			people,
+			peopleCount,
 			connections,
+			connectionsCount,
 			hiddenContactMoments,
+			hiddenContactMomentCount,
 		}: {
-			people: number;
-			connections: number;
-			hiddenContactMoments: number;
+			people: string;
+			peopleCount: number;
+			connections: string;
+			connectionsCount: number;
+			hiddenContactMoments: string;
+			hiddenContactMomentCount: number;
 		}) =>
-			`${people} people · ${connections} connections${
-				hiddenContactMoments > 0
-					? ` · ${hiddenContactMoments} contact ${hiddenContactMoments === 1 ? "moment" : "moments"} hidden`
+			`${people} ${peopleCount === 1 ? "person" : "people"} · ${connections} ${
+				connectionsCount === 1 ? "connection" : "connections"
+			}${
+				hiddenContactMomentCount > 0
+					? ` · ${hiddenContactMoments} contact ${hiddenContactMomentCount === 1 ? "moment" : "moments"} hidden`
 					: ""
 			}`,
 		relationships: "Relationships",
@@ -328,6 +376,8 @@ export const englishCatalog = {
 		unresolvedNoActions: "This unresolved person has no available actions.",
 		noNoteNoActions: "This person has no note or available actions.",
 		contactMoments: "Contact moments",
+		diagnosticsHeading: ({ count }: { count: number }) => `Diagnostics (${count})`,
+		openDiagnosticSource: "Open source note",
 		nextFollowUp: "Next follow-up",
 		allContactMoments: "All contact moments",
 		recentContactMoments: "Recent contact moments",
@@ -336,9 +386,19 @@ export const englishCatalog = {
 		showRecentContactMoments: "Show recent contact moments",
 		viewAllContactMoments: "View all contact moments",
 		noOpenFollowUps: "No open follow-ups",
-		followUpsSummary: ({ openCount, hiddenCount }: { openCount: number; hiddenCount: number }) =>
-			`${openCount} open follow-up${openCount === 1 ? "" : "s"}${
-				hiddenCount > 0 ? ` · ${hiddenCount} contact moment${hiddenCount === 1 ? "" : "s"} hidden` : ""
+		followUpsSummary: ({
+			openCount,
+			openCountValue,
+			hiddenCount,
+			hiddenCountValue,
+		}: {
+			openCount: string;
+			openCountValue: number;
+			hiddenCount: string;
+			hiddenCountValue: number;
+		}) =>
+			`${openCount} open follow-up${openCountValue === 1 ? "" : "s"}${
+				hiddenCountValue > 0 ? ` · ${hiddenCount} contact moment${hiddenCountValue === 1 ? "" : "s"} hidden` : ""
 			}`,
 		overdue: "Overdue",
 		dueToday: "Due today",
@@ -378,6 +438,7 @@ export const englishCatalog = {
 		jobTitle: "Job title",
 		organisations: "Organisations",
 		birthDate: "Birth date",
+		birthDateYearUnknown: ({ date }: { date: string }) => `${date} (year unknown)`,
 		gender: "Gender",
 		email: "Email",
 		phone: "Phone",
@@ -420,8 +481,18 @@ export const englishCatalog = {
 		selectNodeHint: "Select a node. Double-click to center it; Shift-double-click to open its note.",
 		personNoteUnavailable: "Person note unavailable",
 		open: "Open",
-		stats: ({ people, connections }: { people: number; connections: number }) =>
-			`${people} people · ${connections} connections`,
+		stats: ({
+			people,
+			peopleCount,
+			connections,
+			connectionsCount,
+		}: {
+			people: string;
+			peopleCount: number;
+			connections: string;
+			connectionsCount: number;
+		}) =>
+			`${people} ${peopleCount === 1 ? "person" : "people"} · ${connections} ${connectionsCount === 1 ? "connection" : "connections"}`,
 	},
 	basesView: {
 		edit: ({ name }: { name: string }) => `Edit ${name}`,

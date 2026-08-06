@@ -62,8 +62,10 @@ export function buildIncidentRelationshipRows(
 		const parts = [relationshipDescription];
 		if (edge.types.length > 0) parts.push(translator.relationshipRows.types({ types: edge.types.join(", ") }));
 		if (edge.status) parts.push(translator.relationshipRows.status({ status: edge.status }));
-		if (edge.since) parts.push(translator.relationshipRows.since({ since: edge.since }));
-		if (edge.lastContact) parts.push(translator.relationshipRows.lastContact({ lastContact: edge.lastContact }));
+		if (edge.since) parts.push(translator.relationshipRows.since({ since: translator.formatDateOnly(edge.since) }));
+		if (edge.lastContact) {
+			parts.push(translator.relationshipRows.lastContact({ lastContact: translator.formatDateOnly(edge.lastContact) }));
+		}
 
 		const contextParts = [counterpartLabel];
 		if (edge.types.length > 0) contextParts.push(edge.types.join(", "));

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AtlasNode } from "../src/domain/types";
+import { createTranslator } from "../src/i18n";
 import { buildPersonProfilePresentation } from "../src/render/person-profile";
 
 function node(overrides: Partial<AtlasNode> = {}): AtlasNode {
@@ -40,7 +41,7 @@ describe("person profile presentation", () => {
 				values: ["Example Org", "Community Lab"],
 				linkScheme: undefined,
 			},
-			{ key: "birth-date", label: "Birth date", values: ["02-29 (year unknown)"], linkScheme: undefined },
+			{ key: "birth-date", label: "Birth date", values: ["February 29 (year unknown)"], linkScheme: undefined },
 			{ key: "gender", label: "Gender", values: ["Woman"], linkScheme: undefined },
 		]);
 		expect(presentation.contactFields).toEqual([
@@ -57,10 +58,15 @@ describe("person profile presentation", () => {
 	it("omits absent values and accepts calendar-valid full and yearless leap days only", () => {
 		expect(buildPersonProfilePresentation(node())).toEqual({ profileFields: [], contactFields: [] });
 		expect(buildPersonProfilePresentation(node({ birthDate: "2000-02-29" })).profileFields).toEqual([
-			{ key: "birth-date", label: "Birth date", values: ["2000-02-29"], linkScheme: undefined },
+			{ key: "birth-date", label: "Birth date", values: ["February 29, 2000"], linkScheme: undefined },
 		]);
 		expect(buildPersonProfilePresentation(node({ birthDate: "--02-29" })).profileFields).toEqual([
-			{ key: "birth-date", label: "Birth date", values: ["02-29 (year unknown)"], linkScheme: undefined },
+			{ key: "birth-date", label: "Birth date", values: ["February 29 (year unknown)"], linkScheme: undefined },
+		]);
+		expect(
+			buildPersonProfilePresentation(node({ birthDate: "--02-29" }), createTranslator("nl")).profileFields,
+		).toEqual([
+			{ key: "birth-date", label: "Geboortedatum", values: ["29 februari (jaar onbekend)"], linkScheme: undefined },
 		]);
 		for (const birthDate of ["1900-02-29", "--02-30", "0000-01-01", "July 30"]) {
 			expect(buildPersonProfilePresentation(node({ birthDate })).profileFields).toEqual([]);

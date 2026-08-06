@@ -884,7 +884,10 @@ export class PersonModal extends Modal {
 					await this.app.workspace.getLeaf("tab").openFile(result.file);
 				} catch (error) {
 					new Notice(
-						`The person was created but could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+						this.t.noticeCreatedNoteOpenFailed({
+							kind: "person",
+							error: error instanceof Error ? error.message : String(error),
+						}),
 					);
 				}
 			}

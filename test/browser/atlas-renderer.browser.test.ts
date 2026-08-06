@@ -265,6 +265,33 @@ describe("accessible atlas renderer", () => {
 		expect(document.querySelector(".people-atlas-follow-ups-summary")?.textContent).toBe("1 openstaande opvolging");
 	});
 
+	it("formats contact-moment dates only at the localized renderer boundary", () => {
+		const moment: ContactMomentSummary = {
+			id: "moment-localized-date",
+			filePath: "People/Contact moments/Localized date.md",
+			personIds: [alice.id],
+			occurredOn: "2026-07-30",
+			followUpOn: "2026-08-01",
+			followUpStatus: "open",
+		};
+		const { renderer } = mount(
+			snapshot([alice], [], [moment]),
+			DEFAULT_SETTINGS,
+			{ canUpdateFollowUp: () => true, onUpdateFollowUp: () => true },
+			createTranslator("nl"),
+		);
+
+		renderer.showFollowUps();
+
+		const row = document.querySelector<HTMLElement>('[data-contact-moment-id="moment-localized-date"]');
+		expect(row?.querySelector('time[datetime="2026-08-01"]')?.textContent).toBe("1 augustus 2026");
+		expect(row?.querySelector('time[datetime="2026-07-30"]')?.textContent).toBe("30 juli 2026");
+		expect(row?.querySelector('time[datetime="2026-08-01"]')?.getAttribute("datetime")).toBe("2026-08-01");
+		expect(row?.querySelector('button[data-contact-moment-action="done"]')?.getAttribute("aria-label")).toContain(
+			"gepland 1 augustus 2026",
+		);
+	});
+
 	it("localizes semantic-list live summaries including hidden contact moments", async () => {
 		mount(snapshot([alice], [], [], 1), DEFAULT_SETTINGS, {}, createTranslator("nl"));
 
@@ -272,7 +299,7 @@ describe("accessible atlas renderer", () => {
 
 		expect(document.querySelector(".people-atlas-semantic-summary")?.getAttribute("aria-live")).toBe("polite");
 		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe(
-			"1 personen · 0 verbindingen · 1 verborgen contactmoment",
+			"1 persoon · 0 verbindingen · 1 verborgen contactmoment",
 		);
 	});
 
@@ -361,7 +388,7 @@ describe("accessible atlas renderer", () => {
 
 		(view as unknown as { renderSnapshot: () => void }).renderSnapshot();
 
-		expect(statsEl.textContent).toBe("1 personen · 0 verbindingen");
+		expect(statsEl.textContent).toBe("1 persoon · 0 verbindingen");
 		expect(renderer.setGraph.mock.calls[0]?.[0]).toMatchObject({ nodes: [{ id: "person-alice" }], edges: [] });
 	});
 
@@ -430,7 +457,7 @@ describe("accessible atlas renderer", () => {
 			Array.from(semanticDetails?.querySelectorAll(".people-atlas-profile dt") ?? []).map((term) => term.textContent),
 		).toEqual(["Pronouns", "Job title", "Organisations", "Birth date", "Gender", "Email", "Phone"]);
 		expect(semanticDetails?.querySelector<HTMLElement>("[data-profile-field='birth-date']")?.textContent).toBe(
-			"02-29 (year unknown)",
+			"February 29 (year unknown)",
 		);
 		expect(
 			Array.from(semanticDetails?.querySelectorAll(".people-atlas-connection-group > h4") ?? []).map(
@@ -853,7 +880,7 @@ describe("accessible atlas renderer", () => {
 		);
 		const relationshipItems = relationshipRows.map((item) => item.querySelector("span")?.textContent);
 		expect(relationshipItems).toEqual([
-			"Connected to Bob. Types: friend, colleague. Status: active. Since: 2020-01-02. Last contact: 2026-07-20.",
+			"Connected to Bob. Types: friend, colleague. Status: active. Since: January 2, 2020. Last contact: July 20, 2026.",
 			"Connected to Charlie. Types: mentor. Status: dormant.",
 			"Connected to Bob. Types: neighbour. Status: ended.",
 			"Linked person: Missing (unresolved).",
@@ -1194,7 +1221,7 @@ describe("accessible atlas renderer", () => {
 			(item) => item.textContent,
 		);
 		expect(descriptions).toEqual([
-			"Connected to Bob. Types: friend, colleague. Status: active. Since: 2020-01-02. Last contact: 2026-07-20.",
+			"Connected to Bob. Types: friend, colleague. Status: active. Since: January 2, 2020. Last contact: July 20, 2026.",
 			"Connected to Bob. Types: neighbour. Status: ended.",
 			"Linked person: Missing (unresolved).",
 		]);
@@ -1812,7 +1839,9 @@ describe("accessible atlas renderer", () => {
 			"moment-today",
 			"moment-terminal",
 		]);
-		expect(document.querySelector(".people-atlas-next-follow-up")?.textContent).toContain(localDay(-2));
+		expect(document.querySelector(".people-atlas-next-follow-up")?.textContent).toContain(
+			createTranslator("en").formatDateOnly(localDay(-2)),
+		);
 		expect(document.querySelector(".people-atlas-next-follow-up")?.textContent).toContain("museum visit");
 		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toContain("2 contact moments hidden");
 
@@ -1828,7 +1857,7 @@ describe("accessible atlas renderer", () => {
 			'.people-atlas-semantic-details .people-atlas-contact-moment-recent li[data-contact-moment-id="moment-overdue"] button[data-contact-moment-action="open"]',
 		);
 		expect(historyOpen?.getAttribute("aria-label")).toBe(
-			"Open contact moment for Alice, 2026-07-25, Planned a museum visit",
+			"Open contact moment for Alice, July 25, 2026, Planned a museum visit",
 		);
 		await userEvent.click(historyOpen as HTMLButtonElement);
 		expect(onOpenContactMoment).toHaveBeenCalledWith(moments[0], historyOpen);
@@ -1862,7 +1891,7 @@ describe("accessible atlas renderer", () => {
 			document.querySelector('.people-atlas-follow-ups-panel [data-contact-moment-id="moment-overdue"]')?.textContent ??
 			"";
 		expect(overdueText).toContain("Alice");
-		expect(overdueText).toContain("2026-07-25");
+		expect(overdueText).toContain("July 25, 2026");
 		expect(overdueText).toContain("Call");
 		expect(overdueText).toContain("Alice and Bob · friend, colleague");
 		expect(
@@ -1871,7 +1900,7 @@ describe("accessible atlas renderer", () => {
 					'[data-contact-moment-id="moment-overdue"] button[data-contact-moment-action="done"]',
 				)
 				?.getAttribute("aria-label"),
-		).toContain(`for Alice, due ${localDay(-2)}`);
+		).toContain(`for Alice, due ${createTranslator("en").formatDateOnly(localDay(-2))}`);
 	});
 
 	it("rechecks stale capabilities and restores logical focus after a follow-up row is removed", async () => {

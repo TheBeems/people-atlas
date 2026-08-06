@@ -119,12 +119,13 @@ export class RelationshipPresetModal extends Modal {
 			if (await this.onSave(preset)) {
 				this.close();
 			} else if (this.errorEl) {
-				this.errorEl.textContent =
-					"The relationship template could not be saved. People Atlas settings may have become read-only or invalid; review the settings and try again.";
+				this.errorEl.textContent = this.t.relationshipPresetModal.saveRejected;
 			}
 		} catch (error) {
 			if (this.errorEl) {
-				this.errorEl.textContent = `The relationship template could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+				this.errorEl.textContent = this.t.relationshipPresetModal.saveFailed({
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		} finally {
 			if (this.saveButton) {

@@ -97,7 +97,14 @@ describe("incident relationship rows", () => {
 		expect(rows[0]).toMatchObject({
 			counterpart: bob,
 			noteBacked: true,
-			description: "Collega van Bob. Types: colleague. Status: active. Since: 2024-01-01. Last contact: 2026-07-30.",
+			description:
+				"Collega van Bob. Types: colleague. Status: active. Since: January 1, 2024. Last contact: July 30, 2026.",
+		});
+		expect(
+			buildIncidentRelationshipRows(snapshot([work]), alice, "{role} van {person}", createTranslator("nl"))[0],
+		).toMatchObject({
+			description:
+				"Collega van Bob. Typen: colleague. Status: active. Sinds: 1 januari 2024. Laatste contact: 30 juli 2026.",
 		});
 		expect(relationshipActionAccessibleName("edit", rows[0] as NonNullable<(typeof rows)[number]>)).not.toBe(
 			relationshipActionAccessibleName("edit", rows[1] as NonNullable<(typeof rows)[number]>),

@@ -170,7 +170,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		}
 		if (key === "relationshipRoleFormat") {
 			if (typeof value !== "string") {
-				new Notice("The relationship role format must be text.");
+				new Notice(this.t.noticeRelationshipRoleFormatMustBeText);
 				return false;
 			}
 			const formatError = validateRelationshipRoleFormat(value);
@@ -327,7 +327,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 
 	saveViewState(viewConfigurationKey: string, state: AtlasViewState): Promise<void> {
 		if (!this.settingsWriteEnabled) {
-			new Notice("People Atlas view state is read-only until the plugin data is repaired.");
+			new Notice(this.t.noticeViewStateReadOnly);
 			return Promise.resolve();
 		}
 		return this.viewStateWrites.schedule(viewConfigurationKey, state);
@@ -384,9 +384,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			await this.saveData(this.settings);
 		} catch (error) {
 			this.settings = previous;
-			new Notice(
-				`People Atlas view state could not be saved: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			new Notice(this.t.noticeViewStateSaveFailed({ error: error instanceof Error ? error.message : String(error) }));
 		}
 	}
 
@@ -418,7 +416,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 	openEditCurrentPerson(): void {
 		const file = this.app.workspace.getActiveFile();
 		if (!(file instanceof TFile)) {
-			new Notice("No editable person note is active.");
+			new Notice(this.t.noticeNoEditablePersonActive);
 			return;
 		}
 		void this.openEditPerson(file.path);
@@ -431,7 +429,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		}
 		let target = this.resolveCanonicalPerson(personPath);
 		if (!target) {
-			new Notice("The selected person is no longer available in the People Atlas index.");
+			new Notice(this.t.noticePersonUnavailable);
 			return;
 		}
 		const sourceBaseline =
@@ -447,7 +445,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				refreshedTarget.personClassification !== "tag" ||
 				!this.canWritePeopleAtlasData()
 			) {
-				new Notice("The selected person changed while its source was being verified. Reopen it before editing.");
+				new Notice(this.t.noticePersonSourceChanged);
 				return;
 			}
 			target = refreshedTarget;
@@ -481,7 +479,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		}
 		const people = this.index.getSnapshot().people;
 		if (prefillPersonPath && !resolveCanonicalPersonByPath(people, prefillPersonPath)) {
-			new Notice("The selected person is no longer available in the People Atlas index.");
+			new Notice(this.t.noticePersonUnavailable);
 			return;
 		}
 		const prefill = buildRelationshipCreatePrefill(people, prefillPersonPath, this.settings.myPersonId);
@@ -557,7 +555,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			!(file instanceof TFile) ||
 			this.index.getSnapshot().relationships.filter((candidate) => candidate.filePath === file.path).length !== 1
 		) {
-			new Notice("No editable relationship note is active.");
+			new Notice(this.t.noticeNoEditableRelationshipActive);
 			return;
 		}
 		this.openEditRelationship(file.path);
@@ -578,7 +576,10 @@ export default class PeopleAtlasPlugin extends Plugin {
 			return true;
 		} catch (error) {
 			new Notice(
-				`The relationship note could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+				this.t.noticeOpenNoteFailed({
+					kind: "relationship",
+					error: error instanceof Error ? error.message : String(error),
+				}),
 			);
 			return false;
 		}
@@ -624,7 +625,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		if (prefilledPersonPath) {
 			const person = this.resolveCanonicalPerson(prefilledPersonPath);
 			if (!person) {
-				new Notice("The selected person is no longer available in the People Atlas index.");
+				new Notice(this.t.noticePersonUnavailable);
 				return false;
 			}
 			canonicalPrefillPath = person.person.filePath;
@@ -658,7 +659,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			(this.index.getSnapshot().contactMoments ?? []).filter((candidate) => candidate.filePath === file.path).length !==
 				1
 		) {
-			new Notice("No editable contact-moment note is active.");
+			new Notice(this.t.noticeNoEditableContactMomentActive);
 			return;
 		}
 		this.openEditContactMoment(file.path);
@@ -682,7 +683,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 	}
 
 	noticeContactMomentActionUnavailable(): void {
-		new Notice("The selected contact moment changed or is no longer available. Review the current atlas data.");
+		new Notice(this.t.noticeContactMomentActionUnavailable);
 	}
 
 	async openContactMomentSummary(moment: ContactMomentSummary): Promise<boolean> {
@@ -696,7 +697,10 @@ export default class PeopleAtlasPlugin extends Plugin {
 			return true;
 		} catch (error) {
 			new Notice(
-				`The contact-moment note could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+				this.t.noticeOpenNoteFailed({
+					kind: "contact-moment",
+					error: error instanceof Error ? error.message : String(error),
+				}),
 			);
 			return false;
 		}
@@ -744,7 +748,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			return false;
 		}
 		if (!this.canUpdateContactMomentFollowUp(moment) || !moment.followUpOn) {
-			new Notice("The selected follow-up changed or is no longer available. Review the current contact moment.");
+			new Notice(this.t.noticeFollowUpUnavailable);
 			return false;
 		}
 		try {
@@ -810,7 +814,10 @@ export default class PeopleAtlasPlugin extends Plugin {
 			return true;
 		} catch (error) {
 			new Notice(
-				`The contact-moment note could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+				this.t.noticeOpenNoteFailed({
+					kind: "contact-moment",
+					error: error instanceof Error ? error.message : String(error),
+				}),
 			);
 			return false;
 		}
@@ -975,23 +982,23 @@ export default class PeopleAtlasPlugin extends Plugin {
 	}
 
 	private noticePersonWritesDisabled(): void {
-		new Notice("Person creation and editing are read-only until the People Atlas plugin data is repaired.");
+		new Notice(this.t.noticePersonWritesReadOnly);
 	}
 
 	private noticeRelationshipUnavailable(): void {
-		new Notice("The selected relationship is no longer available in the People Atlas index.");
+		new Notice(this.t.noticeRelationshipUnavailable);
 	}
 
 	private noticeRelationshipWritesDisabled(): void {
-		new Notice("Relationship creation and editing are read-only until the People Atlas plugin data is repaired.");
+		new Notice(this.t.noticeRelationshipWritesReadOnly);
 	}
 
 	private noticeContactMomentUnavailable(): void {
-		new Notice("The selected contact moment is no longer available in the People Atlas index.");
+		new Notice(this.t.noticeContactMomentUnavailable);
 	}
 
 	private noticeContactMomentWritesDisabled(): void {
-		new Notice("Contact-moment creation and editing are read-only until the People Atlas plugin data is repaired.");
+		new Notice(this.t.noticeContactMomentWritesReadOnly);
 	}
 }
 

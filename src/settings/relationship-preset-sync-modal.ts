@@ -70,9 +70,9 @@ export class RelationshipPresetSyncModal extends Modal {
 		try {
 			result = await this.onConfirm(this.changes.map((change) => structuredClone(change)));
 		} catch (error) {
-			this.statusEl.textContent = `Update failed before completion. ${
-				error instanceof Error ? error.message : String(error)
-			}`;
+			this.statusEl.textContent = this.t.relationshipPresetSyncModal.updateFailed({
+				error: error instanceof Error ? error.message : String(error),
+			});
 			this.confirmButton.disabled = false;
 			this.confirmButton.removeAttribute("aria-busy");
 			return;

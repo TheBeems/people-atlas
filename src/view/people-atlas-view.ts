@@ -300,8 +300,10 @@ export class PeopleAtlasView extends ItemView {
 		}
 		if (this.statsEl)
 			this.statsEl.textContent = this.plugin.t.peopleAtlasView.stats({
-				people: projected.nodes.length,
-				connections: projected.edges.length,
+				people: this.plugin.t.formatInteger(projected.nodes.length),
+				peopleCount: projected.nodes.length,
+				connections: this.plugin.t.formatInteger(projected.edges.length),
+				connectionsCount: projected.edges.length,
 			});
 		this.renderDiagnostics(projected);
 	}
@@ -518,7 +520,7 @@ export class PeopleAtlasView extends ItemView {
 			prefix.textContent = this.plugin.t.atlasRenderer.followUpPrefix;
 			const date = item.ownerDocument.createElement("time");
 			date.dateTime = followUpOn;
-			date.textContent = followUpOn;
+			date.textContent = this.plugin.t.formatDateOnly(followUpOn);
 			followUp.append(prefix, date);
 			content.append(followUp);
 		}
@@ -527,7 +529,7 @@ export class PeopleAtlasView extends ItemView {
 		occurredPrefix.textContent = this.plugin.t.atlasRenderer.contactPrefix;
 		const occurredDate = item.ownerDocument.createElement("time");
 		occurredDate.dateTime = moment.occurredOn;
-		occurredDate.textContent = moment.occurredOn;
+		occurredDate.textContent = this.plugin.t.formatDateOnly(moment.occurredOn);
 		occurred.append(occurredPrefix, occurredDate);
 		content.append(occurred);
 		if (moment.channel) {
@@ -657,10 +659,12 @@ export class PeopleAtlasView extends ItemView {
 			sameDay.length > 1 && ordinal >= 0
 				? this.plugin.t.atlasRenderer.contactEntry({ index: ordinal + 1, count: sameDay.length })
 				: "";
-		const placement = followUpOn ? this.plugin.t.atlasRenderer.followUpDue({ date: followUpOn }) : "";
+		const placement = followUpOn
+			? this.plugin.t.atlasRenderer.followUpDue({ date: this.plugin.t.formatDateOnly(followUpOn) })
+			: "";
 		return this.plugin.t.atlasRenderer.contactActionContext({
 			person: personLabel,
-			date: moment.occurredOn,
+			date: this.plugin.t.formatDateOnly(moment.occurredOn),
 			discriminator,
 			placement,
 		});
@@ -684,7 +688,7 @@ export class PeopleAtlasView extends ItemView {
 		this.diagnosticsEl.replaceChildren();
 		if (!this.plugin.settings.showDiagnostics || snapshot.diagnostics.length === 0) return;
 		const heading = this.diagnosticsEl.ownerDocument.createElement("h3");
-		heading.textContent = `Diagnostics (${snapshot.diagnostics.length})`;
+		heading.textContent = this.plugin.t.atlasRenderer.diagnosticsHeading({ count: snapshot.diagnostics.length });
 		const list = this.diagnosticsEl.ownerDocument.createElement("ul");
 		for (const diagnostic of snapshot.diagnostics.slice(0, 20)) {
 			const item = this.diagnosticsEl.ownerDocument.createElement("li");
@@ -698,7 +702,7 @@ export class PeopleAtlasView extends ItemView {
 			if (sourcePath) {
 				const openButton = this.diagnosticsEl.ownerDocument.createElement("button");
 				openButton.type = "button";
-				openButton.textContent = "Open";
+				openButton.textContent = this.plugin.t.atlasRenderer.openDiagnosticSource;
 				openButton.addEventListener("click", () => this.openPath(sourcePath));
 				item.append(openButton);
 			}

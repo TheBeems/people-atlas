@@ -1,5 +1,5 @@
 import type { AtlasNode } from "../domain/types";
-import { formatPersonBirthDateForDisplay, parsePersonBirthDate } from "../domain/person-profile";
+import { parsePersonBirthDate } from "../domain/person-profile";
 import { personPhotoInitials } from "../domain/person-photo";
 import { createTranslator, type Translator } from "../i18n";
 
@@ -54,9 +54,13 @@ export function buildPersonProfilePresentation(
 	appendListField(profileFields, "organisations", translator.personProfile.organisations, node.organisations);
 	const birthDate = node.birthDate ? parsePersonBirthDate(node.birthDate) : undefined;
 	if (birthDate?.valid) {
-		appendListField(profileFields, "birth-date", translator.personProfile.birthDate, [
-			formatPersonBirthDateForDisplay(birthDate.value),
-		]);
+		const date =
+			birthDate.parts.year === undefined
+				? translator.personProfile.birthDateYearUnknown({
+						date: translator.formatMonthDay(birthDate.parts.month, birthDate.parts.day),
+					})
+				: translator.formatDateOnly(birthDate.value);
+		appendListField(profileFields, "birth-date", translator.personProfile.birthDate, [date]);
 	}
 	appendTextField(profileFields, "gender", translator.personProfile.gender, node.gender);
 	appendListField(contactFields, "emails", translator.personProfile.email, node.emails ?? [], "mailto");

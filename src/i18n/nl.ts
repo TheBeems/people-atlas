@@ -53,6 +53,31 @@ export const dutchCatalog: Translator = {
 	noticeTemplateUnavailable: ({ presetId }) => `Relatiesjabloon “${presetId}” is niet meer beschikbaar.`,
 	noticeTemplateAlreadyMatches:
 		"Alle geïndexeerde relatienotities met deze sjabloonherkomst komen al overeen met de gekopieerde waarden.",
+	noticePersonUnavailable: "De geselecteerde persoon is niet meer beschikbaar in de People Atlas-index.",
+	noticeRelationshipRoleFormatMustBeText: "De opmaak voor relatierollen moet tekst zijn.",
+	noticeViewStateReadOnly: "De People Atlas-weergavestatus is alleen-lezen totdat de plugingegevens zijn hersteld.",
+	noticeViewStateSaveFailed: ({ error }) => `De People Atlas-weergavestatus kon niet worden opgeslagen: ${error}`,
+	noticeNoEditablePersonActive: "Er is geen bewerkbare persoonsnotitie actief.",
+	noticePersonSourceChanged:
+		"De geselecteerde persoon veranderde terwijl de bron werd gecontroleerd. Open de persoon opnieuw vóór bewerken.",
+	noticeNoEditableRelationshipActive: "Er is geen bewerkbare relatienotitie actief.",
+	noticeNoEditableContactMomentActive: "Er is geen bewerkbare contactmomentnotitie actief.",
+	noticeOpenNoteFailed: ({ kind, error }) =>
+		`De ${kind === "person" ? "persoonsnotitie" : kind === "relationship" ? "relatienotitie" : "contactmomentnotitie"} kon niet worden geopend: ${error}`,
+	noticeCreatedNoteOpenFailed: ({ kind, error }) =>
+		`De ${kind === "person" ? "persoon" : kind === "relationship" ? "relatie" : "contactmoment"} is aangemaakt maar kon niet worden geopend: ${error}`,
+	noticeContactMomentActionUnavailable:
+		"Het geselecteerde contactmoment veranderde of is niet meer beschikbaar. Controleer de huidige Atlas-gegevens.",
+	noticeFollowUpUnavailable:
+		"De geselecteerde opvolging veranderde of is niet meer beschikbaar. Controleer het huidige contactmoment.",
+	noticePersonWritesReadOnly:
+		"Personen aanmaken en bewerken is alleen-lezen totdat de People Atlas-plugingegevens zijn hersteld.",
+	noticeRelationshipUnavailable: "De geselecteerde relatie is niet meer beschikbaar in de People Atlas-index.",
+	noticeRelationshipWritesReadOnly:
+		"Relaties aanmaken en bewerken is alleen-lezen totdat de People Atlas-plugingegevens zijn hersteld.",
+	noticeContactMomentUnavailable: "Het geselecteerde contactmoment is niet meer beschikbaar in de People Atlas-index.",
+	noticeContactMomentWritesReadOnly:
+		"Contactmomenten aanmaken en bewerken is alleen-lezen totdat de People Atlas-plugingegevens zijn hersteld.",
 	noticeFollowUpMarkedDone: "Opvolging gemarkeerd als afgerond.",
 	noticeFollowUpDismissed: "Opvolging genegeerd.",
 	relationshipModal: {
@@ -158,6 +183,9 @@ export const dutchCatalog: Translator = {
 		secondPersonRole: "Rol tweede persoon",
 		cancel: "Annuleren",
 		save: "Opslaan",
+		saveRejected:
+			"Het relatiesjabloon kon niet worden opgeslagen. De People Atlas-instellingen kunnen alleen-lezen of ongeldig zijn geworden; controleer de instellingen en probeer het opnieuw.",
+		saveFailed: ({ error }) => `Het relatiesjabloon kon niet worden opgeslagen: ${error}`,
 	},
 	relationshipPresetSyncModal: {
 		title: "Gekoppelde relaties vanuit sjabloon bijwerken",
@@ -171,6 +199,7 @@ export const dutchCatalog: Translator = {
 		none: "geen",
 		success: ({ completed, skipped }) =>
 			`Bijgewerkt: ${completed}; overgeslagen: ${skipped}; niets resteert uit deze voorvertoning.`,
+		updateFailed: ({ error }) => `Bijwerken is vóór voltooiing mislukt: ${error}`,
 	},
 	relationshipPresetDelete: {
 		title: ({ presetName }) => `Relatiesjabloon “${presetName}” verwijderen?`,
@@ -257,10 +286,19 @@ export const dutchCatalog: Translator = {
 		unresolvedPerson: "Onopgeloste persoon",
 		ambiguousPersonListLabel: "ambigue persoon",
 		unresolvedPersonListLabel: "onopgeloste persoon",
-		semanticListSummary: ({ people, connections, hiddenContactMoments }) =>
-			`${people} personen · ${connections} verbindingen${
-				hiddenContactMoments > 0
-					? ` · ${hiddenContactMoments} verborgen contact${hiddenContactMoments === 1 ? "moment" : "momenten"}`
+		semanticListSummary: ({
+			people,
+			peopleCount,
+			connections,
+			connectionsCount,
+			hiddenContactMoments,
+			hiddenContactMomentCount,
+		}) =>
+			`${people} ${peopleCount === 1 ? "persoon" : "personen"} · ${connections} ${
+				connectionsCount === 1 ? "verbinding" : "verbindingen"
+			}${
+				hiddenContactMomentCount > 0
+					? ` · ${hiddenContactMoments} verborgen contact${hiddenContactMomentCount === 1 ? "moment" : "momenten"}`
 					: ""
 			}`,
 		relationships: "Relaties",
@@ -283,6 +321,8 @@ export const dutchCatalog: Translator = {
 		unresolvedNoActions: "Deze onopgeloste persoon heeft geen beschikbare acties.",
 		noNoteNoActions: "Deze persoon heeft geen notitie of beschikbare acties.",
 		contactMoments: "Contactmomenten",
+		diagnosticsHeading: ({ count }) => `Diagnostiek (${count})`,
+		openDiagnosticSource: "Bronnotitie openen",
 		nextFollowUp: "Volgende opvolging",
 		allContactMoments: "Alle contactmomenten",
 		recentContactMoments: "Recente contactmomenten",
@@ -291,9 +331,9 @@ export const dutchCatalog: Translator = {
 		showRecentContactMoments: "Recente contactmomenten tonen",
 		viewAllContactMoments: "Alle contactmomenten bekijken",
 		noOpenFollowUps: "Geen open opvolgingen",
-		followUpsSummary: ({ openCount, hiddenCount }) =>
-			`${openCount} openstaande opvolging${openCount === 1 ? "" : "en"}${
-				hiddenCount > 0 ? ` · ${hiddenCount} contactmoment${hiddenCount === 1 ? "" : "en"} verborgen` : ""
+		followUpsSummary: ({ openCount, openCountValue, hiddenCount, hiddenCountValue }) =>
+			`${openCount} openstaande opvolging${openCountValue === 1 ? "" : "en"}${
+				hiddenCountValue > 0 ? ` · ${hiddenCount} contactmoment${hiddenCountValue === 1 ? "" : "en"} verborgen` : ""
 			}`,
 		overdue: "Te laat",
 		dueToday: "Vandaag gepland",
@@ -322,6 +362,7 @@ export const dutchCatalog: Translator = {
 		jobTitle: "Functietitel",
 		organisations: "Organisaties",
 		birthDate: "Geboortedatum",
+		birthDateYearUnknown: ({ date }) => `${date} (jaar onbekend)`,
 		gender: "Gender",
 		email: "E-mail",
 		phone: "Telefoon",
@@ -365,7 +406,10 @@ export const dutchCatalog: Translator = {
 			"Selecteer een knooppunt. Dubbelklik om het te centreren; Shift-dubbelklik om de notitie te openen.",
 		personNoteUnavailable: "Persoonsnotitie niet beschikbaar",
 		open: "Openen",
-		stats: ({ people, connections }) => `${people} personen · ${connections} verbindingen`,
+		stats: ({ people, peopleCount, connections, connectionsCount }) =>
+			`${people} ${peopleCount === 1 ? "persoon" : "personen"} · ${connections} ${
+				connectionsCount === 1 ? "verbinding" : "verbindingen"
+			}`,
 	},
 	basesView: {
 		edit: ({ name }) => `${name} bewerken`,

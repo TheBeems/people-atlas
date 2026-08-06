@@ -761,9 +761,12 @@ export class AtlasRenderer {
 		this.detailsButton.disabled = !this.selectedId || !this.nodeById(this.selectedId);
 		const hiddenMomentCount = this.hiddenContactMomentCount();
 		const summaryText = this.t.atlasRenderer.semanticListSummary({
-			people: this.snapshot.nodes.length,
-			connections: this.snapshot.edges.length,
-			hiddenContactMoments: hiddenMomentCount,
+			people: this.t.formatInteger(this.snapshot.nodes.length),
+			peopleCount: this.snapshot.nodes.length,
+			connections: this.t.formatInteger(this.snapshot.edges.length),
+			connectionsCount: this.snapshot.edges.length,
+			hiddenContactMoments: this.t.formatInteger(hiddenMomentCount),
+			hiddenContactMomentCount: hiddenMomentCount,
 		});
 		if (this.summary.textContent !== summaryText) this.summary.textContent = summaryText;
 		this.emptyMessage.hidden = this.snapshot.nodes.length > 0;
@@ -1142,8 +1145,10 @@ export class AtlasRenderer {
 		const accessiblePeers = rows.map((row) => row.moment);
 		const hiddenMomentCount = this.hiddenContactMomentCount();
 		this.followUpsSummary.textContent = this.t.atlasRenderer.followUpsSummary({
-			openCount: rows.length,
-			hiddenCount: hiddenMomentCount,
+			openCount: this.t.formatInteger(rows.length),
+			openCountValue: rows.length,
+			hiddenCount: this.t.formatInteger(hiddenMomentCount),
+			hiddenCountValue: hiddenMomentCount,
 		});
 		this.followUpsContent.replaceChildren();
 		if (rows.length === 0) {
@@ -1212,7 +1217,7 @@ export class AtlasRenderer {
 			prefix.textContent = this.t.atlasRenderer.followUpPrefix;
 			const date = this.doc.createElement("time");
 			date.dateTime = options.followUpOn;
-			date.textContent = options.followUpOn;
+			date.textContent = this.t.formatDateOnly(options.followUpOn);
 			followUp.append(prefix, date);
 			content.append(followUp);
 		}
@@ -1226,7 +1231,7 @@ export class AtlasRenderer {
 		occurredPrefix.textContent = this.t.atlasRenderer.contactPrefix;
 		const occurredDate = this.doc.createElement("time");
 		occurredDate.dateTime = moment.occurredOn;
-		occurredDate.textContent = moment.occurredOn;
+		occurredDate.textContent = this.t.formatDateOnly(moment.occurredOn);
 		occurred.append(occurredPrefix, occurredDate);
 		content.append(occurred);
 		if (moment.channel) {
@@ -1315,8 +1320,10 @@ export class AtlasRenderer {
 		button.dataset.contactMomentSurface = surface;
 		const dateContext =
 			action === "done" || action === "dismiss"
-				? this.t.atlasRenderer.due({ date: followUpOn ?? moment.followUpOn ?? this.t.atlasRenderer.unknownDate })
-				: moment.occurredOn;
+				? this.t.atlasRenderer.due({
+						date: this.formatFollowUpDate(followUpOn ?? moment.followUpOn),
+					})
+				: this.t.formatDateOnly(moment.occurredOn);
 		const discriminator = this.contactMomentActionDiscriminator(moment, action, accessiblePeers);
 		const accessibleName = [
 			this.t.atlasRenderer.contactActionName({ action: actionLabels[action], people, date: dateContext }),
@@ -1402,6 +1409,10 @@ export class AtlasRenderer {
 		} catch {
 			return false;
 		}
+	}
+
+	private formatFollowUpDate(value: string | undefined): string {
+		return value ? this.t.formatDateOnly(value) : this.t.atlasRenderer.unknownDate;
 	}
 
 	private followUpStatusForAction(action: ContactMomentAction): TerminalFollowUpStatus | undefined {

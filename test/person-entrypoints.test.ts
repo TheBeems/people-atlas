@@ -2,6 +2,7 @@ import { TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PersonRecord, RawIndexSnapshot } from "../src/domain/types";
 import { PersonModal } from "../src/editor/person-modal";
+import { createTranslator } from "../src/i18n";
 import PeopleAtlasPlugin from "../src/main";
 import { notices } from "./obsidian-stub";
 
@@ -131,6 +132,16 @@ describe("person editor entrypoints", () => {
 
 		expect(open).toHaveBeenCalledOnce();
 		expect(notices.at(-1)).toContain("no longer available");
+	});
+
+	it("localizes the unavailable-person entrypoint notice", () => {
+		const file = personFile(alice.filePath);
+		const plugin = createPlugin({ people: [alice], relationships: [] }, file);
+		Object.assign(plugin, { t: createTranslator("nl") });
+
+		plugin.openEditPerson("People/Missing.md");
+
+		expect(notices.at(-1)).toBe("De geselecteerde persoon is niet meer beschikbaar in de People Atlas-index.");
 	});
 
 	it("fails closed when a tag-only cache entry no longer has live source proof", async () => {

@@ -450,7 +450,10 @@ export class RelationshipModal extends Modal {
 					await this.app.workspace.getLeaf("tab").openFile(result.createdFile);
 				} catch (error) {
 					new Notice(
-						`The relationship was created but could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+						this.t.noticeCreatedNoteOpenFailed({
+							kind: "relationship",
+							error: error instanceof Error ? error.message : String(error),
+						}),
 					);
 				}
 			}

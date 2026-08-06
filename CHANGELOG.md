@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 (Alpha)
+
+- Added a multilingual user interface with **English** and **Dutch (Nederlands)**
+  copy. The plugin follows the language Obsidian runs in and presents user-facing
+  notices, validations and labels through a typed message catalog.
+- Added locale-aware formatting for the visible UI: date, number and plural
+  forms follow the active locale without changing the stored canonical values.
+- Internal release-contract: the production `main.js` bundle limit was raised to
+  accommodate the added localization catalog; the bundle is now ~417 KB and
+  stays within the new 500,000-byte limit.
+- **Breaking:** 0.11.0 continues the fresh-vault-only presentation-first dossier
+  boundary without migration or backward compatibility for older folder layouts.
+
 ## 0.10.0 (Alpha)
 
 - Replaces the assetless 0.9.0 Alpha prerelease; install 0.10.0 instead.

@@ -567,6 +567,29 @@
 	border-radius: var(--radius-s);
 }
 
+.people-atlas-relationship-shortcut,
+.people-atlas-relationship-template {
+	min-inline-size: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.people-atlas-relationship-shortcut summary,
+.people-atlas-relationship-template summary {
+	padding: var(--size-4-3);
+	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.people-atlas-relationship-shortcut-body,
+.people-atlas-relationship-template-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	padding: 0 var(--size-4-3) var(--size-4-3);
+	gap: var(--size-4-3);
+}
+
 .people-atlas-relationship-advanced summary {
 	padding: var(--size-4-3);
 	font-weight: var(--font-semibold);

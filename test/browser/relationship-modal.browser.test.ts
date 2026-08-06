@@ -206,6 +206,140 @@ afterEach(() => {
 });
 
 describe("relationship modal", () => {
+	it("collapses the shortcut and template conveniences by default, keeping only the core relationship fields visible", () => {
+		const { content } = mountModal();
+		const section = Array.from(
+			content.querySelectorAll<HTMLFieldSetElement>("fieldset.people-atlas-relationship-section"),
+		).find((fieldset) => fieldset.querySelector("legend")?.textContent === "Relationship");
+		if (!section) throw new Error("Expected Relationship section.");
+
+		const shortcut = section.querySelector<HTMLDetailsElement>(".people-atlas-relationship-shortcut");
+		const template = section.querySelector<HTMLDetailsElement>(".people-atlas-relationship-template");
+		if (!shortcut) throw new Error("Expected a collapsed shortcut disclosure.");
+		if (!template) throw new Error("Expected a collapsed template disclosure.");
+
+		// Both disclosures are collapsed by default.
+		expect(shortcut.open).toBe(false);
+		expect(template.open).toBe(false);
+
+		// The collapsed template summary reflects the no-template state (spec clause 8).
+		expect(template.querySelector("summary")?.textContent).toContain("No template");
+
+		// The three sub-groups render in the order Shortcut, Template, Core (spec clause 1):
+		// measure DOM position of a concrete core field (the types input) after the
+		// template disclosure, not just the role preview which is always last.
+		const typesField = inputForLabel(content, "Relationship types").closest(".people-atlas-form-field");
+		if (!typesField) throw new Error("Expected the Relationship types field wrapper.");
+		const sectionChildren = Array.from(
+			section.querySelectorAll<HTMLElement>(
+				".people-atlas-relationship-shortcut, .people-atlas-relationship-template, .people-atlas-form-field, .people-atlas-role-preview",
+			),
+		);
+		const shortcutIndex = sectionChildren.findIndex((child) =>
+			child.classList.contains("people-atlas-relationship-shortcut"),
+		);
+		const templateIndex = sectionChildren.findIndex((child) =>
+			child.classList.contains("people-atlas-relationship-template"),
+		);
+		const typesIndex = sectionChildren.findIndex((child) => child === typesField);
+		const corePreviewIndex = sectionChildren.findIndex((child) =>
+			child.classList.contains("people-atlas-role-preview"),
+		);
+		expect(shortcutIndex).toBeGreaterThanOrEqual(0);
+		expect(templateIndex).toBeGreaterThan(shortcutIndex);
+		expect(typesIndex).toBeGreaterThan(templateIndex);
+		expect(corePreviewIndex).toBeGreaterThan(typesIndex);
+
+		// The Simple relationship selector lives inside the shortcut disclosure.
+		const simpleSelect = shortcut.querySelector<HTMLSelectElement>("select");
+		if (!simpleSelect) throw new Error("Expected the simple relationship selector inside the shortcut disclosure.");
+		expect(simpleSelect.getAttribute("aria-describedby")).toBeTruthy();
+
+		// The template machinery (selector, empty state, create action) lives inside the template disclosure.
+		expect(template.querySelector("select")).toBeDefined();
+		expect(template.querySelector(".people-atlas-template-empty-state")).toBeDefined();
+		expect(template.querySelector("button")).toBeDefined();
+
+		// The core relationship fields are directly in the section, not nested in a disclosure.
+		for (const label of ["Relationship types", "My role", "Bob's role"]) {
+			const field = inputForLabel(content, label);
+			expect(shortcut.contains(field)).toBe(false);
+			expect(template.contains(field)).toBe(false);
+			expect(section.contains(field)).toBe(true);
+		}
+		expect(section.querySelector(".people-atlas-role-preview")).toBeDefined();
+	});
+
+	it("opens the template disclosure on load in edit mode when a template is attached, and keeps it collapsed otherwise", () => {
+		const templateRelationship: RelationshipRecord = {
+			id: "relationship-alice-bob",
+			filePath: "People/Relationships/Alice - Bob.md",
+			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			types: ["friend"],
+			fromRole: "friend",
+			toRole: "friend",
+			presetId: "friendship",
+		};
+		const file = relationshipFile(templateRelationship.filePath);
+		const { content } = mountModal({
+			mode: { kind: "edit", file, relationship: templateRelationship, myPersonPath: alice.filePath },
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
+		});
+		const template = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-template");
+		if (!template) throw new Error("Expected a template disclosure.");
+		expect(template.open).toBe(true);
+		expect(template.querySelector("summary")?.textContent).toContain("Friendship");
+
+		const detached: RelationshipRecord = { ...templateRelationship, presetId: undefined };
+		const detachedFile = relationshipFile(detached.filePath);
+		const detachedModal = mountModal({
+			mode: { kind: "edit", file: detachedFile, relationship: detached, myPersonPath: alice.filePath },
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
+		});
+		const detachedTemplate = detachedModal.content.querySelector<HTMLDetailsElement>(
+			".people-atlas-relationship-template",
+		);
+		if (!detachedTemplate) throw new Error("Expected a template disclosure.");
+		expect(detachedTemplate.open).toBe(false);
+	});
+
+	it("opens the template disclosure and shows a missing affordance when the attached template no longer exists", () => {
+		const missingRelationship: RelationshipRecord = {
+			id: "relationship-alice-bob",
+			filePath: "People/Relationships/Alice - Bob.md",
+			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			types: ["friend"],
+			fromRole: "friend",
+			toRole: "friend",
+			presetId: "vanished",
+		};
+		const file = relationshipFile(missingRelationship.filePath);
+		const { content } = mountModal({
+			mode: { kind: "edit", file, relationship: missingRelationship, myPersonPath: alice.filePath },
+			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
+		});
+		const template = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-template");
+		if (!template) throw new Error("Expected a template disclosure.");
+		expect(template.open).toBe(true);
+		expect(template.querySelector("summary")?.textContent).toContain("Missing template — vanished");
+	});
+
+	it("fills core roles and preview in place after a shortcut choice without requiring the disclosure to stay open", () => {
+		const { content } = mountModal();
+		const shortcut = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-shortcut");
+		if (!shortcut) throw new Error("Expected a shortcut disclosure.");
+		shortcut.open = true;
+		const simple = shortcut.querySelector<HTMLSelectElement>("select");
+		if (!simple) throw new Error("Expected the simple relationship selector.");
+		choose(simple, "parent");
+		// Core fields update in place and are visible without the disclosure.
+		expect(inputForLabel(content, "My role").value).toBe("parent");
+		expect(inputForLabel(content, "Bob's role").value).toBe("child");
+		expect(content.textContent).toContain("Alice's role is mother and Bob's role is son");
+	});
+
 	it("localizes fixed relationship-modal and accessible form text without changing stored values", () => {
 		const { content } = mountModal({ translator: createTranslator("nl") });
 
@@ -258,6 +392,9 @@ describe("relationship modal", () => {
 		setInput(inputForLabel(content, "Relationship note path"), "People/Relationships/Keep path.md");
 		content.scrollTop = 80;
 		const scrollTop = content.scrollTop;
+		const shortcut = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-shortcut");
+		if (!shortcut) throw new Error("Expected shortcut disclosure.");
+		shortcut.open = true;
 		simple.focus();
 
 		choose(simple, "parent");
@@ -435,6 +572,9 @@ describe("relationship modal", () => {
 		setInput(inputForLabel(content, "Relationship ID"), "relationship-manual");
 		content.scrollTop = 90;
 		const originalScrollTop = content.scrollTop;
+		const templateDisclosure = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-template");
+		if (!templateDisclosure) throw new Error("Expected template disclosure.");
+		templateDisclosure.open = true;
 		const createTemplate = buttonWithText(content, "Create template");
 		createTemplate.focus();
 		createTemplate.click();
@@ -495,6 +635,9 @@ describe("relationship modal", () => {
 		if (!advanced) throw new Error("Expected Advanced disclosure.");
 		advanced.open = true;
 		setInput(inputForLabel(content, "Relationship note path"), "People/Relationships/Keep me.md");
+		const templateDisclosure = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-template");
+		if (!templateDisclosure) throw new Error("Expected template disclosure.");
+		templateDisclosure.open = true;
 		const templateSelect = selectForLabel(content, "Relationship template");
 		templateSelect.focus();
 		choose(templateSelect, friendship.id);
@@ -768,6 +911,9 @@ describe("relationship modal", () => {
 			true,
 		);
 		const templateSelect = selectForLabel(content, "Relationship template");
+		const templateDisclosure = content.querySelector<HTMLDetailsElement>(".people-atlas-relationship-template");
+		if (!templateDisclosure) throw new Error("Expected template disclosure.");
+		templateDisclosure.open = true;
 		templateSelect.focus();
 		expect(frameDocument.activeElement).toBe(templateSelect);
 		buttonWithText(content, "Create template").click();

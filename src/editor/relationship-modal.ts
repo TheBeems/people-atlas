@@ -99,6 +99,11 @@ export class RelationshipModal extends Modal {
 	private rolePreviewEl: HTMLElement | undefined;
 	private advancedDetails: HTMLDetailsElement | undefined;
 	private advancedSummary: HTMLElement | undefined;
+	// The shortcut and template disclosures are built mostly with local vars;
+	// only the template one needs class references because its summary and
+	// edit-mode auto-open are dynamic.
+	private templateDetails: HTMLDetailsElement | undefined;
+	private templateSummary: HTMLElement | undefined;
 	private errorEl: HTMLElement | undefined;
 	private saveButton: HTMLButtonElement | undefined;
 
@@ -190,7 +195,14 @@ export class RelationshipModal extends Modal {
 		peopleGroup.append(datalist);
 
 		const relationshipGroup = this.addGroup(form, this.t.relationshipModal.groupRelationship);
-		const simpleRelationshipField = this.addSelect(relationshipGroup, {
+
+		const shortcutDetails = document.createElement("details");
+		shortcutDetails.className = "people-atlas-relationship-shortcut";
+		const shortcutSummary = document.createElement("summary");
+		shortcutSummary.textContent = this.t.relationshipModal.simpleRelationship;
+		const shortcutBody = document.createElement("div");
+		shortcutBody.className = "people-atlas-relationship-shortcut-body";
+		const simpleRelationshipField = this.addSelect(shortcutBody, {
 			label: this.t.relationshipModal.simpleRelationship,
 			description: this.t.relationshipModal.simpleRelationshipDescription,
 			value: getSimpleRelationshipChoice(this.values),
@@ -204,7 +216,17 @@ export class RelationshipModal extends Modal {
 			onChange: (value) => this.selectSimpleRelationship(value),
 		});
 		this.simpleRelationshipSelect = simpleRelationshipField.control;
-		const presetField = this.addSelect(relationshipGroup, {
+		shortcutDetails.append(shortcutSummary, shortcutBody);
+		relationshipGroup.append(shortcutDetails);
+
+		const templateDetails = document.createElement("details");
+		templateDetails.className = "people-atlas-relationship-template";
+		this.templateDetails = templateDetails;
+		this.templateSummary = document.createElement("summary");
+		this.templateSummary.textContent = this.t.relationshipModal.relationshipTemplate;
+		const templateBody = document.createElement("div");
+		templateBody.className = "people-atlas-relationship-template-body";
+		const presetField = this.addSelect(templateBody, {
 			label: this.t.relationshipModal.relationshipTemplate,
 			description: this.t.relationshipModal.relationshipTemplateDescription,
 			value: this.values.presetId,
@@ -242,7 +264,9 @@ export class RelationshipModal extends Modal {
 		const presetState = document.createElement("div");
 		presetState.className = "people-atlas-preset-state";
 		presetState.append(this.presetStatusEl, this.applyPresetButton);
-		relationshipGroup.append(this.templateEmptyStateEl, templateCreation, presetState);
+		templateBody.append(this.templateEmptyStateEl, templateCreation, presetState);
+		templateDetails.append(this.templateSummary, templateBody);
+		relationshipGroup.append(templateDetails);
 
 		const typesField = this.addInput(relationshipGroup, {
 			label: this.t.relationshipModal.relationshipTypes,
@@ -398,6 +422,11 @@ export class RelationshipModal extends Modal {
 		this.refreshPresetState();
 		this.refreshPresentation();
 		this.refreshAdvancedSummary();
+		// In edit mode a relationship that carries a template opens its disclosure so
+		// the attached template is immediately visible and manageable.
+		if (this.mode.kind === "edit" && this.values.presetId && this.templateDetails) {
+			this.templateDetails.open = true;
+		}
 		this.fromInput.focus();
 	}
 
@@ -425,6 +454,8 @@ export class RelationshipModal extends Modal {
 		this.rolePreviewEl = undefined;
 		this.advancedDetails = undefined;
 		this.advancedSummary = undefined;
+		this.templateDetails = undefined;
+		this.templateSummary = undefined;
 		this.errorEl = undefined;
 		this.saveButton = undefined;
 		this.afterClose?.();
@@ -565,6 +596,24 @@ export class RelationshipModal extends Modal {
 		this.presetSelect.replaceChildren(...optionElements);
 		this.presetSelect.value = this.values.presetId;
 		this.templateEmptyStateEl.hidden = presets.length > 0;
+		this.refreshTemplateSummary();
+	}
+
+	private refreshTemplateSummary(): void {
+		if (!this.templateSummary) return;
+		const presets = this.getSettings().relationshipPresets;
+		const selected = presets.find((preset) => preset.id === this.values.presetId);
+		if (selected) {
+			this.templateSummary.textContent = `${this.t.relationshipModal.relationshipTemplate} — ${selected.name}`;
+		} else if (this.values.presetId) {
+			this.templateSummary.textContent = `${this.t.relationshipModal.relationshipTemplate} — ${this.t.relationshipModal.missingTemplate(
+				{
+					presetId: this.values.presetId,
+				},
+			)}`;
+		} else {
+			this.templateSummary.textContent = `${this.t.relationshipModal.relationshipTemplate} — ${this.t.relationshipModal.noTemplate}`;
+		}
 	}
 
 	private refreshTemplateCreationAvailability(): void {

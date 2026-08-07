@@ -147,6 +147,11 @@ export default class PeopleAtlasPlugin extends Plugin {
 			name: this.t.commandEditCurrentContactMoment,
 			callback: () => this.openEditCurrentContactMoment(),
 		});
+		this.addCommand({
+			id: "rebuild-index",
+			name: this.t.commandRebuildIndex,
+			callback: () => this.index.rebuildAll(),
+		});
 		this.addSettingTab(new PeopleAtlasSettingTab(this));
 		this.registerEditorSuggest(
 			new PersonMentionSuggest(this.app, this.index, this.mutations, () => this.settings, this.t),
@@ -338,14 +343,9 @@ export default class PeopleAtlasPlugin extends Plugin {
 	}
 
 	getMyPersonCandidates(): MyPersonCandidate[] {
-		const people = this.index.getSnapshot().people;
-		const counts = new Map<string, number>();
-		for (const person of people) {
-			counts.set(person.id, (counts.get(person.id) ?? 0) + 1);
-		}
-		return people
-			.filter((person) => counts.get(person.id) === 1)
-			.map((person) => ({ id: person.id, name: person.name, filePath: person.filePath }))
+		return this.index
+			.getSnapshot()
+			.people.map((person) => ({ id: person.id, name: person.name, filePath: person.filePath }))
 			.sort(
 				(left, right) =>
 					left.name.localeCompare(right.name) ||

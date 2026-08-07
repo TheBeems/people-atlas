@@ -72,7 +72,7 @@ describe("My person identity and navigation boundary", () => {
 		}
 	});
 
-	it("offers only unique explicit person IDs and ignores notes without one", async () => {
+	it("offers all indexed person IDs and ignores notes without one", async () => {
 		const runtime = new ControlledObsidianRuntime(document);
 		runtime.seedFile("People/Me.md", person("me-123", "Me"));
 		runtime.seedFile("People/Aardvark.md", person("aardvark", "Aardvark"));
@@ -85,7 +85,13 @@ describe("My person identity and navigation boundary", () => {
 		try {
 			expect(plugin.getMyPersonCandidates()).toEqual([
 				{ id: "aardvark", name: "Aardvark", filePath: "People/Aardvark.md" },
-				{ id: "me-123", name: "Me", filePath: "People/Me.md" },
+				{ id: "duplicate", name: "Duplicate one", filePath: "People/Duplicate one.md" },
+				{ id: "duplicate", name: "Duplicate two", filePath: "People/Duplicate two.md" },
+				{
+					id: "me-123",
+					name: "Me",
+					filePath: "People/Me.md",
+				},
 				{
 					id: "path:people/no explicit id.md",
 					name: "Path collision",

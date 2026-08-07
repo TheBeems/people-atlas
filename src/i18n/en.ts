@@ -50,6 +50,7 @@ export const englishCatalog = {
 	commandEditCurrentRelationship: "Edit current relationship",
 	commandLogContact: "Log contact",
 	commandEditCurrentContactMoment: "Edit current contact moment",
+	commandRebuildIndex: "Rebuild People Atlas index",
 	ribbonOpenPeopleAtlas: "Open People Atlas",
 	settingsGeneral: "General",
 	settingsPeopleRootFolderName: "People root folder",

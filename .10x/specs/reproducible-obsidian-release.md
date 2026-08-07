@@ -129,22 +129,28 @@ reproducibility and release provenance. It does not authorize publishing.
 36. No workflow, script or documentation change in P8 MAY push a tag, create a
     release, configure a remote or submit to the Obsidian Community directory.
 
-### Release channel (opt-in alpha prerelease)
+### Release channel (opt-in prerelease channels)
 
 37. A release's channel is declared explicitly per version in its release
     notes file `.github/release-notes/<version>.md`. An exact marker line
-    `Channel: alpha` declares an alpha prerelease; its absence (or any other
-    value) declares a stable release. The release tag itself MUST remain strict
-    `x.y.z`; alpha is represented by the GitHub prerelease flag and the
-    `(Alpha)` title branding, NOT by a SemVer prerelease suffix (which the
-    release contract rejects for `manifest.json.version` and the tag).
+    `Channel: alpha` declares an alpha prerelease, `Channel: beta` declares a
+    beta prerelease, and `Channel: rc` declares a release-candidate prerelease;
+    the absence of a marker (or any other value) declares a stable release.
+    The release tag itself MUST remain strict `x.y.z`; prerelease channels are
+    represented by the GitHub prerelease flag and the corresponding title
+    branding — `(Alpha)`, `(Beta)`, or `(Release Candidate)` — NOT by a SemVer
+    prerelease suffix (which the release contract rejects for
+    `manifest.json.version` and the tag).
 38. For an `alpha` channel the tag workflow MUST create the GitHub release with
     `gh release create --prerelease` and title `People Atlas <version> (Alpha)`.
-    For a non-alpha channel it MUST create a stable release titled
-    `People Atlas <version>` without `--prerelease`. The release-workflow guard
-    test in `test/release-contract.test.ts` MUST assert the marker read and
-    both channel branches, so the declared channel cannot drift from the
-    published release.
+    For a `beta` channel it MUST create the release with `--prerelease` and
+    title `People Atlas <version> (Beta)`. For an `rc` channel it MUST create
+    the release with `--prerelease` and title `People Atlas <version>
+    (Release Candidate)`. For a non-prerelease channel it MUST create a stable
+    release titled `People Atlas <version>` without `--prerelease`. The
+    release-workflow guard test in `test/release-contract.test.ts` MUST assert
+    the marker read and all four channel branches (alpha, beta, rc, stable), so
+    the declared channel cannot drift from the published release.
 
 ## Error behavior
 

@@ -190,12 +190,24 @@ describe("release workflow tag guard", () => {
 		expect(workflow).toContain(`gh release create "\${release_args[@]}" main.js manifest.json styles.css`);
 	});
 
-	test("declares the alpha channel opt-in and branches on the release-notes marker", async () => {
+	test("declares the prerelease channels opt-in and branches on the release-notes marker", async () => {
 		const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "release.yml"), "utf8");
-		expect(workflow).toContain('grep -qx "Channel: alpha"');
-		expect(workflow).toContain('if [[ "$channel" == "alpha" ]]');
-		expect(workflow).toContain('title="People Atlas ${TAG} (Alpha)"');
+		// marker detection
+		expect(workflow).toContain('grep -x "Channel: alpha\\|Channel: beta\\|Channel: rc"');
+		// channel branching
+		expect(workflow).toContain('case "$marker" in');
+		expect(workflow).toContain('"Channel: alpha") channel="alpha"');
+		expect(workflow).toContain('"Channel: beta")  channel="beta"');
+		expect(workflow).toContain('"Channel: rc")    channel="rc"');
+		// title branching
+		expect(workflow).toContain('case "$channel" in');
+		expect(workflow).toContain('"alpha") title="People Atlas ${TAG} (Alpha)"');
+		expect(workflow).toContain('"beta")  title="People Atlas ${TAG} (Beta)"');
+		expect(workflow).toContain('"rc")    title="People Atlas ${TAG} (Release Candidate)"');
+		// prerelease flag for all prerelease channels
+		expect(workflow).toContain('if [[ "$channel" != "stable" ]]');
 		expect(workflow).toContain("release_args+=(--prerelease)");
+		// stable title still present
 		const publishLine = workflow.split("\n").find((line) => line.includes('gh release create "'));
 		expect(publishLine).toBeTruthy();
 		expect(publishLine).not.toContain("--prerelease");

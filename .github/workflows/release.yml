@@ -69,20 +69,27 @@ jobs:
         run: |
           set -euo pipefail
           channel="stable"
-          if [[ -f ".github/release-notes/${TAG}.md" ]] && grep -qx "Channel: alpha" ".github/release-notes/${TAG}.md"; then
-            channel="alpha"
+          if [[ -f ".github/release-notes/${TAG}.md" ]]; then
+            marker="$(grep -x "Channel: alpha\|Channel: beta\|Channel: rc" ".github/release-notes/${TAG}.md" | head -1 || true)"
+            case "$marker" in
+              "Channel: alpha") channel="alpha" ;;
+              "Channel: beta")  channel="beta"  ;;
+              "Channel: rc")    channel="rc"    ;;
+            esac
           fi
           title="People Atlas ${TAG}"
-          if [[ "$channel" == "alpha" ]]; then
-            title="People Atlas ${TAG} (Alpha)"
-          fi
+          case "$channel" in
+            "alpha") title="People Atlas ${TAG} (Alpha)" ;;
+            "beta")  title="People Atlas ${TAG} (Beta)"  ;;
+            "rc")    title="People Atlas ${TAG} (Release Candidate)" ;;
+          esac
           release_args=(
             "$TAG"
             --verify-tag
             --title "$title"
             --generate-notes
           )
-          if [[ "$channel" == "alpha" ]]; then
+          if [[ "$channel" != "stable" ]]; then
             release_args+=(--prerelease)
           fi
           release_notes_file=".github/release-notes/${TAG}.md"

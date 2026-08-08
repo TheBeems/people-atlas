@@ -6,6 +6,7 @@ import {
 	validatePersonPhones,
 	type PersonProfileListIssue,
 } from "../domain/person-profile";
+import { resolveCanonicalPersonByPath } from "../domain/identity";
 import {
 	dossierPersonPhotoAssets,
 	getPendingPersonPhotoSelectionError,
@@ -419,14 +420,6 @@ function resolveContactPath(
 		return normalizedPath === normalizedTarget || normalizedPath.replace(/\.md$/i, "") === normalizedTarget;
 	});
 	return pathMatch && resolveCanonicalPersonByPath(people, pathMatch.filePath) ? pathMatch.filePath : undefined;
-}
-
-function resolveCanonicalPersonByPath(people: PersonRecord[], personPath: string): PersonRecord | undefined {
-	const pathMatches = people.filter((person) => person.filePath === personPath);
-	if (pathMatches.length !== 1) return undefined;
-	const person = pathMatches[0];
-	if (!person || people.filter((candidate) => candidate.id === person.id).length !== 1) return undefined;
-	return person;
 }
 
 function editBirthDateValue(structuredValue: string | undefined): PersonBirthDateFormValue {

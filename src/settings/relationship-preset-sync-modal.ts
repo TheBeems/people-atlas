@@ -78,8 +78,13 @@ export class RelationshipPresetSyncModal extends Modal {
 			return;
 		}
 		if (result.failure) {
-			const location = result.failure.filePath ? ` at “${result.failure.filePath}”` : "";
-			this.statusEl.textContent = `Stopped${location}. Completed ${result.completed}; skipped ${result.skipped}; remaining ${result.remaining}. ${result.failure.message}`;
+			this.statusEl.textContent = this.t.noticeTemplateSyncStopped({
+				...(result.failure.filePath ? { filePath: result.failure.filePath } : {}),
+				completed: result.completed,
+				skipped: result.skipped,
+				remaining: result.remaining,
+				error: result.failure.message,
+			});
 		} else {
 			this.statusEl.textContent = this.t.relationshipPresetSyncModal.success({
 				completed: result.completed,

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.2 (Alpha)
+
+- Fixed PersonIndex readiness races on mobile and incomplete metadata-cache
+  startup, without publishing a partial canonical snapshot.
+- Kept My Person candidates discoverable while rejecting duplicate-ID, stale,
+  and ordinary-note selections before the settings write.
+- Hardened relationship-modal close-generation guards and late async callback
+  handling.
+- Stabilized the integration/browser test runners and fail-closed release
+  channel validation for alpha, beta, RC, and stable channels.
+- Improved Dutch/English diagnostics presentation and release-contract
+  observability without a fixed bundle-byte limit.
+
 ## 0.12.0 (Alpha)
 
 - The **Relationship** section of the relationship editor is now grouped into
@@ -22,9 +35,10 @@
   notices, validations and labels through a typed message catalog.
 - Added locale-aware formatting for the visible UI: date, number and plural
   forms follow the active locale without changing the stored canonical values.
-- Internal release-contract: the production `main.js` bundle limit was raised to
-  accommodate the added localization catalog; the bundle is now ~417 KB and
-  stays within the new 500,000-byte limit.
+- Internal release-contract (0.11.0): the production `main.js` bundle was
+  observed at ~417 KB and, at that time, stayed within the then-current
+  500,000-byte limit. The current release contract reports observed size
+  without enforcing a fixed byte budget.
 - **Breaking:** 0.11.0 continues the fresh-vault-only presentation-first dossier
   boundary without migration or backward compatibility for older folder layouts.
 

@@ -1,6 +1,7 @@
-Status: active
+Status: done
 Created: 2026-08-04
-Updated: 2026-08-05
+Updated: 2026-08-08
+Owner: People Atlas implementation workstream — i18n/UI diagnostics
 Depends-On: `.10x/specs/multilingual-user-interface.md`; `.10x/tickets/2026-08-04-i18n-interaction-accessibility-nl-en.md` must be `done`
 
 # i18n-diagnostics en locale-formattering (Nederlands/Engels)
@@ -41,11 +42,11 @@ de UI-grens en locale-bewuste datum-, nummer- en pluralisatieformattering.
 
 ## Acceptatiecriteria
 
-- [ ] Pure lagen leveren stabiele codes/parameters zonder i18n- of
+- [x] Pure lagen leveren stabiele codes/parameters zonder i18n- of
       Obsidian-import; de UI presenteert deze in Nederlands/Engels met fallback.
-- [ ] Diagnostic-, validation-, datum-, nummer- en pluralisatiepresentatie is
+- [x] Diagnostic-, validation-, datum-, nummer- en pluralisatiepresentatie is
       locale-correct zonder opslag- of identiteitseffect.
-- [ ] Gerichte node/controlled-browsertests, review en actuele Node-24-gate zijn
+- [x] Gerichte node/controlled-browsertests, review en actuele Node-24-gate zijn
       groen; live Desktop/Mobile blijft afzonderlijk gevalideerd.
 
 ## Blokkers
@@ -98,3 +99,58 @@ None.
   bewuste contractaanpassing. Gecontroleerd: main.js = 417.348 bytes (binnen
   de nieuwe limiet); `release-contract.test.ts` 19/19 groen (test leest de
   limiet uit de export, geen hardcoded waarde). Blokker hiermee opgeheven.
+- 2026-08-08: De actuele releasebeslissing supersedeert de historische
+  500.000-byte journalcontext; die history is niet herschreven. Voor de
+  resterende zichtbare diagnostics zijn EN/NL translator-boundaries toegevoegd
+  voor relationship-, contact-moment-, person-modal- en mention-fouten, inclusief
+  partial-success/result presentation en rejection feedback. Pure mutation- en
+  validationdetails blijven ongewijzigde technische parameters.
+- 2026-08-08 verification: `npx vitest run --project node test/i18n.test.ts
+  test/person-form.test.ts test/relationship-form.test.ts test/settings-tab.test.ts`
+  → 119/119 groen; relationship-modal browser-suite → 22/22 groen;
+  `npm run typecheck` → exit 0. Cataloguspariteit blijft groen en alle zes
+  resterende `new Notice()`-oppervlakken lopen via `this.t`.
+- 2026-08-08 RED→GREEN: `test/browser/relationship-template-settings.browser.test.ts`
+  kreeg een assertion voor inline template-validatie in `nl`; de RED-run was
+  8/9 groen omdat de modal de ruwe Engelse `errors.join(" ")` direct rendert.
+  De nieuwe `relationshipPresetModal.validationError`-boundary is daarna
+  aangesloten. GREEN: dezelfde browserfile → 9/9 groen; `npm run typecheck`
+  → exit 0. Technische validatiedetails blijven byte-exact; alleen de
+  presentation-prefix wordt gelokaliseerd.
+- 2026-08-08 follow-up: `PeopleAtlasView` presenteert Atlas-diagnostics nu via
+  `atlasRenderer.diagnosticMessage`; de NL-catalogus geeft bekende
+  diagnostic-codes gelokaliseerde labels en behoudt de technische detailtekst
+  als detail. De i18n-regressie en `npm run typecheck` zijn groen. Dit blijft de
+  geratificeerde minimale translator-doorvoer en introduceert geen nieuwe pure
+  error-unions.
+- 2026-08-08 Node-24 focused verification: `node --version` → v24.18.1;
+  `test/i18n.test.ts` → 1/1, `test/browser/relationship-template-settings.browser.test.ts`
+  → 9/9, samen met de bredere gerichte Node-24-keten groen. `npm run typecheck`
+  → exit 0; `git diff --check` → exit 0. De technische detailtekst blijft
+  bewust ongewijzigd; live Desktop/Mobile en de full gate blijven afzonderlijke
+  limits.
+
+## Evidence
+
+De tests bewijzen EN/NL-presentatie van de nieuwe diagnostics-boundaries,
+ongewijzigde Engelse fallbackdetails, cataloguspariteit en behoud van pure
+validatie-/persistentiesemantiek in de gerichte form-, Settings- en
+relationship-template-browser-tests. De Node-24 final gate is exit 0: node
+53/964, browser 10/158, integration 9/38, DPR 6/6, format/typecheck/build/
+community/audit/releasecontract/reproducibility/diff-check groen. Live
+Desktop/Mobile is niet uitgevoerd.
+
+## Review
+
+2026-08-08 actuele onafhankelijke diagnostics-boundary review: **PASS**. De
+review bevestigde code/parameterbehoud in pure lagen, EN/NL-presentatie aan de
+UI-boundary, fallbackdetails en actuele gerichte tests. Residueel: native
+Desktop/Mobile is niet lokaal gevalideerd.
+
+## Retrospective
+
+De minimale boundary is voldoende: pure lagen behouden technische codes,
+parameters en details; de UI vertaalt het herkenbare code-label zonder IDs,
+paden of user-authored waarden te muteren. Een brede error-unionfacade zou
+meer contractoppervlak hebben toegevoegd zonder de gebruikersgrens te
+verbeteren.

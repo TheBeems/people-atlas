@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import { TFile as StubTFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { notices } from "../obsidian-stub";
 import { createTranslator, type Translator } from "../../src/i18n";
 import type { PersonRecord, RelationshipRecord } from "../../src/domain/types";
 import {
@@ -304,7 +305,7 @@ describe("relationship modal", () => {
 		expect(detachedTemplate.open).toBe(false);
 	});
 
-	it("opens the template disclosure and shows a missing affordance when the attached template no longer exists", () => {
+	it("opens the template disclosure and shows a missing affordance when the attached template no longer exists", async () => {
 		const missingRelationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
 			filePath: "People/Relationships/Alice - Bob.md",
@@ -316,7 +317,7 @@ describe("relationship modal", () => {
 			presetId: "vanished",
 		};
 		const file = relationshipFile(missingRelationship.filePath);
-		const { content } = mountModal({
+		const { content, updateRelationship, close } = mountModal({
 			mode: { kind: "edit", file, relationship: missingRelationship, myPersonPath: alice.filePath },
 			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
 		});
@@ -324,6 +325,10 @@ describe("relationship modal", () => {
 		if (!template) throw new Error("Expected a template disclosure.");
 		expect(template.open).toBe(true);
 		expect(template.querySelector("summary")?.textContent).toContain("Missing template — vanished");
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+		expect(updateRelationship).not.toHaveBeenCalled();
 	});
 
 	it("fills core roles and preview in place after a shortcut choice without requiring the disclosure to stay open", () => {
@@ -615,6 +620,65 @@ describe("relationship modal", () => {
 		expect(content.querySelector<HTMLElement>(".people-atlas-template-empty-state")?.hidden).toBe(true);
 	});
 
+	it("ignores a pending template save after the parent relationship modal closes", async () => {
+		let nestedModal: RelationshipPresetModal | undefined;
+		let resolveSave: ((saved: boolean) => void) | undefined;
+		const save = vi.fn(
+			() =>
+				new Promise<boolean>((resolve) => {
+					resolveSave = resolve;
+				}),
+		);
+		const templateCreation: RelationshipTemplateCreation = {
+			enabled: () => true,
+			save,
+		};
+		const mounted = mountModal({ templateCreation });
+		vi.spyOn(RelationshipPresetModal.prototype, "open").mockImplementation(function (this: RelationshipPresetModal) {
+			this.titleEl = document.createElement("h2");
+			this.contentEl = document.createElement("div");
+			nestedModal = this;
+		});
+		const refreshOptions = vi.spyOn(
+			mounted.modal as unknown as { refreshTemplateOptions: () => void },
+			"refreshTemplateOptions",
+		);
+		const refreshAvailability = vi.spyOn(
+			mounted.modal as unknown as { refreshTemplateCreationAvailability: () => void },
+			"refreshTemplateCreationAvailability",
+		);
+		const noticeCountBeforeClose = notices.length;
+
+		buttonWithText(mounted.content, "Create template").click();
+		if (!nestedModal) throw new Error("Expected a nested relationship template modal.");
+		const createdTemplate: RelationshipPreset = {
+			id: "pending-template",
+			name: "Pending template",
+			types: ["pending"],
+			fromRole: "pending-first",
+			toRole: "pending-second",
+		};
+		const nestedSave = (
+			nestedModal as unknown as {
+				onSave(preset: RelationshipPreset): Promise<boolean>;
+			}
+		).onSave;
+		const saveResult = nestedSave(createdTemplate);
+		await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+		const optionsCallsBeforeClose = refreshOptions.mock.calls.length;
+		const availabilityCallsBeforeClose = refreshAvailability.mock.calls.length;
+
+		mounted.modal.onClose();
+		resolveSave?.(true);
+
+		expect(await saveResult).toBe(true);
+		await new Promise<void>((resolve) => queueMicrotask(resolve));
+		expect(refreshOptions).toHaveBeenCalledTimes(optionsCallsBeforeClose);
+		expect(refreshAvailability).toHaveBeenCalledTimes(availabilityCallsBeforeClose);
+		expect(mounted.content.querySelector("form")).toBeNull();
+		expect(notices).toHaveLength(noticeCountBeforeClose);
+	});
+
 	it("updates dynamic labels, applies, modifies, reapplies and detaches a template without replacing controls", () => {
 		const { content, form } = mountModal({
 			settings: { ...structuredClone(DEFAULT_SETTINGS), relationshipPresets: [friendship] },
@@ -804,6 +868,51 @@ describe("relationship modal", () => {
 		expect(createRelationship).not.toHaveBeenCalled();
 		expect(close).not.toHaveBeenCalled();
 		expect(buttonWithText(content, "Save").disabled).toBe(false);
+	});
+
+	it("ignores a late create success after the modal was closed", async () => {
+		const createdFile = relationshipFile("People/Relationships/Late.md");
+		let resolveCreate: ((file: TFile) => void) | undefined;
+		const createRelationship = vi.fn(
+			() =>
+				new Promise<TFile>((resolve) => {
+					resolveCreate = resolve;
+				}),
+		);
+		const { content, modal, close, afterClose, openFile } = mountModal({ createRelationship });
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(createRelationship).toHaveBeenCalledOnce());
+		modal.close();
+		resolveCreate?.(createdFile);
+		await vi.waitFor(() => expect(afterClose).toHaveBeenCalledOnce());
+		await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+		expect(close).toHaveBeenCalledOnce();
+		expect(openFile).not.toHaveBeenCalled();
+	});
+
+	it("ignores a late create error after the modal was closed", async () => {
+		let rejectCreate: ((error: Error) => void) | undefined;
+		const createRelationship = vi.fn(
+			() =>
+				new Promise<TFile>((_, reject) => {
+					rejectCreate = reject;
+				}),
+		);
+		const { content, modal, close, afterClose } = mountModal({ createRelationship });
+		const noticeCountBeforeClose = notices.length;
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(createRelationship).toHaveBeenCalledOnce());
+		modal.close();
+		rejectCreate?.(new Error("late failure"));
+		await new Promise<void>((resolve) => queueMicrotask(resolve));
+		await vi.waitFor(() => expect(afterClose).toHaveBeenCalledOnce());
+
+		expect(close).toHaveBeenCalledOnce();
+		expect(content.querySelector("form")).toBeNull();
+		expect(notices).toHaveLength(noticeCountBeforeClose);
 	});
 
 	it("closes after create and opens the created relationship note", async () => {

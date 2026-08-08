@@ -1,5 +1,39 @@
 import type { Translator } from "./en";
 
+const dutchDiagnosticLabels: Record<string, string> = {
+	"duplicate-person-id": "Dubbele persoons-ID",
+	"missing-person-id": "Ontbrekende persoons-ID",
+	"invalid-person-birth-date": "Ongeldige geboortedatum",
+	"invalid-person-email": "Ongeldig e-mailadres",
+	"invalid-person-phone": "Ongeldig telefoonnummer",
+	"ambiguous-person-reference": "Ambigue persoonsverwijzing",
+	"duplicate-relationship-id": "Dubbele relatie-ID",
+	"missing-relationship-id": "Ontbrekende relatie-ID",
+	"invalid-relationship-status": "Ongeldige relatiestatus",
+	"invalid-relationship-date": "Ongeldige relatiedatum",
+	"incomplete-relationship-roles": "Onvolledige relatierollen",
+	"duplicate-contact-moment-id": "Dubbele contactmoment-ID",
+	"missing-contact-moment-id": "Ontbrekende contactmoment-ID",
+	"invalid-contact-moment-people": "Ongeldige personen van contactmoment",
+	"duplicate-contact-moment-person": "Dubbele persoon in contactmoment",
+	"unresolved-contact-moment-person": "Onopgeloste persoon in contactmoment",
+	"ambiguous-contact-moment-person": "Ambigue persoon in contactmoment",
+	"unresolved-contact-moment-relationship": "Onopgeloste relatie in contactmoment",
+	"ambiguous-contact-moment-relationship": "Ambigue relatie in contactmoment",
+	"contact-moment-relationship-person-mismatch": "Relatie/personen-mismatch in contactmoment",
+	"invalid-contact-moment-occurred-on": "Ongeldige contactdatum",
+	"invalid-contact-moment-follow-up-date": "Ongeldige opvolgdatum",
+	"invalid-contact-moment-follow-up-status": "Ongeldige status van opvolging",
+	"missing-asset": "Ontbrekende afbeelding",
+	"unresolved-contact": "Onopgelost contact",
+	"filtered-endpoint": "Gefilterd relatie-eindpunt",
+	"unresolved-relationship-endpoint": "Onopgelost relatie-eindpunt",
+	"self-relationship": "Zelfrelatie",
+	"node-limit": "Knooppuntlimiet",
+	"projection-center-unresolved": "Onopgelost projectiemiddelpunt",
+	"projection-center-ambiguous": "Ambigu projectiemiddelpunt",
+};
+
 export const dutchCatalog: Translator = {
 	commandOpenAtlas: "Atlas openen",
 	commandOpenFollowUps: "Opvolgacties openen",
@@ -51,10 +85,25 @@ export const dutchCatalog: Translator = {
 	settingsShowLabelsDescription: "Teken standaard persoonsnamen onder knooppunten.",
 	noticeSettingsReadOnly: "People Atlas-instellingen zijn alleen-lezen totdat de plugingegevens zijn hersteld.",
 	noticeSettingsSaveFailed: ({ error }) => `People Atlas-instellingen konden niet worden opgeslagen: ${error}`,
+	noticeSettingsLoadFailed: ({ error }) => `People Atlas-instellingen konden niet worden geladen: ${error}`,
+	noticeInvalidRelationshipTemplates: ({ error }) => `Relatiesjablonen zijn ongeldig: ${error}`,
+	noticeInvalidRelationshipRoleFormat: ({ error }) => `De opmaak voor relatierollen is ongeldig: ${error}`,
+	noticeInvalidPeopleRootFolder: ({ error }) => `De hoofdmap voor personen is ongeldig: ${error}`,
+	noticeInvalidPersonProperties: ({ error }) => `Persoonseigenschappen zijn ongeldig: ${error}`,
+	noticeInvalidContactMomentProperties: ({ error }) => `Contactmomenteigenschappen zijn ongeldig: ${error}`,
+	noticeInvalidNoteTypeValues: ({ error }) => `Notitietypewaarden zijn ongeldig: ${error}`,
+	noticeFollowUpChangeFailed: ({ error }) => `De opvolging is niet gewijzigd: ${error}`,
+	noticeContactMomentEditUnavailable: ({ error }) =>
+		`Het contactmoment kan niet worden bewerkt totdat de persoonsverwijzingen zijn hersteld: ${error}`,
+	noticeTemplateSyncStopped: ({ filePath, completed, skipped, remaining, error }) =>
+		`Gestopt${filePath ? ` bij “${filePath}”` : ""}. Voltooid: ${completed}; overgeslagen: ${skipped}; resterend: ${remaining}. ${error}`,
 	noticeTemplateUnavailable: ({ presetId }) => `Relatiesjabloon “${presetId}” is niet meer beschikbaar.`,
 	noticeTemplateAlreadyMatches:
 		"Alle geïndexeerde relatienotities met deze sjabloonherkomst komen al overeen met de gekopieerde waarden.",
 	noticePersonUnavailable: "De geselecteerde persoon is niet meer beschikbaar in de People Atlas-index.",
+	noticeMyPersonSelectionRejected: ({ filePath }) =>
+		`De keuze voor My person “${filePath}” is geen unieke canonieke persoonsnotitie en is niet opgeslagen. Kies één unieke persoonsnotitie of wis het veld.`,
+	noticeMentionActionFailed: ({ error }) => `De persoonactie is niet uitgevoerd: ${error}`,
 	noticeRelationshipRoleFormatMustBeText: "De opmaak voor relatierollen moet tekst zijn.",
 	noticeViewStateReadOnly: "De People Atlas-weergavestatus is alleen-lezen totdat de plugingegevens zijn hersteld.",
 	noticeViewStateSaveFailed: ({ error }) => `De People Atlas-weergavestatus kon niet worden opgeslagen: ${error}`,
@@ -171,6 +220,7 @@ export const dutchCatalog: Translator = {
 		advancedDestination: ({ path }) => `Geavanceerd — Bestemming: ${path}`,
 		advancedSource: ({ path }) => `Geavanceerd — Bron: ${path}`,
 		notSet: "niet ingesteld",
+		error: ({ error }) => `Fout: ${error}`,
 	},
 	relationshipPresetModal: {
 		titleCreate: "Relatiesjabloon maken",
@@ -187,6 +237,7 @@ export const dutchCatalog: Translator = {
 		saveRejected:
 			"Het relatiesjabloon kon niet worden opgeslagen. De People Atlas-instellingen kunnen alleen-lezen of ongeldig zijn geworden; controleer de instellingen en probeer het opnieuw.",
 		saveFailed: ({ error }) => `Het relatiesjabloon kon niet worden opgeslagen: ${error}`,
+		validationError: ({ error }) => `Validatiefout: ${error}`,
 	},
 	relationshipPresetSyncModal: {
 		title: "Gekoppelde relaties vanuit sjabloon bijwerken",
@@ -264,6 +315,10 @@ export const dutchCatalog: Translator = {
 		save: "Opslaan",
 		noLinkedRelationship: "Geen gekoppelde relatie",
 		unknownPerson: "Onbekend",
+		error: ({ error }) => `Fout: ${error}`,
+		partialSuccess: ({ momentPath, relationshipPath, reason }) =>
+			`Contactmoment opgeslagen op “${momentPath}”, maar relatie “${relationshipPath}” is niet bijgewerkt: ${reason}`,
+		relationshipNotice: ({ message }) => `Relatie-update: ${message}`,
 	},
 	atlasRenderer: {
 		view: "Weergave",
@@ -323,6 +378,7 @@ export const dutchCatalog: Translator = {
 		noNoteNoActions: "Deze persoon heeft geen notitie of beschikbare acties.",
 		contactMoments: "Contactmomenten",
 		diagnosticsHeading: ({ count }) => `Diagnostiek (${count})`,
+		diagnosticMessage: ({ code, message }) => `${dutchDiagnosticLabels[code] ?? "Diagnostiek"}: ${message}`,
 		openDiagnosticSource: "Bronnotitie openen",
 		nextFollowUp: "Volgende opvolging",
 		allContactMoments: "Alle contactmomenten",
@@ -517,5 +573,6 @@ export const dutchCatalog: Translator = {
 		retryRenameAndSave: "Hernoemen en opslaan opnieuw proberen",
 		advancedDestination: ({ path }) => `Geavanceerd — Bestemming: ${path}`,
 		advancedCurrentPath: ({ path }) => `Geavanceerd — Huidig pad: ${path}`,
+		error: ({ error }) => `Fout: ${error}`,
 	},
 };

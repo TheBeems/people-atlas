@@ -35,6 +35,11 @@ type NoticeErrorParameters = {
 	error: string;
 };
 
+type DiagnosticMessageParameters = {
+	code: string;
+	message: string;
+};
+
 type NoteKind = "person" | "relationship" | "contact-moment";
 
 type NoteOpenFailureParameters = NoticeErrorParameters & {
@@ -92,11 +97,41 @@ export const englishCatalog = {
 	noticeSettingsReadOnly: "People Atlas settings are read-only until the plugin data is repaired.",
 	noticeSettingsSaveFailed: ({ error }: SettingsSaveFailureParameters) =>
 		`People Atlas settings could not be saved: ${error}`,
+	noticeSettingsLoadFailed: ({ error }: NoticeErrorParameters) => `People Atlas settings could not be loaded: ${error}`,
+	noticeInvalidRelationshipTemplates: ({ error }: NoticeErrorParameters) =>
+		`Relationship templates are invalid: ${error}`,
+	noticeInvalidRelationshipRoleFormat: ({ error }: NoticeErrorParameters) =>
+		`Relationship role format is invalid: ${error}`,
+	noticeInvalidPeopleRootFolder: ({ error }: NoticeErrorParameters) => `People root folder is invalid: ${error}`,
+	noticeInvalidPersonProperties: ({ error }: NoticeErrorParameters) => `Person property mappings are invalid: ${error}`,
+	noticeInvalidContactMomentProperties: ({ error }: NoticeErrorParameters) =>
+		`Contact-moment property mappings are invalid: ${error}`,
+	noticeInvalidNoteTypeValues: ({ error }: NoticeErrorParameters) => `Note type values are invalid: ${error}`,
+	noticeFollowUpChangeFailed: ({ error }: NoticeErrorParameters) => `The follow-up was not changed: ${error}`,
+	noticeContactMomentEditUnavailable: ({ error }: NoticeErrorParameters) =>
+		`The contact moment cannot be edited until its person references are repaired: ${error}`,
+	noticeTemplateSyncStopped: ({
+		filePath,
+		completed,
+		skipped,
+		remaining,
+		error,
+	}: {
+		filePath?: string;
+		completed: number;
+		skipped: number;
+		remaining: number;
+		error: string;
+	}) =>
+		`Stopped${filePath ? ` at “${filePath}”` : ""}. Completed ${completed}; skipped ${skipped}; remaining ${remaining}. ${error}`,
 	noticeTemplateUnavailable: ({ presetId }: TemplateUnavailableParameters) =>
 		`Relationship template “${presetId}” is no longer available.`,
 	noticeTemplateAlreadyMatches:
 		"All indexed relationship notes with this template provenance already match its copied values.",
 	noticePersonUnavailable: "The selected person is no longer available in the People Atlas index.",
+	noticeMyPersonSelectionRejected: ({ filePath }: { filePath: string }) =>
+		`My person selection “${filePath}” is not one unique canonical person note and was not saved. Choose one unique person note or clear the field.`,
+	noticeMentionActionFailed: ({ error }: NoticeErrorParameters) => error,
 	noticeRelationshipRoleFormatMustBeText: "The relationship role format must be text.",
 	noticeViewStateReadOnly: "People Atlas view state is read-only until the plugin data is repaired.",
 	noticeViewStateSaveFailed: ({ error }: NoticeErrorParameters) =>
@@ -220,6 +255,7 @@ export const englishCatalog = {
 		advancedDestination: ({ path }: { path: string }) => `Advanced — Destination: ${path}`,
 		advancedSource: ({ path }: { path: string }) => `Advanced — Source: ${path}`,
 		notSet: "not set",
+		error: ({ error }: NoticeErrorParameters) => error,
 	},
 	relationshipPresetModal: {
 		titleCreate: "Create relationship template",
@@ -236,6 +272,7 @@ export const englishCatalog = {
 		saveRejected:
 			"The relationship template could not be saved. People Atlas settings may have become read-only or invalid; review the settings and try again.",
 		saveFailed: ({ error }: NoticeErrorParameters) => `The relationship template could not be saved: ${error}`,
+		validationError: ({ error }: NoticeErrorParameters) => error,
 	},
 	relationshipPresetSyncModal: {
 		title: "Update linked relationships from template",
@@ -312,6 +349,17 @@ export const englishCatalog = {
 		save: "Save",
 		noLinkedRelationship: "No linked relationship",
 		unknownPerson: "Unknown",
+		error: ({ error }: NoticeErrorParameters) => error,
+		partialSuccess: ({
+			momentPath,
+			relationshipPath,
+			reason,
+		}: {
+			momentPath: string;
+			relationshipPath: string;
+			reason: string;
+		}) => `Contact moment saved at “${momentPath}”, but relationship “${relationshipPath}” was not updated: ${reason}`,
+		relationshipNotice: ({ message }: { message: string }) => message,
 	},
 	atlasRenderer: {
 		view: "View",
@@ -378,6 +426,7 @@ export const englishCatalog = {
 		noNoteNoActions: "This person has no note or available actions.",
 		contactMoments: "Contact moments",
 		diagnosticsHeading: ({ count }: { count: number }) => `Diagnostics (${count})`,
+		diagnosticMessage: ({ message }: DiagnosticMessageParameters) => message,
 		openDiagnosticSource: "Open source note",
 		nextFollowUp: "Next follow-up",
 		allContactMoments: "All contact moments",
@@ -597,6 +646,7 @@ export const englishCatalog = {
 		retryRenameAndSave: "Retry rename and save",
 		advancedDestination: ({ path }: { path: string }) => `Advanced — Destination: ${path}`,
 		advancedCurrentPath: ({ path }: { path: string }) => `Advanced — Current path: ${path}`,
+		error: ({ error }: NoticeErrorParameters) => error,
 	},
 };
 

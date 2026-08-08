@@ -78,6 +78,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 	readonly t: Translator = createTranslator(getLanguage());
 	readonly index = new PersonIndex(this.app, () => this.settings);
 	private settingsWriteEnabled = true;
+	private lifecycleGeneration = 0;
 	private readonly renderedNoteActionDocumentIds = new Set<string>();
 	private readonly viewStateWrites = new ViewStateWriteCoordinator((viewConfigurationKey, state) =>
 		this.persistViewState(viewConfigurationKey, state),
@@ -90,10 +91,11 @@ export default class PeopleAtlasPlugin extends Plugin {
 	);
 
 	override async onload(): Promise<void> {
+		const lifecycleGeneration = ++this.lifecycleGeneration;
 		const loaded = loadPluginSettings(await this.loadData());
 		this.settings = loaded.settings;
 		this.settingsWriteEnabled = loaded.writeEnabled;
-		if (loaded.error) new Notice(loaded.error);
+		if (loaded.error) new Notice(this.t.noticeSettingsLoadFailed({ error: loaded.error }));
 
 		this.registerView(VIEW_TYPE_PEOPLE_ATLAS, (leaf) => new PeopleAtlasView(leaf, this));
 		if (this.settings.enableBases) {
@@ -158,7 +160,14 @@ export default class PeopleAtlasPlugin extends Plugin {
 		);
 		this.registerMarkdownPostProcessor((section, context) => this.renderNoteContextActions(section, context));
 
-		this.app.workspace.onLayoutReady(() => this.addChild(this.index));
+		this.app.workspace.onLayoutReady(() => {
+			if (this.lifecycleGeneration !== lifecycleGeneration) return;
+			this.addChild(this.index);
+		});
+	}
+
+	override onunload(): void {
+		this.lifecycleGeneration += 1;
 	}
 
 	async updateSetting(key: keyof PeopleAtlasSettings, value: unknown): Promise<boolean> {
@@ -169,7 +178,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		if (key === "relationshipPresets") {
 			const presetError = validateStoredRelationshipPresets(value);
 			if (presetError) {
-				new Notice(`Relationship templates are invalid: ${presetError}`);
+				new Notice(this.t.noticeInvalidRelationshipTemplates({ error: presetError }));
 				return false;
 			}
 		}
@@ -180,7 +189,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			}
 			const formatError = validateRelationshipRoleFormat(value);
 			if (formatError) {
-				new Notice(formatError);
+				new Notice(this.t.noticeInvalidRelationshipRoleFormat({ error: formatError }));
 				return false;
 			}
 		}
@@ -189,22 +198,22 @@ export default class PeopleAtlasPlugin extends Plugin {
 			const next = validateSettings({ ...this.settings, [key]: value });
 			const peopleRootFolderError = validatePeopleRootFolder(next.peopleRootFolder);
 			if (peopleRootFolderError) {
-				new Notice(peopleRootFolderError);
+				new Notice(this.t.noticeInvalidPeopleRootFolder({ error: peopleRootFolderError }));
 				return false;
 			}
 			const personPropertyError = validatePersonPropertyMappings(next);
 			if (personPropertyError) {
-				new Notice(`Person property mappings are invalid: ${personPropertyError}`);
+				new Notice(this.t.noticeInvalidPersonProperties({ error: personPropertyError }));
 				return false;
 			}
 			const contactMomentPropertyError = validateContactMomentPropertyMappings(next);
 			if (contactMomentPropertyError) {
-				new Notice(`Contact-moment property mappings are invalid: ${contactMomentPropertyError}`);
+				new Notice(this.t.noticeInvalidContactMomentProperties({ error: contactMomentPropertyError }));
 				return false;
 			}
 			const noteTypeError = validateNoteTypeValues(next);
 			if (noteTypeError) {
-				new Notice(`Note type values are invalid: ${noteTypeError}`);
+				new Notice(this.t.noticeInvalidNoteTypeValues({ error: noteTypeError }));
 				return false;
 			}
 			this.settings = next;
@@ -765,7 +774,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			new Notice(status === "done" ? this.t.noticeFollowUpMarkedDone : this.t.noticeFollowUpDismissed);
 			return true;
 		} catch (error) {
-			new Notice(`The follow-up was not changed: ${error instanceof Error ? error.message : String(error)}`);
+			new Notice(this.t.noticeFollowUpChangeFailed({ error: error instanceof Error ? error.message : String(error) }));
 			return false;
 		}
 	}
@@ -790,9 +799,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			).open();
 		} catch (error) {
 			new Notice(
-				`The contact moment cannot be edited until its person references are repaired: ${
-					error instanceof Error ? error.message : String(error)
-				}`,
+				this.t.noticeContactMomentEditUnavailable({ error: error instanceof Error ? error.message : String(error) }),
 			);
 			return false;
 		}

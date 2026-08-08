@@ -67,6 +67,8 @@ export class PersonIndex extends Component {
 	private readonly listeners = new Set<IndexListener>();
 	private readonly deltaListeners = new Set<IndexDeltaListener>();
 	private started = false;
+	private initialResolutionPending = false;
+	private initialResolutionObserved = false;
 	private snapshot: RawIndexSnapshot = { people: [], relationships: [], contactMoments: [], diagnostics: [] };
 
 	constructor(
@@ -78,7 +80,8 @@ export class PersonIndex extends Component {
 
 	override onload(): void {
 		this.started = true;
-		this.rebuildAll();
+		this.initialResolutionPending = true;
+		this.initialResolutionObserved = false;
 
 		this.registerEvent(
 			this.app.vault.on("create", (file) => {
@@ -99,13 +102,23 @@ export class PersonIndex extends Component {
 			}),
 		);
 		this.registerEvent(
+			this.app.metadataCache.on("resolved", () => {
+				if (!this.started) return;
+				this.initialResolutionObserved = true;
+				if (!this.initialResolutionPending) return;
+				this.rebuildAll();
+			}),
+		);
+		this.registerEvent(
 			this.app.metadataCache.on("resolve", (file) => {
+				if (this.shouldDeferIncrementalUpdates()) return;
 				this.reindexPaths([...this.state.getDependentsForTarget(file.path), ...this.getMetadataDependents(file.path)]);
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
 				const dependents = [...this.state.getDependentsForTarget(file.path), ...this.getMetadataDependents(file.path)];
+				if (this.shouldDeferIncrementalUpdates() && file instanceof TFile && file.extension === "md") return;
 				if (file instanceof TFile && file.extension !== "md") {
 					this.refreshAssetDependents([file.path], file.path, dependents);
 					return;
@@ -119,6 +132,7 @@ export class PersonIndex extends Component {
 				const dependents = [...this.state.getDependentsForTarget(oldPath), ...this.getMetadataDependents(oldPath)];
 				const oldWasMarkdown = isMarkdownPath(oldPath);
 				const newIsMarkdown = file instanceof TFile && file.extension === "md";
+				if (this.shouldDeferIncrementalUpdates() && (oldWasMarkdown || newIsMarkdown)) return;
 				if (file instanceof TFile && !oldWasMarkdown && !newIsMarkdown) {
 					this.refreshAssetDependents([oldPath, file.path], oldPath, dependents);
 					return;
@@ -130,10 +144,13 @@ export class PersonIndex extends Component {
 				this.reindexPaths(dependents);
 			}),
 		);
+		this.rebuildAll();
 	}
 
 	override onunload(): void {
 		this.started = false;
+		this.initialResolutionPending = false;
+		this.initialResolutionObserved = false;
 		this.state.clear();
 		this.snapshot = { people: [], relationships: [], contactMoments: [], diagnostics: [] };
 		this.listeners.clear();
@@ -173,8 +190,17 @@ export class PersonIndex extends Component {
 
 	rebuildAll(): void {
 		if (!this.started) return;
-		this.state.clear();
 		const files = this.app.vault.getMarkdownFiles();
+		if (this.initialResolutionPending && files.length === 0) return;
+		if (
+			this.initialResolutionPending &&
+			!this.initialResolutionObserved &&
+			files.some((file) => this.app.metadataCache.getFileCache(file) === null)
+		) {
+			return;
+		}
+		if (this.initialResolutionPending && files.length > 0) this.initialResolutionPending = false;
+		this.state.clear();
 		for (const file of files) this.indexFile(file);
 		const snapshot = this.state.getSnapshot();
 		const delta = emptyDelta(this.getRevision());
@@ -208,9 +234,11 @@ export class PersonIndex extends Component {
 
 	private updateFile(file: TFile, publish = true): IndexDelta | undefined {
 		if (!this.started || file.extension !== "md") return undefined;
+		if (this.shouldDeferIncrementalUpdates()) return undefined;
 		const change = this.state.upsert(
 			parseAtlasFile(this.app, file, this.app.metadataCache.getFileCache(file), this.getSettings()),
 		);
+		if (this.initialResolutionPending) this.initialResolutionPending = false;
 		const delta = this.createDelta(change);
 		if (publish) this.publish(delta);
 		return delta;
@@ -230,6 +258,7 @@ export class PersonIndex extends Component {
 	}
 
 	private reindexPaths(paths: Iterable<string>): boolean {
+		if (this.shouldDeferIncrementalUpdates()) return false;
 		let published = false;
 		for (const path of new Set(paths)) {
 			const file = this.app.vault.getAbstractFileByPath(path);
@@ -261,6 +290,10 @@ export class PersonIndex extends Component {
 			),
 		]);
 		this.publish(delta);
+	}
+
+	private shouldDeferIncrementalUpdates(): boolean {
+		return this.initialResolutionPending && !this.initialResolutionObserved;
 	}
 
 	private getMetadataDependents(targetPath: string): string[] {

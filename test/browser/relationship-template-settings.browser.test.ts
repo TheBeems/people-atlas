@@ -114,6 +114,25 @@ describe("relationship template settings", () => {
 		expect(buttonWithText(content, "Opslaan")).toBeInstanceOf(HTMLButtonElement);
 	});
 
+	it("localizes inline template validation feedback while preserving technical validation details", async () => {
+		const modal = new RelationshipPresetModal(
+			{} as App,
+			{ kind: "create" },
+			[],
+			async () => true,
+			createTranslator("nl"),
+		);
+		const { content } = mountModal(modal);
+
+		buttonWithText(content, "Opslaan").click();
+
+		await vi.waitFor(() =>
+			expect(content.querySelector("[role=alert]")?.textContent).toBe(
+				"Validatiefout: A template ID is required. A template name is required. At least one non-empty relationship type is required. Both endpoint roles are required.",
+			),
+		);
+	});
+
 	it("localizes a rejected template save in Dutch", async () => {
 		const modal = new RelationshipPresetModal(
 			{} as App,

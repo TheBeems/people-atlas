@@ -1,6 +1,7 @@
 Status: done
 Created: 2026-08-01
-Updated: 2026-08-01
+Updated: 2026-08-08
+Owner: People Atlas implementation workstream — test runner
 
 # Stabiliseer de aggregate Vitest-runner
 
@@ -48,6 +49,8 @@ een bewezen oorzaak wordt vereist.
 - [x] `npm run typecheck`, `npm run build` en `git diff --check` slagen.
 - [x] Een onafhankelijke reviewer beoordeelt oorzaak, diff, testdekking en
       eventuele resterende omgevingrisico's vóór sluiting.
+- [x] De 2026-08-08 follow-up op de Chromium-projectgrens is drie keer exact
+      onder Node 24 groen uitgevoerd en onafhankelijk opnieuw beoordeeld.
 
 ## References
 
@@ -55,6 +58,8 @@ een bewezen oorzaak wordt vereist.
 - `.10x/tickets/2026-08-01-await-declarative-settings-persistence.md`
 - `.10x/knowledge/controlled-obsidian-integration-testing.md`
 - `package.json`
+- `scripts/run-integration-tests.mjs`
+- `test/browser-runner-config.test.ts`
 - `vitest.config.ts`
 - `vitest.performance.config.ts`
 - `AGENTS.md`
@@ -110,6 +115,32 @@ stoppen en escaleren naar shaping in plaats van een vierde gokfix te proberen.
   typecheck`, `npm run build` en `git diff --check` groen. De scriptinvariant
   is expliciet gecontroleerd: exacte verplichte volgorde aanwezig en geen
   `--no-file-parallelism` of `passWithNoTests`.
+- 2026-08-08 follow-up RED: de actuele aggregate-run faalde tweemaal onder
+  Node v24.18.1 met wisselende Chromium-timeouts in integration (`contact-
+  moment-entrypoints`, daarna `person-profile`) en daarna in alle drie
+  browser-matrix-DPR-instances. De betrokken files/projecten waren geïsoleerd
+  groen; de failure boundary bleef parallelle Chromium-projectbelasting.
+- 2026-08-08 follow-up GREEN slice: de actuele aggregate-run gebruikt nu
+  `node scripts/run-integration-tests.mjs` voor integration; deze helper
+  enumerateert alle bestaande `*.integration.test.ts`-files en start ieder
+  bestand in een eigen Vitest-proces met `--no-file-parallelism` en
+  `--maxWorkers=1`. De drie matrixinstances worden eveneens afzonderlijk
+  gestart als `chromium-dpr-1`, `chromium-dpr-1.5` en `chromium-dpr-2`.
+  `test/browser-runner-config.test.ts` bewaakt de exacte scriptgrenzen.
+  Drie opeenvolgende actuele `npm run test`-runs onder Node v24.18.1 zijn
+  groen: telkens node 952/952, browser 158/158, integration 9 files/38
+  tests en DPR 1/1.5/2 elk 2/2. Fresh review blijft nodig voor formele
+  follow-up-closure.
+- 2026-08-08 repair GREEN: de helper is side-effectvrij importeerbaar via een
+  expliciete module-entrypointguard en heeft `collectIntegrationTestFiles` /
+  `runIntegrationTests` exports met een `.d.mts`-declaratie. De directe
+  node-regressietest controleert deterministische negen-file enumeration en
+  stopt bij exitcode 17 zonder latere child te starten: 2/2 groen. De echte
+  `npm run test:integration` bleef 9 files/38 tests groen.
+- 2026-08-08: de runnerregressie is uitgebreid met echte child-processcases
+  voor normale exitcode 23, SIGTERM en ontbrekende Vitest-module; alle drie
+  fail-closed naar de verwachte code. De volledige runner-unitfile is 5/5
+  groen onder Node v24.18.1.
 
 ## Evidence
 
@@ -147,6 +178,27 @@ stoppen en escaleren naar shaping in plaats van een vierde gokfix te proberen.
 - Run 3: exit 0, 65,482 s — node: 47 bestanden / 661 tests; browser: 8 / 75;
   integration: 6 / 14; browser-matrix: 3 / 6.
 
+### Historical 2026-08-08 follow-up evidence vóór de laatste repairs
+
+- De toenmalige runner gebruikte `scripts/run-integration-tests.mjs` om de negen
+  bestaande integrationfiles elk in een eigen Vitest-proces uit te voeren;
+  geen file, assertion of matrixfactor is verwijderd.
+- De actuele package-scripts starten de drie DPR-instances afzonderlijk.
+- De eerdere drie runs hadden node 952/952; dit is historische pre-final
+  evidence en geen actuele omvangclaim.
+- De pre-fix aggregate failures en de 2026-08-01 serialisatieclaims blijven
+  historische evidence.
+
+### Current 2026-08-08 final-gate evidence
+
+- Node v24.18.1 final gate: `npm run test` exit 0 met node 53 bestanden/964
+  tests, browser 10/158, integration 9 bestanden/38 tests en DPR 1/1.5/2
+  elk 2/2. `npm run format:check`, `npm run lint` (exit 0; één bestaande
+  warning/info), `npm run typecheck`, `npm run build` en `git diff --check`
+  zijn groen.
+- De runner-unitfile is 5/5 groen met normale child-exit, signal en spawn-error;
+  de helper behoudt alle negen integrationbestanden en fail-closed propagatie.
+
 ### Overige gates
 
 - `npm run typecheck`: exit 0, 5,387 s.
@@ -162,14 +214,18 @@ stoppen en escaleren naar shaping in plaats van een vierde gokfix te proberen.
 
 ## Review
 
-- 2026-08-01: Onafhankelijke red-teamreview — **pass**. Geen security- of
+- 2026-08-01: Onafhankelijke red-teamreview — **pass** (historische runner-
+  configuratie). Geen security- of
   logische bevindingen. De reviewer bevestigde de volledige volgorde node →
   browser → integration → browser-matrix, behoud van intern nodeparallelisme
   en afwezigheid van skips, matrixreductie, timeoutwijzigingen,
   `--passWithNoTests` en `--no-file-parallelism`.
 - Niet-blokkerend restrisico: `&&` rapporteert alleen de eerste projectfailure
   per run. Maak uitsluitend bij behoefte aan volledige failure-inventaris een
-  apart diagnostisch CI-ticket; dit wijzigt de fail-closed quality gate niet.
+  een apart diagnostisch CI-ticket; dit wijzigt de fail-closed quality gate niet.
+- 2026-08-08 actuele onafhankelijke runner-review: **PASS** voor de helper,
+  projectgrens en behouden testdekking. Residueel: resourcecontention blijft
+  hostafhankelijk, maar de actuele Node-24 final gate is groen.
 - De reviewer accepteerde de 85%-oorzaakclaim en Node-22-diagnoselimiet als
   expliciet begrensd, omdat drie volledige Node-24-runs groen zijn.
 

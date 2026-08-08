@@ -179,7 +179,7 @@ describe("controlled People Atlas Obsidian integration", () => {
 		expect(pluginComponent.childCount).toBe(1);
 		expect((plugin.index as unknown as Component).isLoaded()).toBe(true);
 		expect(runtime.listenerCount("vault")).toBe(4);
-		expect(runtime.listenerCount("metadataCache")).toBe(2);
+		expect(runtime.listenerCount("metadataCache")).toBe(3);
 		expect(plugin.index.getSnapshot().people.map((record) => record.id)).toEqual(["alice", "bob"]);
 		expect(plugin.index.getSnapshot().relationships).toEqual([
 			expect.objectContaining({
@@ -471,5 +471,48 @@ describe("controlled People Atlas Obsidian integration", () => {
 			contactMoments: [],
 			diagnostics: [],
 		});
+	});
+
+	it("does not attach or scan the index when the plugin unloads before layout is ready", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		const plugin = new PeopleAtlasPlugin(runtime.app as unknown as App, manifest);
+		const pluginComponent = plugin as unknown as Component;
+
+		await pluginComponent.load();
+		expect(runtime.workspace.pendingLayoutReadyCount).toBe(1);
+		await pluginComponent.unload();
+
+		runtime.triggerLayoutReady();
+
+		expect(pluginComponent.childCount).toBe(0);
+		expect(runtime.vault.markdownScanCount).toBe(0);
+		expect((plugin.index as unknown as Component).isLoaded()).toBe(false);
+	});
+
+	it("executes the stored rebuild-index callback without consuming a pending readiness retry", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		const plugin = new PeopleAtlasPlugin(runtime.app as unknown as App, manifest);
+		const pluginComponent = plugin as unknown as Component;
+
+		await pluginComponent.load();
+		runtime.triggerLayoutReady();
+		expect(runtime.vault.markdownScanCount).toBe(1);
+
+		const rebuildCommand = runtime.commands.get("rebuild-index");
+		if (!rebuildCommand) throw new Error("Expected the stored rebuild-index command callback.");
+		if (!rebuildCommand.callback) throw new Error("Expected a callable rebuild-index command callback.");
+		rebuildCommand.callback();
+		expect(runtime.vault.markdownScanCount).toBe(2);
+		expect(plugin.index.getSnapshot().people).toEqual([]);
+
+		runtime.seedFile("People/Alice.md", person("alice", "Alice"));
+		runtime.emitMetadata("resolved");
+		expect(runtime.vault.markdownScanCount).toBe(3);
+		expect(plugin.index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+
+		runtime.emitMetadata("resolved");
+		expect(runtime.vault.markdownScanCount).toBe(3);
+
+		await pluginComponent.unload();
 	});
 });

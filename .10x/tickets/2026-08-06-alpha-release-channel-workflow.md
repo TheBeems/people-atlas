@@ -1,6 +1,7 @@
-Status: active
+Status: cancelled
 Created: 2026-08-06
-Updated: 2026-08-06
+Updated: 2026-08-08
+Superseded-By: `.10x/tickets/2026-08-08-release-channel-runtime-safety.md`
 Depends-On: `.10x/specs/reproducible-obsidian-release.md` (active)
 Governed-By: `.10x/specs/reproducible-obsidian-release.md` § Release channel (opt-in alpha prerelease)
 
@@ -107,3 +108,10 @@ None confirmed. Channel is declared per version in the notes file; the strict
 - `.10x/tickets/2026-08-06-release-0.12.0-alpha.md` (shows the manual
   `gh release edit` post-step this automates)
 - `scripts/release-contract.mjs` (strict `x.y.z` tag/version contract)
+
+## Supersession addendum (2026-08-08)
+
+De alpha-implementatie is historische input voor het gecombineerde
+release-channel-runtime-safety-ticket. Dat ticket is nu de enige actieve owner
+voor alpha/beta/rc/stable, duplicate-marker-fail-closed gedrag en actuele review
+evidence. Historische uitvoering en oorspronkelijke claims zijn niet herschreven.

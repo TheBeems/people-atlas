@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { RelationshipPreset } from "../src/settings/relationship-presets";
 import { PeopleAtlasSettingTab } from "../src/settings/settings-tab";
 import { validatePeopleRootFolder } from "../src/settings/validate";
+import { notices } from "./obsidian-stub";
 
 const relationshipTemplate: RelationshipPreset = {
 	id: "friend-colleague",
@@ -119,6 +120,7 @@ function createRelationshipTemplateTab({
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	notices.length = 0;
 });
 
 function createTab(myPersonId = "", writesEnabled = true): PeopleAtlasSettingTab {
@@ -331,23 +333,24 @@ describe("People Atlas settings definitions", () => {
 		expect(updateSetting).toHaveBeenCalledExactlyOnceWith("myPersonId", "alice-id");
 	});
 
-	it("rejects ordinary, stale and ambiguous picker paths without writing, while explicit clear only clears My person", async () => {
+	it("keeps duplicate-ID paths visible but rejects their selection without writing, while explicit clear only clears My person", async () => {
 		const { tab, updateSetting } = createMyPersonPickerTab({
 			myPersonId: "alice-id",
 			candidates: [
 				{ id: "alice-id", name: "Alice", filePath: "People/Alice.md" },
-				{ id: "duplicate-one", name: "Duplicate one", filePath: "People/Ambiguous.md" },
-				{ id: "duplicate-two", name: "Duplicate two", filePath: "People/Ambiguous.md" },
+				{ id: "duplicate-id", name: "Duplicate one", filePath: "People/Ambiguous-one.md" },
+				{ id: "duplicate-id", name: "Duplicate two", filePath: "People/Ambiguous-two.md" },
 			],
 		});
 		const myPerson = flattenedSettingDefinitions(tab).find((definition) => definition.control?.key === "myPersonId");
-		const ambiguousFile = Object.assign(new TFile(), { path: "People/Ambiguous.md" });
+		const ambiguousFile = Object.assign(new TFile(), { path: "People/Ambiguous-one.md" });
 
-		expect(myPerson?.control?.filter?.(ambiguousFile)).toBe(false);
+		expect(myPerson?.control?.filter?.(ambiguousFile)).toBe(true);
 		await tab.setControlValue("myPersonId", "Notes/Ordinary.md");
 		await tab.setControlValue("myPersonId", "People/Stale.md");
-		await tab.setControlValue("myPersonId", "People/Ambiguous.md");
+		await tab.setControlValue("myPersonId", "People/Ambiguous-one.md");
 		expect(updateSetting).not.toHaveBeenCalled();
+		expect(notices.at(-1)).toContain("not one unique canonical person note");
 
 		await tab.setControlValue("myPersonId", "");
 		expect(updateSetting).toHaveBeenCalledExactlyOnceWith("myPersonId", "");

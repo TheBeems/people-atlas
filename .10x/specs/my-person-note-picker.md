@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-04
-Updated: 2026-08-04
+Updated: 2026-08-08
 
 # My person: doorzoekbare notitiekiezer
 
@@ -28,13 +28,20 @@ schema-instellingen, geen migratie, en geen wijziging van
 1. `My person` MUST een native Obsidian bestandsinvoer met vault-suggesties
    gebruiken. De gebruiker kan daar een notitie typen, zoeken, selecteren of de
    waarde wissen.
-2. De suggester MUST alleen actuele, unieke canonieke People Atlas-personen
-   toelaten. Een gewone notitie, stale pad, ambigue persoon of dubbele
-   `person_id` is nooit een geldige selectie.
+2. De zichtbare kandidaatset MUST dezelfde actuele, expliciete-ID-personen uit
+   de index gebruiken als de persoonsselectie bij het aanmaken van relaties.
+   Daardoor mogen meerdere notities met dezelfde `person_id` zichtbaar zijn om
+   de juiste notitie vindbaar te maken. Een zichtbare kandidaat is echter pas
+   een geldige My person-selectie wanneer het actuele pad canoniek resolveert
+   naar precies één persoon met een unieke `person_id`. Een gewone notitie,
+   stale pad, ambigue persoon of dubbele `person_id` is nooit persistent
+   selecteerbaar.
 3. De gebruikersinvoer is een pad; de persistente waarde blijft uitsluitend
    `PeopleAtlasSettings.myPersonId`. Bij selectie resolveert de UI het actuele
-   canonieke record op pad en slaat zij diens stabiele ID op. Er wordt geen
-   bestandsnaam of displaynaam als identiteit opgeslagen.
+   canonieke record op pad en controleert zij zowel pad-uniciteit als
+   `person_id`-uniciteit vóór `updateSetting()` wordt aangeroepen. Alleen
+   daarna wordt diens stabiele ID opgeslagen. Er wordt geen bestandsnaam of
+   displaynaam als identiteit opgeslagen.
 4. Een expliciet leeggemaakte invoer MUST via de normale settings-updategrens
    `myPersonId` wissen, zodat de zichtbare toestand weer `None` is.
 5. Een eerder opgeslagen maar niet-resolveerbare ID blijft ongemuteerd en toont
@@ -57,10 +64,14 @@ schema-instellingen, geen migratie, en geen wijziging van
 
 - [ ] In Obsidian 1.13+ kan de gebruiker vanuit `My person` een canonieke
       persoonsnotitie typen, zoeken en selecteren met de native file-suggester.
-- [ ] Een geselecteerd actueel pad wordt exact naar de unieke `person_id`
-      vertaald en uitsluitend die ID wordt persistent opgeslagen.
+- [ ] De zichtbare kandidaten volgen dezelfde actuele persoonsset als de
+      relationship-editor, inclusief zichtbare duplicate-ID-notities wanneer
+      die in de index bestaan.
+- [ ] Een geselecteerd actueel pad wordt alleen bij unieke canonieke resolve
+      exact naar de unieke `person_id` vertaald en uitsluitend die ID wordt
+      persistent opgeslagen.
 - [ ] Leegmaken wist alleen `myPersonId`; een gewone, stale of ambigue notitie
-      wordt zonder write geweigerd.
+      wordt vóór `updateSetting()` zonder write geweigerd.
 - [ ] Een unavailable opgeslagen ID blijft zichtbaar als waarschuwing zonder
       automatische correctie of migratie.
 - [ ] De open Settings-tab ververst de candidates/status na index-publicatie,
@@ -95,11 +106,19 @@ schema-instellingen, geen migratie, en geen wijziging van
 - `test/integration/my-person.integration.test.ts`
 - Obsidian 1.13 `SettingFileControl` in `node_modules/obsidian/obsidian.d.ts`
 
+## Geratificeerd besluit — 2026-08-08
+
+De zichtbaarheid van My person moet aansluiten op de persoonsselectie in de
+relationship-editor, zodat een mobiel of presentation-first indexresultaat niet
+door een tweede, afwijkend duplicate-filter wordt verborgen. De safety rail
+verhuist daarom niet uit het systeem: zij zit bij de pad-naar-ID-write-boundary.
+Een ambigue record mag zichtbaar zijn en gekozen lijken in de native suggester,
+maar mag nooit als `myPersonId` worden opgeslagen.
+
 ## Besluitgrond
 
-De huidige dropdown voegt `None` toe plus uitsluitend unieke kandidaten uit de
-actuele index. Een leeg resultaat verklaart de gemelde `None`-only toestand,
-maar een vrij ID-veld zou ontbrekende of ambigue identiteit mogelijk maken.
-De publieke Obsidian 1.13 file-control biedt daarentegen een native,
-filterbare vault-suggester; een pad-naar-canonieke-ID-adapter behoudt de
-bestaande veilige opslagsemantiek.
+De relationship-editor gebruikt de actuele indexset om notities vindbaar te
+maken. De publieke Obsidian 1.13 file-control biedt dezelfde native,
+filterbare vault-suggester voor Settings. Een pad-naar-canonieke-ID-adapter met
+een expliciete pre-write uniqueness-check behoudt de veilige opslagsemantiek
+zonder een tweede kandidaatfilter dat valide zichtbaarheid kan verbergen.

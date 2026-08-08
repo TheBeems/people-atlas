@@ -343,7 +343,9 @@ export class ContactMomentModal extends Modal {
 		const result = await this.session.submit(structuredClone(this.values));
 		if (result.status === "success") {
 			this.close();
-			if (result.relationship.status !== "not-requested") new Notice(result.relationship.message);
+			if (result.relationship.status !== "not-requested") {
+				new Notice(this.t.contactMomentModal.relationshipNotice({ message: result.relationship.message }));
+			}
 			if (result.created) await this.openCreatedFile(result.file);
 			return;
 		}
@@ -351,9 +353,11 @@ export class ContactMomentModal extends Modal {
 			this.partialCreatedFile = result.file;
 			if (this.resultEl) {
 				this.resultEl.hidden = false;
-				this.resultEl.textContent =
-					`Contact moment saved at “${result.momentPath}”, but relationship “${result.relationshipPath}” ` +
-					`was not updated: ${result.reason}`;
+				this.resultEl.textContent = this.t.contactMomentModal.partialSuccess({
+					momentPath: result.momentPath,
+					relationshipPath: result.relationshipPath,
+					reason: result.reason,
+				});
 			}
 			if (this.retryButton) this.retryButton.hidden = false;
 			for (const control of Array.from(
@@ -367,7 +371,9 @@ export class ContactMomentModal extends Modal {
 			this.saveButton.removeAttribute("aria-busy");
 			return;
 		}
-		if (result.status === "error" && this.errorEl) this.errorEl.textContent = result.message;
+		if (result.status === "error" && this.errorEl) {
+			this.errorEl.textContent = this.t.contactMomentModal.error({ error: result.message });
+		}
 		if (result.status !== "busy" && result.status !== "cancelled") this.setBusy(this.saveButton, false);
 	}
 
@@ -378,12 +384,16 @@ export class ContactMomentModal extends Modal {
 		const result = await this.session.retryRelationship();
 		if (result.status === "success") {
 			const createdFile = this.partialCreatedFile;
-			if (result.relationship.message) new Notice(result.relationship.message);
+			if (result.relationship.message) {
+				new Notice(this.t.contactMomentModal.relationshipNotice({ message: result.relationship.message }));
+			}
 			this.close();
 			if (createdFile) await this.openCreatedFile(createdFile);
 			return;
 		}
-		if (result.status === "error" && this.errorEl) this.errorEl.textContent = result.message;
+		if (result.status === "error" && this.errorEl) {
+			this.errorEl.textContent = this.t.contactMomentModal.error({ error: result.message });
+		}
 		this.setBusy(this.retryButton, false);
 	}
 

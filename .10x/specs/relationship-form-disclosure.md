@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-08-06
-Updated: 2026-08-06
+Updated: 2026-08-08
 
 > **Narrow supersession — 2026-08-06.** Clause 21 (item 2) and clause 22 of
 > `.10x/specs/perspective-relationship-editor-templates.md` are superseded only
@@ -9,6 +9,11 @@ All other normative rules of that active spec
 > Advanced ordering, template copy-not-live semantics, apply/detach/modified/
 > missing states, Save-as-only-write, dynamic labels, preview, focus/disclosure
 > stability, responsiveness and accessibility — remain fully active.
+
+> **Narrow supersession — 2026-08-08.** The missing-template auto-open rule in
+> `.10x/tickets/2026-08-06-relationship-form-disclosure.md` is historical and
+> is superseded only by clause 10 below: a non-empty persisted `presetId`,
+> including a missing-template state, opens the disclosure.
 
 # Relationship form: section sub-grouping and disclosure
 
@@ -112,10 +117,12 @@ mutation path or persisted property.
 
 ### Auto-open behavior
 
-10. When a template is already attached to the note being edited (edit mode,
-    `values.presetId` set), the Template disclosure MUST open on load so the
-    user can see and manage the attached template. When no template is
-    attached, it MUST stay collapsed.
+10. When a template provenance ID is already attached to the note being edited
+    (edit mode, `values.presetId` set), the Template disclosure MUST open on
+    load so the user can see and manage the attached state. This includes a
+    missing-template state, because the persisted provenance still needs to be
+    visible and recoverable. Only an empty `values.presetId` MUST stay
+    collapsed.
 
 11. Selecting the `Simple relationship` shortcut MUST fill the core role
     fields in place, as today, and MUST NOT require the disclosure to remain
@@ -155,7 +162,10 @@ mutation path or persisted property.
 18. A validation failure that belongs to a field inside a collapsed disclosure
     MUST open that disclosure and focus or associate the error with the field
     — mirroring the existing validation-aware `Advanced` behavior. Core
-    fields are always visible and need no auto-open.
+    fields are always visible and need no auto-open. The current Shortcut and
+    Template controls have no submit-time field validation of their own; any
+    future validation added there MUST use this same disclosure-aware error
+    path.
 
 19. At narrow/mobile widths the sub-groups MUST reflow to one column without
     horizontal scrolling; Save/Cancel remain reachable outside all
@@ -198,8 +208,9 @@ disclosure's open state, and the new template is not auto-applied.
       sub-group.
 - [ ] Only the Core sub-group is visible when the modal opens; both
       disclosures are collapsed by default.
-- [ ] A newly attached template in edit mode opens the Template disclosure;
-      a missing/unattached template keeps it collapsed.
+- [ ] Edit mode with a non-empty persisted `presetId` opens the Template
+      disclosure, including a missing-template state; only an empty/unattached
+      state stays collapsed.
 - [ ] Shortcut selection updates core roles/preview in place without leaving
       the disclosure open.
 - [ ] Template select/detach/reapply/create and dynamic label/preview updates

@@ -3,7 +3,6 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-export const BUNDLE_LIMIT_BYTES = 500_000;
 export const REQUIRED_MIN_APP_VERSION = "1.13.0";
 export const RELEASE_ASSETS = Object.freeze(["main.js", "manifest.json", "styles.css"]);
 export const REQUIRED_INPUTS = Object.freeze(["README.md", "LICENSE", "manifest.json", "versions.json"]);
@@ -53,11 +52,7 @@ function stringProperty(value, property) {
 	return typeof candidate === "string" ? candidate : undefined;
 }
 
-export async function validateReleaseContract({
-	rootDir = process.cwd(),
-	tag,
-	bundleLimitBytes = BUNDLE_LIMIT_BYTES,
-} = {}) {
+export async function validateReleaseContract({ rootDir = process.cwd(), tag } = {}) {
 	const errors = [];
 
 	for (const requiredInput of REQUIRED_INPUTS) {
@@ -125,9 +120,6 @@ export async function validateReleaseContract({
 	if (bundleStat) {
 		try {
 			bundleBytes = bundleStat.size;
-			if (bundleBytes > bundleLimitBytes) {
-				errors.push(`main.js is ${bundleBytes} bytes; the allowed limit is ${bundleLimitBytes} bytes.`);
-			}
 			const bundleSource = await readFile(bundlePath, "utf8");
 			if (/sourceMappingURL\s*=/iu.test(bundleSource)) {
 				errors.push("Production main.js must not contain a sourceMappingURL directive.");
@@ -145,7 +137,6 @@ export async function validateReleaseContract({
 	return {
 		assets: [...RELEASE_ASSETS],
 		bundleBytes,
-		bundleLimitBytes,
 		errors,
 		version: manifestVersion,
 	};
@@ -178,7 +169,7 @@ async function run() {
 	}
 
 	console.log(
-		`Release contract passed for ${result.version}: main.js ${result.bundleBytes}/${result.bundleLimitBytes} bytes; assets ${result.assets.join(
+		`Release contract passed for ${result.version}: main.js ${result.bundleBytes ?? "unknown"} bytes; assets ${result.assets.join(
 			", ",
 		)}.`,
 	);

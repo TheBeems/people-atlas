@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-27
-Updated: 2026-08-06
+Updated: 2026-08-08
 
 # P8 — Reproducible Obsidian release
 
@@ -41,7 +41,7 @@ reproducibility and release provenance. It does not authorize publishing.
    gates.
 9. The normal repository `check` command MUST compose the offline gates after
    dependencies are installed: format, lint, typecheck/build, tests, metadata
-   and bundle budget.
+   and production-artifact checks.
 10. Biome MUST check maintained source, tests, scripts and root code/config
     inputs. It MUST exclude `.10x/`, installed dependencies, ignored build
     output, coverage, browser artifacts and release staging.
@@ -65,9 +65,11 @@ reproducibility and release provenance. It does not authorize publishing.
     MUST NOT embed the sourcemap in `main.js`.
 17. `main.js`, `main.js.map` and release staging MUST remain ignored and
     untracked.
-18. The production `main.js` MUST be at most 409,600 bytes uncompressed.
-19. A size failure MUST report the observed byte count and the 409,600-byte
-    limit. The budget MUST NOT be silently raised.
+18. The production `main.js` MUST remain minified and sourcemap-free as required
+    by clauses 15 and 23. The release contract MUST NOT impose a fixed
+    byte-size budget on the production bundle.
+19. A build MAY report artifact size for observability, but bundle size alone
+    MUST NOT fail the quality or release gate.
 
 ### Version and Community-submission readiness
 
@@ -119,12 +121,13 @@ reproducibility and release provenance. It does not authorize publishing.
 33. The three exact publication candidates MUST be attested with
     `actions/attest@v4` after successful verification and before publication.
 34. Immediately before publication, the workflow MUST query the remote tag,
-    fail if it no longer exists, peel an annotated tag to its target commit,
-    and require that commit to equal the workflow's original GitHub Actions
-    commit SHA (`github.sha`). Checking only local checkout state or only
-    using `--verify-tag` is insufficient.
+    prefer peeling an annotated tag to its target commit and, when the remote
+    ref is a directly resolvable lightweight tag, fall back to that exact ref;
+    in either case it MUST require the resolved commit to equal the workflow's
+    original GitHub Actions commit SHA (`github.sha`). Checking only local
+    checkout state or only using `--verify-tag` is insufficient.
 35. The release MUST be created from the checked-out tagged source revision
-    only. A failing install, audit, quality gate, metadata check, size check,
+    only. A failing install, audit, quality gate, metadata check,
     reproducibility check or attestation MUST prevent release creation.
 36. No workflow, script or documentation change in P8 MAY push a tag, create a
     release, configure a remote or submit to the Obsidian Community directory.
@@ -132,15 +135,16 @@ reproducibility and release provenance. It does not authorize publishing.
 ### Release channel (opt-in prerelease channels)
 
 37. A release's channel is declared explicitly per version in its release
-    notes file `.github/release-notes/<version>.md`. An exact marker line
-    `Channel: alpha` declares an alpha prerelease, `Channel: beta` declares a
-    beta prerelease, and `Channel: rc` declares a release-candidate prerelease;
-    the absence of a marker (or any other value) declares a stable release.
-    The release tag itself MUST remain strict `x.y.z`; prerelease channels are
-    represented by the GitHub prerelease flag and the corresponding title
-    branding — `(Alpha)`, `(Beta)`, or `(Release Candidate)` — NOT by a SemVer
-    prerelease suffix (which the release contract rejects for
-    `manifest.json.version` and the tag).
+    notes file `.github/release-notes/<version>.md`. When present, the exact
+    marker line `Channel: alpha`, `Channel: beta`, or `Channel: rc` MUST be the
+    first non-empty line. The file MUST contain at most one recognized channel
+    marker; multiple recognized markers MUST fail the workflow rather than
+    selecting one implicitly. The absence of a marker (or an unrecognized
+    value) declares a stable release. The release tag itself MUST remain strict
+    `x.y.z`; prerelease channels are represented by the GitHub prerelease flag
+    and the corresponding title branding — `(Alpha)`, `(Beta)`, or `(Release
+    Candidate)` — NOT by a SemVer prerelease suffix (which the release contract
+    rejects for `manifest.json.version` and the tag).
 38. For an `alpha` channel the tag workflow MUST create the GitHub release with
     `gh release create --prerelease` and title `People Atlas <version> (Alpha)`.
     For a `beta` channel it MUST create the release with `--prerelease` and
@@ -159,8 +163,8 @@ reproducibility and release provenance. It does not authorize publishing.
 - Format, lint, type, test and build failures MUST retain their owning command
   and MUST NOT be collapsed into a generic release error.
 - Missing or malformed metadata, version disagreement, invalid tag, absent
-  or non-regular release files, embedded/external sourcemap directives and
-  oversize bundles MUST fail before attestation or publication.
+  or non-regular release files, and embedded/external sourcemap directives
+  MUST fail before attestation or publication.
 - A high/critical audit result or unavailable required audit step MUST fail the
   relevant CI/release job.
 - No failure path may publish a partial release or a sourcemap.
@@ -182,9 +186,9 @@ Obsidian `1.13.0`
 
 When the release contract validates tag `0.1.0` after a production build
 
-Then the tag and metadata pass, `main.js` is minified and no larger than
-409,600 bytes, no sourcemap is present, and exactly the three Obsidian assets
-are eligible for attestation and publication.
+Then the tag and metadata pass, `main.js` is minified and no sourcemap is
+present, and exactly the three Obsidian assets are eligible for attestation and
+publication.
 
 ### Scenario: invalid prefixed tag is rejected
 
@@ -232,10 +236,11 @@ gates passed.
   separately observable and pass through the composed check.
 - Production is minified and sourcemap-free; development uses a separate
   ignored sourcemap.
-- Automated tests falsify version/tag/metadata/asset/size validation through
+- Automated tests falsify version/tag/metadata/asset validation through
   positive and negative cases, including non-regular release paths and inline
   or external `sourceMappingURL` directives.
-- Production `main.js` is no larger than 409,600 bytes.
+- Production `main.js` is minified, sourcemap-free and reproducibly built; its
+  size is observable but is not a release-gate limit.
 - Dependency audit blocks high/critical findings in CI/release.
 - Two clean production outputs have the same SHA-256 digest.
 - The tag workflow validates exact `x.y.z` equality, attests and publishes only

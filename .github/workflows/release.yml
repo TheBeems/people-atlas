@@ -27,6 +27,20 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: npm run release:contract -- --tag "$RELEASE_TAG"
+      - name: Validate release channel
+        id: release-channel
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          release_notes_file=".github/release-notes/${RELEASE_TAG}.md"
+          channel_resolution="$(node scripts/release-channel.mjs "$release_notes_file" "$RELEASE_TAG")"
+          IFS=$'\t' read -r channel title prerelease <<<"$channel_resolution"
+          {
+            echo "channel=$channel"
+            echo "title=$title"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
       - run: npm run verify:reproducible
       - name: Validate verified release candidate
         env:
@@ -66,33 +80,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
+          RELEASE_TITLE: ${{ steps.release-channel.outputs.title }}
+          RELEASE_PRERELEASE: ${{ steps.release-channel.outputs.prerelease }}
         run: |
           set -euo pipefail
-          channel="stable"
-          if [[ -f ".github/release-notes/${TAG}.md" ]]; then
-            marker="$(grep -x "Channel: alpha\|Channel: beta\|Channel: rc" ".github/release-notes/${TAG}.md" | head -1 || true)"
-            case "$marker" in
-              "Channel: alpha") channel="alpha" ;;
-              "Channel: beta")  channel="beta"  ;;
-              "Channel: rc")    channel="rc"    ;;
-            esac
-          fi
-          title="People Atlas ${TAG}"
-          case "$channel" in
-            "alpha") title="People Atlas ${TAG} (Alpha)" ;;
-            "beta")  title="People Atlas ${TAG} (Beta)"  ;;
-            "rc")    title="People Atlas ${TAG} (Release Candidate)" ;;
-          esac
+          release_notes_file=".github/release-notes/${TAG}.md"
           release_args=(
             "$TAG"
             --verify-tag
-            --title "$title"
+            --title "$RELEASE_TITLE"
             --generate-notes
           )
-          if [[ "$channel" != "stable" ]]; then
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
             release_args+=(--prerelease)
           fi
-          release_notes_file=".github/release-notes/${TAG}.md"
           if [[ -f "$release_notes_file" ]]; then
             release_args+=(--notes "$(cat "$release_notes_file")")
           fi

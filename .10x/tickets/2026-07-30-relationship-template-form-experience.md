@@ -2,6 +2,7 @@ Status: cancelled
 Created: 2026-07-30
 Updated: 2026-07-30
 Replaced-By: `.10x/tickets/2026-07-30-perspective-relationship-editor-templates.md`
+Superseded-By: `.10x/tickets/2026-07-30-perspective-relationship-editor-templates.md`
 
 # UX2 — Relationship templates and form hierarchy
 

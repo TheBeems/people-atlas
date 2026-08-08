@@ -1,6 +1,7 @@
-Status: draft
+Status: cancelled
 Created: 2026-08-07
-Updated: 2026-08-07
+Updated: 2026-08-08
+Superseded-By: `.10x/tickets/2026-08-08-my-person-selection-safety.md`, `.10x/tickets/2026-08-08-mobile-index-readiness.md`
 Depends-On: `.10x/specs/reproducible-obsidian-release.md` (active)
 Governed-By: `.10x/specs/reproducible-obsidian-release.md` § not applicable (UI/UX fix)
 
@@ -54,3 +55,11 @@ None confirmed. Pure UI/logic alignment + one new command.
 - `src/editor/relationship-form.ts` — `resolveCanonicalPersonByPath` usage
 - `src/index/person-index.ts` — `rebuildAll()` method
 - `.10x/specs/multilingual-user-interface.md` — i18n keys for new command
+
+## Supersession addendum (2026-08-08)
+
+Dit draftticket is niet als uitvoeringsbron gebruikt. De zichtbaarheid/write-
+boundary is vervangen door het canonical-personselectieticket en de mobiele
+timing door het structurele readiness-ticket. De oorspronkelijke journaltekst
+blijft historische context; actuele acceptance en evidence staan uitsluitend in
+de twee nieuwe owning tickets.

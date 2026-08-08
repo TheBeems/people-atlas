@@ -1,9 +1,14 @@
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
-import { BUNDLE_LIMIT_BYTES, RELEASE_ASSETS, validateReleaseContract } from "../scripts/release-contract.mjs";
+import { RELEASE_ASSETS, validateReleaseContract } from "../scripts/release-contract.mjs";
 import { compareBuildDigests } from "../scripts/verify-reproducible-build.mjs";
+import { resolveReleaseChannel } from "../scripts/release-channel.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const fixtureDirectories: string[] = [];
 
@@ -28,6 +33,18 @@ async function createReleaseFixture(): Promise<string> {
 		writeFile(path.join(rootDir, "styles.css"), ".fixture {}\n", "utf8"),
 	]);
 	return rootDir;
+}
+
+async function readPublishScript(): Promise<string> {
+	const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "release.yml"), "utf8");
+	const publishIndex = workflow.indexOf("- name: Publish GitHub release");
+	const runIndex = workflow.indexOf("run: |", publishIndex);
+	const nextStepIndex = workflow.indexOf("\n      - ", runIndex);
+	const block = workflow.slice(runIndex + "run: |\n".length, nextStepIndex === -1 ? undefined : nextStepIndex);
+	return block
+		.split("\n")
+		.map((line) => (line.startsWith("          ") ? line.slice(10) : line))
+		.join("\n");
 }
 
 afterEach(async () => {
@@ -154,15 +171,16 @@ describe("release contract", () => {
 		expect(result.errors).toContain("Production main.js must not contain a sourceMappingURL directive.");
 	});
 
-	test("reports observed and allowed sizes for an oversized bundle", async () => {
+	test("reports the observed bundle size without enforcing a fixed byte budget", async () => {
 		const rootDir = await createReleaseFixture();
-		await writeFile(path.join(rootDir, "main.js"), Buffer.alloc(BUNDLE_LIMIT_BYTES + 1));
+		const observedBytes = 500_001;
+		await writeFile(path.join(rootDir, "main.js"), Buffer.alloc(observedBytes));
 
 		const result = await validateReleaseContract({ rootDir });
 
-		expect(result.errors).toContain(
-			`main.js is ${BUNDLE_LIMIT_BYTES + 1} bytes; the allowed limit is ${BUNDLE_LIMIT_BYTES} bytes.`,
-		);
+		expect(result.errors).toEqual([]);
+		expect(result.bundleBytes).toBe(observedBytes);
+		expect(result).not.toHaveProperty("bundleLimitBytes");
 	});
 });
 
@@ -190,28 +208,71 @@ describe("release workflow tag guard", () => {
 		expect(workflow).toContain(`gh release create "\${release_args[@]}" main.js manifest.json styles.css`);
 	});
 
-	test("declares the prerelease channels opt-in and branches on the release-notes marker", async () => {
+	test("resolves the release channel before attestation and reuses the validated outputs for publication", async () => {
 		const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "release.yml"), "utf8");
-		// marker detection
-		expect(workflow).toContain('grep -x "Channel: alpha\\|Channel: beta\\|Channel: rc"');
-		// channel branching
-		expect(workflow).toContain('case "$marker" in');
-		expect(workflow).toContain('"Channel: alpha") channel="alpha"');
-		expect(workflow).toContain('"Channel: beta")  channel="beta"');
-		expect(workflow).toContain('"Channel: rc")    channel="rc"');
-		// title branching
-		expect(workflow).toContain('case "$channel" in');
-		expect(workflow).toContain('"alpha") title="People Atlas ${TAG} (Alpha)"');
-		expect(workflow).toContain('"beta")  title="People Atlas ${TAG} (Beta)"');
-		expect(workflow).toContain('"rc")    title="People Atlas ${TAG} (Release Candidate)"');
-		// prerelease flag for all prerelease channels
-		expect(workflow).toContain('if [[ "$channel" != "stable" ]]');
-		expect(workflow).toContain("release_args+=(--prerelease)");
-		// stable title still present
-		const publishLine = workflow.split("\n").find((line) => line.includes('gh release create "'));
-		expect(publishLine).toBeTruthy();
-		expect(publishLine).not.toContain("--prerelease");
-		expect(workflow).toContain('title="People Atlas ${TAG}"');
+		const channelValidationIndex = workflow.indexOf("- name: Validate release channel");
+		const attestationIndex = workflow.indexOf("- name: Attest release files");
+		const publishIndex = workflow.indexOf("- name: Publish GitHub release");
+		const publishBlock = workflow.slice(publishIndex);
+
+		expect(channelValidationIndex).toBeGreaterThan(-1);
+		expect(channelValidationIndex).toBeLessThan(attestationIndex);
+		expect(workflow).toContain("id: release-channel");
+		expect(workflow).toContain(
+			'channel_resolution="$(node scripts/release-channel.mjs "$release_notes_file" "$RELEASE_TAG")"',
+		);
+		expect(workflow).toContain('} >> "$GITHUB_OUTPUT"');
+		expect(workflow).toContain(`RELEASE_TITLE: \${{ steps.release-channel.outputs.title }}`);
+		expect(workflow).toContain(`RELEASE_PRERELEASE: \${{ steps.release-channel.outputs.prerelease }}`);
+		expect(publishBlock).not.toContain("node scripts/release-channel.mjs");
+		expect(publishBlock).toContain('if [[ "$RELEASE_PRERELEASE" == "true" ]]');
+	});
+
+	test.each([
+		["alpha", "Channel: alpha\nAlpha notes\n"],
+		["beta", "Channel: beta\nBeta notes\n"],
+		["rc", "Channel: rc\nRC notes\n"],
+		["stable", "Stable notes\n"],
+	] as const)("executes the publish branch for %s with a mocked gh", async (_name, notes) => {
+		const rootDir = await mkdtemp(path.join(tmpdir(), "people-atlas-publish-"));
+		fixtureDirectories.push(rootDir);
+		const notesDir = path.join(rootDir, ".github", "release-notes");
+		const binDir = path.join(rootDir, "bin");
+		const argsPath = path.join(rootDir, "gh-args.txt");
+		await mkdir(notesDir, { recursive: true });
+		await mkdir(binDir, { recursive: true });
+		await writeFile(path.join(notesDir, "0.12.1.md"), notes, "utf8");
+		const ghPath = path.join(binDir, "gh");
+		await writeFile(ghPath, '#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_ARGS_FILE"\n', "utf8");
+		await chmod(ghPath, 0o755);
+
+		const channel = resolveReleaseChannel(notes, "0.12.1");
+		await execFileAsync("bash", ["-euo", "pipefail", "-c", await readPublishScript()], {
+			cwd: rootDir,
+			env: {
+				...process.env,
+				PATH: `${binDir}:${process.env.PATH ?? ""}`,
+				GH_ARGS_FILE: argsPath,
+				GITHUB_TOKEN: "[REDACTED]",
+				TAG: "0.12.1",
+				RELEASE_TITLE: channel.title,
+				RELEASE_PRERELEASE: String(channel.prerelease),
+			},
+		});
+
+		const args = (await readFile(argsPath, "utf8")).trim().split("\n");
+		expect(args.slice(-3)).toEqual(["main.js", "manifest.json", "styles.css"]);
+		expect(args.slice(0, 3)).toEqual(["release", "create", "0.12.1"]);
+		expect(args).toContain("--verify-tag");
+		expect(args).toContain("--generate-notes");
+		const titleIndex = args.indexOf("--title");
+		expect(args[titleIndex + 1]).toBe(channel.title);
+		const notesIndex = args.indexOf("--notes");
+		expect(args.slice(notesIndex + 1, notesIndex + 1 + notes.trim().split("\n").length)).toEqual(
+			notes.trim().split("\n"),
+		);
+		if (channel.prerelease) expect(args).toContain("--prerelease");
+		else expect(args).not.toContain("--prerelease");
 	});
 
 	test("0.1.0 release notes state the exact Obsidian compatibility boundary", async () => {

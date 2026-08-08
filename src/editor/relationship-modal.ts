@@ -106,6 +106,7 @@ export class RelationshipModal extends Modal {
 	private templateSummary: HTMLElement | undefined;
 	private errorEl: HTMLElement | undefined;
 	private saveButton: HTMLButtonElement | undefined;
+	private lifecycleGeneration = 0;
 
 	constructor(
 		app: App,
@@ -141,6 +142,7 @@ export class RelationshipModal extends Modal {
 	}
 
 	override onOpen(): void {
+		this.lifecycleGeneration += 1;
 		this.titleEl.textContent =
 			this.mode.kind === "create" ? this.t.relationshipModal.titleCreate : this.t.relationshipModal.titleEdit;
 		this.contentEl.classList.add("people-atlas-relationship-modal");
@@ -431,6 +433,7 @@ export class RelationshipModal extends Modal {
 	}
 
 	override onClose(): void {
+		this.lifecycleGeneration += 1;
 		this.session.cancel();
 		this.contentEl.replaceChildren();
 		this.formEl = undefined;
@@ -463,12 +466,14 @@ export class RelationshipModal extends Modal {
 
 	private async submit(): Promise<void> {
 		if (!this.saveButton) return;
+		const lifecycleGeneration = this.lifecycleGeneration;
 		this.clearAdvancedErrorAssociation();
 		this.errorEl?.replaceChildren();
 		this.saveButton.disabled = true;
 		this.saveButton.setAttribute("aria-busy", "true");
 		const submittedValues = structuredClone(this.values);
 		const result = await this.session.submit(submittedValues);
+		if (lifecycleGeneration !== this.lifecycleGeneration) return;
 		if (result.status === "success") {
 			this.close();
 			if (result.createdFile) {
@@ -492,7 +497,7 @@ export class RelationshipModal extends Modal {
 		}
 		if (result.status === "busy" || result.status === "cancelled") return;
 		if (result.status === "error" && this.errorEl) {
-			this.errorEl.textContent = result.message;
+			this.errorEl.textContent = this.t.relationshipModal.error({ error: result.message });
 			this.associateAdvancedError(result.message);
 		}
 		this.saveButton.disabled = false;
@@ -542,16 +547,19 @@ export class RelationshipModal extends Modal {
 		const contentScrollTop = this.contentEl.scrollTop;
 		const formScrollTop = this.formEl.scrollTop;
 		const advancedOpen = this.advancedDetails?.open ?? false;
+		const lifecycleGeneration = this.lifecycleGeneration;
 		const presetModal = new RelationshipPresetModal(
 			this.app,
 			{ kind: "create" },
 			this.getSettings().relationshipPresets.map((preset) => preset.id),
 			async (preset) => {
+				if (lifecycleGeneration !== this.lifecycleGeneration) return false;
 				if (!this.templateCreation?.enabled()) {
 					this.refreshTemplateCreationAvailability();
 					return false;
 				}
 				const saved = await this.templateCreation.save(preset);
+				if (lifecycleGeneration !== this.lifecycleGeneration) return saved;
 				if (saved) {
 					this.refreshTemplateOptions();
 					this.refreshTemplateCreationAvailability();

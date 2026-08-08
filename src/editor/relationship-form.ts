@@ -8,10 +8,13 @@ import {
 	type SimpleRelationshipChoice,
 } from "../domain/simple-relationships";
 import { peopleCollectionPaths } from "../domain/people-paths";
+import { resolveCanonicalPersonByPath } from "../domain/identity";
 import type { PersonRecord, PersonReference, RelationshipRecord, RelationshipStatus } from "../domain/types";
 import type { RelationshipMutationInput, RelationshipUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
 import { relationshipPresetMatches, type RelationshipPreset } from "../settings/relationship-presets";
+
+export { resolveCanonicalPersonByPath } from "../domain/identity";
 
 export interface RelationshipFormValues {
 	path: string;
@@ -336,14 +339,6 @@ export class RelationshipFormSession {
 			this.pending = false;
 		}
 	}
-}
-
-export function resolveCanonicalPersonByPath(people: PersonRecord[], personPath: string): PersonRecord | undefined {
-	const pathMatches = people.filter((person) => person.filePath === personPath);
-	if (pathMatches.length !== 1) return undefined;
-	const person = pathMatches[0];
-	if (!person || people.filter((candidate) => candidate.id === person.id).length !== 1) return undefined;
-	return person;
 }
 
 function resolveEndpointPath(

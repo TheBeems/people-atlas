@@ -1,5 +1,12 @@
 # Codex instructions for People Atlas
 
+## 10x workflow
+
+The authoritative in-repository 10x skill is
+`.agents/skills/10x/SKILL.md`. Read it before any non-trivial shaping or
+execution; it governs project memory, specs, tickets, evidence, reviews,
+closure and retrospectives for this repository.
+
 ## Goal
 
 Build a durable, Bases-native, Markdown-first people and relationship plugin for Obsidian 1.13+.

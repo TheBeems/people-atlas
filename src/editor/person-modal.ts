@@ -901,7 +901,7 @@ export class PersonModal extends Modal {
 					(this.mode.kind === "edit"
 						? proposePersonRenamePath(this.mode.file.path, this.values.name)
 						: this.values.path),
-				result.message,
+				this.t.personModal.error({ error: result.message }),
 			);
 			return;
 		}
@@ -947,7 +947,7 @@ export class PersonModal extends Modal {
 	private refreshBirthDateError(): void {
 		if (!this.birthErrorEl) return;
 		const error = getPersonBirthDateError(this.values.birthDate);
-		this.birthErrorEl.textContent = error ?? "";
+		this.birthErrorEl.textContent = error ? this.t.personModal.error({ error }) : "";
 		for (const input of this.birthInputs) setAriaInvalid(input, Boolean(error));
 	}
 
@@ -960,7 +960,7 @@ export class PersonModal extends Modal {
 			const issue = issues.find((candidate) => candidate.index === index);
 			setAriaInvalid(input, Boolean(issue));
 			const error = errorElements[index];
-			if (error) error.textContent = issue?.message ?? "";
+			if (error) error.textContent = issue ? this.t.personModal.error({ error: issue.message }) : "";
 		}
 	}
 
@@ -998,7 +998,7 @@ export class PersonModal extends Modal {
 	}
 
 	private showError(message: string): void {
-		if (this.errorEl) this.errorEl.textContent = message;
+		if (this.errorEl) this.errorEl.textContent = this.t.personModal.error({ error: message });
 	}
 
 	private addGroup(form: HTMLFormElement, title: string): HTMLFieldSetElement {

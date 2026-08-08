@@ -125,6 +125,211 @@ describe("PersonIndex lifecycle", () => {
 		expect(deltas.some((delta) => delta.removedPaths.includes("People/Alice.md"))).toBe(true);
 	});
 
+	it("rebuilds once after the initial metadata resolution when the first vault scan is empty", () => {
+		const vault = new EventBus();
+		const metadataCache = new EventBus();
+		const alice = markdown("People/Alice.md");
+		const files = new Map<string, TFile>();
+		const caches = new Map<string, CachedMetadata>();
+		let scanCount = 0;
+		const app = {
+			vault: {
+				getMarkdownFiles: () => {
+					scanCount += 1;
+					return [...files.values()];
+				},
+				getAbstractFileByPath: (path: string) => files.get(path),
+				on: vault.on.bind(vault),
+			},
+			metadataCache: {
+				getFileCache: (file: TFile) => caches.get(file.path) ?? null,
+				getFirstLinkpathDest: () => null,
+				resolvedLinks: {},
+				on: metadataCache.on.bind(metadataCache),
+			},
+		} as unknown as App;
+		const index = new PersonIndex(app, () => DEFAULT_SETTINGS);
+		index.onload();
+
+		expect(index.getPeoplePathsById("alice")).toEqual([]);
+		expect(scanCount).toBe(1);
+
+		metadataCache.emit("resolved");
+		expect(index.getPeoplePathsById("alice")).toEqual([]);
+
+		files.set(alice.path, alice);
+		caches.set(alice.path, personCache("alice", "Alice"));
+		metadataCache.emit("resolved");
+
+		expect(index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+		expect(scanCount).toBe(3);
+
+		metadataCache.emit("resolved");
+		expect(scanCount).toBe(3);
+
+		index.onunload();
+		files.set("People/Bob.md", markdown("People/Bob.md"));
+		caches.set("People/Bob.md", personCache("bob", "Bob"));
+		metadataCache.emit("resolved");
+		expect(index.getPeoplePathsById("bob")).toEqual([]);
+	});
+
+	it("defers a non-empty initial scan when metadata cache is not ready", () => {
+		const vault = new EventBus();
+		const metadataCache = new EventBus();
+		const alice = markdown("People/Alice.md");
+		const files = new Map<string, TFile>([[alice.path, alice]]);
+		const caches = new Map<string, CachedMetadata>();
+		let scanCount = 0;
+		const app = {
+			vault: {
+				getMarkdownFiles: () => {
+					scanCount += 1;
+					return [...files.values()];
+				},
+				getAbstractFileByPath: (path: string) => files.get(path),
+				on: vault.on.bind(vault),
+			},
+			metadataCache: {
+				getFileCache: (file: TFile) => caches.get(file.path) ?? null,
+				getFirstLinkpathDest: () => null,
+				resolvedLinks: {},
+				on: metadataCache.on.bind(metadataCache),
+			},
+		} as unknown as App;
+		const index = new PersonIndex(app, () => DEFAULT_SETTINGS);
+		const deltas: IndexDelta[] = [];
+		index.subscribeDelta((delta) => deltas.push(delta));
+		index.onload();
+
+		expect(index.getPeoplePathsById("alice")).toEqual([]);
+		expect(deltas).toHaveLength(0);
+		expect(scanCount).toBe(1);
+
+		caches.set(alice.path, personCache("alice", "Alice"));
+		metadataCache.emit("resolved");
+
+		expect(index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+		expect(deltas).toHaveLength(1);
+		expect(scanCount).toBe(2);
+	});
+
+	it("does not rebuild a populated initial snapshot when metadata resolution fires later", () => {
+		const vault = new EventBus();
+		const metadataCache = new EventBus();
+		const alice = markdown("People/Alice.md");
+		const files = new Map<string, TFile>([[alice.path, alice]]);
+		const caches = new Map<string, CachedMetadata>([[alice.path, personCache("alice", "Alice")]]);
+		let scanCount = 0;
+		const app = {
+			vault: {
+				getMarkdownFiles: () => {
+					scanCount += 1;
+					return [...files.values()];
+				},
+				getAbstractFileByPath: (path: string) => files.get(path),
+				on: vault.on.bind(vault),
+			},
+			metadataCache: {
+				getFileCache: (file: TFile) => caches.get(file.path) ?? null,
+				getFirstLinkpathDest: () => null,
+				resolvedLinks: {},
+				on: metadataCache.on.bind(metadataCache),
+			},
+		} as unknown as App;
+		const index = new PersonIndex(app, () => DEFAULT_SETTINGS);
+		index.onload();
+
+		expect(index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+		expect(scanCount).toBe(1);
+
+		metadataCache.emit("resolved");
+		metadataCache.emit("resolved");
+
+		expect(index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+		expect(scanCount).toBe(1);
+	});
+
+	it("defers a create before the first metadata resolution to one readiness rebuild", () => {
+		const vault = new EventBus();
+		const metadataCache = new EventBus();
+		const alice = markdown("People/Alice.md");
+		const files = new Map<string, TFile>();
+		const caches = new Map<string, CachedMetadata>();
+		const app = {
+			vault: {
+				getMarkdownFiles: () => [...files.values()],
+				getAbstractFileByPath: (path: string) => files.get(path),
+				on: vault.on.bind(vault),
+			},
+			metadataCache: {
+				getFileCache: (file: TFile) => caches.get(file.path) ?? null,
+				getFirstLinkpathDest: () => null,
+				resolvedLinks: {},
+				on: metadataCache.on.bind(metadataCache),
+			},
+		} as unknown as App;
+		const index = new PersonIndex(app, () => DEFAULT_SETTINGS);
+		const deltas: IndexDelta[] = [];
+		index.subscribeDelta((delta) => deltas.push(delta));
+		index.onload();
+
+		files.set(alice.path, alice);
+		caches.set(alice.path, personCache("alice", "Alice"));
+		vault.emit("create", alice);
+
+		expect(index.getPeoplePathsById("alice")).toEqual([]);
+		expect(deltas).toHaveLength(0);
+
+		metadataCache.emit("resolved");
+
+		expect(index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+		expect(deltas).toHaveLength(1);
+	});
+
+	it("updates a create after a premature empty resolution without rebuilding again", () => {
+		const vault = new EventBus();
+		const metadataCache = new EventBus();
+		const alice = markdown("People/Alice.md");
+		const files = new Map<string, TFile>();
+		const caches = new Map<string, CachedMetadata>();
+		let scanCount = 0;
+		const app = {
+			vault: {
+				getMarkdownFiles: () => {
+					scanCount += 1;
+					return [...files.values()];
+				},
+				getAbstractFileByPath: (path: string) => files.get(path),
+				on: vault.on.bind(vault),
+			},
+			metadataCache: {
+				getFileCache: (file: TFile) => caches.get(file.path) ?? null,
+				getFirstLinkpathDest: () => null,
+				resolvedLinks: {},
+				on: metadataCache.on.bind(metadataCache),
+			},
+		} as unknown as App;
+		const index = new PersonIndex(app, () => DEFAULT_SETTINGS);
+		const deltas: IndexDelta[] = [];
+		index.subscribeDelta((delta) => deltas.push(delta));
+		index.onload();
+		metadataCache.emit("resolved");
+
+		files.set(alice.path, alice);
+		caches.set(alice.path, personCache("alice", "Alice"));
+		vault.emit("create", alice);
+
+		expect(index.getPeoplePathsById("alice")).toEqual(["People/Alice.md"]);
+		expect(deltas).toHaveLength(1);
+		expect(scanCount).toBe(2);
+
+		metadataCache.emit("resolved");
+
+		expect(deltas).toHaveLength(1);
+		expect(scanCount).toBe(2);
+	});
+
 	it("reindexes a person when its referenced photo asset is modified", () => {
 		const vault = new EventBus();
 		const metadataCache = new EventBus();

@@ -694,7 +694,10 @@ export class PeopleAtlasView extends ItemView {
 			const item = this.diagnosticsEl.ownerDocument.createElement("li");
 			item.className = `is-${diagnostic.severity}`;
 			const message = this.diagnosticsEl.ownerDocument.createElement("span");
-			message.textContent = diagnostic.message;
+			message.textContent = this.plugin.t.atlasRenderer.diagnosticMessage({
+				code: diagnostic.code,
+				message: diagnostic.message,
+			});
 			item.append(message);
 			const sourcePath = diagnostic.filePaths.find(
 				(path) => this.app.vault.getAbstractFileByPath(path) instanceof TFile,

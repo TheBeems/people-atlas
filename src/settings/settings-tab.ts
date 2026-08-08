@@ -6,6 +6,7 @@ import {
 	type SettingDefinitionItem,
 } from "obsidian";
 import type PeopleAtlasPlugin from "../main";
+import { resolveCanonicalPersonByPath } from "../domain/identity";
 import { RelationshipPresetModal } from "./relationship-preset-modal";
 import { RelationshipPresetSyncModal } from "./relationship-preset-sync-modal";
 import type { PeopleAtlasSettings } from "./types";
@@ -47,7 +48,10 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 			if (typeof value !== "string") return;
 			const filePath = value;
 			const candidate = filePath === "" ? undefined : this.resolveMyPersonCandidateByFilePath(filePath);
-			if (filePath !== "" && !candidate) return;
+			if (filePath !== "" && !candidate) {
+				new Notice(this.plugin.t.noticeMyPersonSelectionRejected({ filePath }));
+				return;
+			}
 			await this.plugin.updateSetting("myPersonId", candidate?.id ?? "");
 			return;
 		}
@@ -382,7 +386,7 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				type: "file",
 				key: "myPersonId",
 				placeholder: t.settingsMyPersonPlaceholder,
-				filter: (file) => this.resolveMyPersonCandidateByFilePath(file.path, candidates) !== undefined,
+				filter: (file) => candidates.some((candidate) => candidate.filePath === file.path),
 			},
 		};
 	}
@@ -391,12 +395,14 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 		const storedId = this.plugin.settings.myPersonId.trim();
 		if (!storedId) return undefined;
 		const matches = candidates.filter((candidate) => candidate.id === storedId);
-		return matches.length === 1 ? matches[0] : undefined;
+		const candidate = matches.length === 1 ? matches[0] : undefined;
+		return candidate ? resolveCanonicalPersonByPath(candidates, candidate.filePath) : undefined;
 	}
 
 	private resolveMyPersonCandidateByFilePath(filePath: string, candidates = this.plugin.getMyPersonCandidates()) {
 		const matches = candidates.filter((candidate) => candidate.filePath === filePath);
-		return matches.length === 1 ? matches[0] : undefined;
+		const candidate = matches.length === 1 ? matches[0] : undefined;
+		return candidate ? resolveCanonicalPersonByPath(candidates, candidate.filePath) : undefined;
 	}
 
 	private openPresetEditor(presetId?: string): void {

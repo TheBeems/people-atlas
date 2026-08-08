@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-30
-Updated: 2026-07-30
+Updated: 2026-08-08
 
 # Perspective-oriented relationship foundation
 
@@ -113,11 +113,15 @@ This specification governs:
     selected node, active note or graph center MUST NOT serve as fallback
     identity.
 27. The settings surface MUST let the user choose `None` or one canonical
-    person with a unique explicit `person_id`. Choices MUST be labelled with
-    enough name/path context to distinguish people without making that label
-    authoritative.
-28. A person without an explicit ID or with a duplicate ID MUST NOT be offered
-    as a valid My person choice.
+    person with a unique explicit `person_id`. It MAY display the same current
+    explicit-ID person records used by relationship creation, including
+    records sharing an ID, when that improves note discovery. Choices MUST be
+    labelled with enough name/path context to distinguish people without
+    making that label authoritative.
+28. A person without an explicit ID or with a duplicate ID MUST NOT be
+    accepted as a valid My person choice or persisted as `myPersonId`. Such a
+    record MAY remain visible as a non-valid candidate, but selection MUST fail
+    closed before the settings write boundary.
 29. If a stored `myPersonId` becomes missing or ambiguous, People Atlas MUST:
     - preserve the stored value until the user changes it;
     - show a recoverable settings warning;

@@ -1,6 +1,7 @@
-Status: draft
+Status: cancelled
 Created: 2026-08-07
-Updated: 2026-08-07
+Updated: 2026-08-08
+Superseded-By: `.10x/tickets/2026-08-08-release-channel-runtime-safety.md`
 Depends-On: `.10x/specs/reproducible-obsidian-release.md` (active)
 Governed-By: `.10x/specs/reproducible-obsidian-release.md` § Release channel (opt-in alpha prerelease) — to be extended
 
@@ -64,3 +65,9 @@ None confirmed. Extension follows existing pattern; strict `x.y.z` contract and 
 - `.github/workflows/release.yml` (tag workflow, Publish step)
 - `test/release-contract.test.ts` (describe "release workflow tag guard")
 - `.10x/tickets/2026-08-06-alpha-release-channel-workflow.md` (alpha channel implementation)
+
+## Supersession addendum (2026-08-08)
+
+Dit draftticket is vervangen door het uitvoerbare channel-runtime-safety-ticket,
+dat alpha, beta, rc, stable en fail-closed markersemantiek in één owner-record
+beheert. De historische journalclaims zijn niet herschreven.

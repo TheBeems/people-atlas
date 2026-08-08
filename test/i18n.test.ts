@@ -71,6 +71,18 @@ describe("People Atlas i18n foundation", () => {
 		expect(dutch.noticeSettingsSaveFailed({ error: "disk full" })).toBe(
 			"People Atlas-instellingen konden niet worden opgeslagen: disk full",
 		);
+		expect(english.noticeSettingsLoadFailed({ error: "invalid data" })).toBe(
+			"People Atlas settings could not be loaded: invalid data",
+		);
+		expect(dutch.noticeSettingsLoadFailed({ error: "invalid data" })).toBe(
+			"People Atlas-instellingen konden niet worden geladen: invalid data",
+		);
+		expect(english.noticeFollowUpChangeFailed({ error: "stale note" })).toBe(
+			"The follow-up was not changed: stale note",
+		);
+		expect(dutch.noticeFollowUpChangeFailed({ error: "stale note" })).toBe(
+			"De opvolging is niet gewijzigd: stale note",
+		);
 
 		const englishNotices = english as unknown as {
 			noticeNoEditablePersonActive: string;
@@ -84,6 +96,45 @@ describe("People Atlas i18n foundation", () => {
 		);
 		expect(dutchNotices.noticeOpenNoteFailed({ kind: "relationship", error: "disk full" })).toBe(
 			"De relatienotitie kon niet worden geopend: disk full",
+		);
+		expect(english.relationshipModal.error({ error: "invalid relationship" })).toBe("invalid relationship");
+		expect(dutch.relationshipModal.error({ error: "invalid relationship" })).toBe("Fout: invalid relationship");
+		expect(
+			english.atlasRenderer.diagnosticMessage({
+				code: "duplicate-person-id",
+				message: "Multiple person notes use the ID “p-1”.",
+			}),
+		).toBe("Multiple person notes use the ID “p-1”.");
+		expect(
+			dutch.atlasRenderer.diagnosticMessage({
+				code: "duplicate-person-id",
+				message: "Multiple person notes use the ID “p-1”.",
+			}),
+		).toBe("Dubbele persoons-ID: Multiple person notes use the ID “p-1”.");
+		expect(dutch.atlasRenderer.diagnosticMessage({ code: "future-diagnostic", message: "technical detail" })).toBe(
+			"Diagnostiek: technical detail",
+		);
+		expect(
+			english.contactMomentModal.partialSuccess({
+				momentPath: "Contact/2026-08-08.md",
+				relationshipPath: "Relationships/A.md",
+				reason: "stale note",
+			}),
+		).toBe(
+			"Contact moment saved at “Contact/2026-08-08.md”, but relationship “Relationships/A.md” was not updated: stale note",
+		);
+		expect(
+			dutch.contactMomentModal.partialSuccess({
+				momentPath: "Contact/2026-08-08.md",
+				relationshipPath: "Relationships/A.md",
+				reason: "stale note",
+			}),
+		).toBe(
+			"Contactmoment opgeslagen op “Contact/2026-08-08.md”, maar relatie “Relationships/A.md” is niet bijgewerkt: stale note",
+		);
+		expect(english.noticeMentionActionFailed({ error: "disk full" })).toBe("disk full");
+		expect(dutch.noticeMentionActionFailed({ error: "disk full" })).toBe(
+			"De persoonactie is niet uitgevoerd: disk full",
 		);
 	});
 });

@@ -110,7 +110,7 @@ export class RelationshipPresetModal extends Modal {
 		const preset = this.toPreset();
 		const errors = validateRelationshipPreset(preset, this.existingIds);
 		if (errors.length > 0) {
-			this.errorEl.textContent = errors.join(" ");
+			this.errorEl.textContent = this.t.relationshipPresetModal.validationError({ error: errors.join(" ") });
 			return;
 		}
 		this.saveButton.disabled = true;

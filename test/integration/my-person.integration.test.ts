@@ -44,6 +44,7 @@ describe("My person identity and navigation boundary", () => {
 	it("refreshes an open My person picker after index publication without a plugin-data write or index rebuild", async () => {
 		const runtime = new ControlledObsidianRuntime(document);
 		const plugin = await loadPlugin(runtime);
+		runtime.emitMetadata("resolved");
 
 		try {
 			const tab = [...runtime.settingTabs].find((candidate) => candidate instanceof PeopleAtlasSettingTab);
@@ -67,6 +68,48 @@ describe("My person identity and navigation boundary", () => {
 			update.mockClear();
 			runtime.createFile("People/Bob.md", person("bob-id", "Bob"));
 			expect(update).not.toHaveBeenCalled();
+		} finally {
+			await unloadPlugin(plugin);
+		}
+	});
+
+	it("rejects an ambiguous My person path before settings persistence", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		runtime.seedFile("People/Duplicate one.md", person("duplicate", "Duplicate one"));
+		runtime.seedFile("People/Duplicate two.md", person("duplicate", "Duplicate two"));
+		const plugin = await loadPlugin(runtime);
+
+		try {
+			const tab = [...runtime.settingTabs].find((candidate) => candidate instanceof PeopleAtlasSettingTab);
+			if (!tab) throw new Error("Expected the People Atlas Settings tab.");
+			const writesBefore = runtime.savedPluginData.length;
+
+			await tab.setControlValue("myPersonId", "People/Duplicate one.md");
+
+			expect(runtime.savedPluginData).toHaveLength(writesBefore);
+			expect(plugin.settings.myPersonId).toBe("");
+			expect(tab.getControlValue("myPersonId")).toBe("");
+
+			await tab.setControlValue("myPersonId", "People/Duplicate two.md");
+			expect(runtime.savedPluginData).toHaveLength(writesBefore);
+		} finally {
+			await unloadPlugin(plugin);
+		}
+	});
+
+	it("persists a unique My person path as its stable ID", async () => {
+		const runtime = new ControlledObsidianRuntime(document);
+		runtime.seedFile("People/Alice.md", person("alice-id", "Alice"));
+		const plugin = await loadPlugin(runtime);
+
+		try {
+			const tab = [...runtime.settingTabs].find((candidate) => candidate instanceof PeopleAtlasSettingTab);
+			if (!tab) throw new Error("Expected the People Atlas Settings tab.");
+			await tab.setControlValue("myPersonId", "People/Alice.md");
+
+			expect(plugin.settings.myPersonId).toBe("alice-id");
+			expect(tab.getControlValue("myPersonId")).toBe("People/Alice.md");
+			expect(runtime.savedPluginData).toHaveLength(1);
 		} finally {
 			await unloadPlugin(plugin);
 		}

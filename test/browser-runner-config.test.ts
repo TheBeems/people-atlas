@@ -6,7 +6,7 @@ interface PackageScripts {
 	scripts?: Record<string, string>;
 }
 
-test("serializes files only for the canonical browser project invocations", async () => {
+test("serializes files and browser-matrix instances in the canonical test scripts", async () => {
 	const packageJson = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8")) as PackageScripts;
 	const scripts = packageJson.scripts ?? {};
 	const projectInvocations = scripts.test?.split(" && ");
@@ -14,10 +14,18 @@ test("serializes files only for the canonical browser project invocations", asyn
 	expect(projectInvocations).toEqual([
 		"vitest run --project node",
 		"vitest run --project browser --no-file-parallelism",
-		"vitest run --project integration",
-		"vitest run --project browser-matrix",
+		"node scripts/run-integration-tests.mjs",
+		"vitest run --project chromium-dpr-1 --no-file-parallelism",
+		"vitest run --project chromium-dpr-1.5 --no-file-parallelism",
+		"vitest run --project chromium-dpr-2 --no-file-parallelism",
 	]);
 	expect(scripts["test:browser"]).toBe("vitest run --project browser --no-file-parallelism");
+	expect(scripts["test:integration"]).toBe("node scripts/run-integration-tests.mjs");
+	expect(scripts["test:browser-matrix"]).toBe(
+		"vitest run --project chromium-dpr-1 --no-file-parallelism && " +
+			"vitest run --project chromium-dpr-1.5 --no-file-parallelism && " +
+			"vitest run --project chromium-dpr-2 --no-file-parallelism",
+	);
 	expect(projectInvocations?.[0]).not.toContain("--no-file-parallelism");
 	expect(`${scripts.test ?? ""}\n${scripts["test:browser"] ?? ""}`).not.toMatch(/retry|passWithNoTests|timeout/i);
 });

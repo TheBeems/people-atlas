@@ -106,7 +106,11 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 				"people-atlas-mention",
 			);
 		} catch (error) {
-			new Notice(error instanceof MutationError || error instanceof Error ? error.message : String(error));
+			new Notice(
+				this.t.noticeMentionActionFailed({
+					error: error instanceof MutationError || error instanceof Error ? error.message : String(error),
+				}),
+			);
 		}
 	}
 }

@@ -169,6 +169,30 @@ afterEach(() => {
 });
 
 describe("PPA2 create-success entrypoint", () => {
+	it("shows only person names in relationship suggestions while retaining canonical paths", () => {
+		const harness = createHarness();
+		harness.plugin.openCreateRelationship(alex.filePath);
+		const modal = harness.relationshipModals[0];
+		if (!modal) throw new Error("Expected the relationship editor.");
+
+		const secondPerson = inputForLabel(modal.contentEl, "Second person");
+		secondPerson.focus();
+		const field = secondPerson.closest<HTMLElement>(".people-atlas-form-field");
+		if (!field) throw new Error("Expected the second-person form field.");
+		const options = Array.from(field.querySelectorAll<HTMLElement>('[role="option"]'), (option) => ({
+			value: option.dataset.personPath,
+			label: option.textContent,
+		}));
+
+		expect(modal.contentEl.querySelector("datalist")).toBeNull();
+		expect(secondPerson.getAttribute("list")).toBeNull();
+		expect(options).toEqual([
+			{ value: alex.filePath, label: alex.name },
+			{ value: robin.filePath, label: robin.name },
+			{ value: sam.filePath, label: sam.name },
+		]);
+	});
+
 	it("houdt de eerste create op de bestaande mutation boundary, opent pas daarna de vraag en laat tweede editor-close write-free", async () => {
 		const harness = createHarness();
 		await saveFirstParentChild(harness);
@@ -182,8 +206,8 @@ describe("PPA2 create-success entrypoint", () => {
 		await vi.waitFor(() => expect(harness.relationshipModals).toHaveLength(2));
 		const secondEditor = harness.relationshipModals[1];
 		if (!secondEditor) throw new Error("Expected the second relationship editor.");
-		expect(inputForLabel(secondEditor.contentEl, "First person — Robin").value).toBe(robin.filePath);
-		expect(inputForLabel(secondEditor.contentEl, "Second person — Sam").value).toBe(sam.filePath);
+		expect(inputForLabel(secondEditor.contentEl, "First person — Robin").value).toBe(robin.name);
+		expect(inputForLabel(secondEditor.contentEl, "Second person — Sam").value).toBe(sam.name);
 		expect(inputForLabel(secondEditor.contentEl, "Robin's role").value).toBe("parent");
 		expect(inputForLabel(secondEditor.contentEl, "Sam's role").value).toBe("child");
 		expect(harness.createRelationship).toHaveBeenCalledOnce();

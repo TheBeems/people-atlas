@@ -1,6 +1,6 @@
 Status: done
 Created: 2026-08-08
-Updated: 2026-08-08
+Updated: 2026-08-09
 Parent: None
 Owner: People Atlas implementation workstream
 
@@ -116,6 +116,21 @@ historische release-drafts zijn expliciet cancelled/superseded en de actuele
 releasecandidate heeft een lokaal provenance-record. Geen remote release,
 commit, push, tag of live Obsidian-validatie is geclaimd.
 
+## Status addendum — 2026-08-09
+
+De native relationship-person picker is als later, afzonderlijk bounded
+post-parent follow-up geregistreerd in
+`.10x/tickets/2026-08-08-native-relationship-person-picker.md`. Dat ticket is
+na de actuele onafhankelijke review en Node-24-gate `done`, heeft bewust
+`Parent: None`, stond niet in de oorspronkelijke lijst van 2026-08-08 en
+wijzigt die historische lijst niet. De resterende low-severity
+browser/host-coverage is expliciet belegd in het open, nog niet gestarte
+`.10x/tickets/2026-08-09-relationship-picker-browser-coverage.md` en is geen
+onbeheerde productfinding. Ook dat ticket heeft bewust `Parent: None`: beide
+records zijn post-parent follow-ups en geen oorspronkelijke children. De
+parentstatus blijft `done`; de oorspronkelijke bounded remediation-childscope
+is gesloten en iedere latere follow-up heeft een eigen owner.
+
 ## Evidence
 
 De bounded child tickets bevatten de actuele RED/GREEN-journalen, closure-
@@ -134,6 +149,44 @@ PersonIndex null-cache/readiness-races. De afzonderlijke owner-reviews zijn in
 de childtickets vastgelegd. Residueel: geen native Desktop/Mobile-host,
 GitHub Actions-run, remote tag/release, attestation of Community Plugins-
 publicatie.
+
+## Review addendum — 2026-08-09
+
+Voor de later bounded picker-scope is de actuele authoritative review
+`deleg_b9ae6245`: **PASS** zonder critical/significant productfinding. De
+onafhankelijke tweede review `deleg_25ea394d` gaf **CONCERNS** op lage severity
+voor aanvullende browser-/hostcoverage; de owner-disposition en het open
+follow-up-ticket staan in het picker-ticket. Dit verandert niets aan de
+historische 2026-08-08 reviewclaim voor de oorspronkelijke remediation-children.
+
+## Current evidence addendum — 2026-08-09
+
+De numerieke gatewaarden in het eerdere Evidence-block hierboven zijn
+historische 2026-08-08 parent-evidence en worden niet herschreven. De latere
+picker-kandidaat heeft een eigen actuele ledger:
+`.10x/evidence/2026-08-09-native-relationship-person-picker-closure.md`.
+Daarin staan Node `v24.18.1`/npm `11.16.0`, node 53 bestanden/965 tests,
+browser 10 bestanden/166 tests, integration 9 bestanden/39 tests, DPR 6/6,
+de groene format/lint/typecheck/build/release/audit/community/reproducibility-
+rails, en digest
+`ba1f0b9c159be985042c930fd71a41a1fb659a7e64d07d9701179d31c52f3858`.
+De dirty kandidaat is uitdrukkelijk geen bestaand tag-, remote-, CI- of
+publicatiebewijs.
+
+## Provenance addendum — 2026-08-09
+
+De verwijzing naar de “actuele lokale `0.12.1`-provenance” in het historische
+2026-08-08 Blockers-block beschrijft de toenmalige parent-snapshot en is geen
+actuele package-, tag- of releaseclaim. De afzonderlijke historische
+`0.12.2`-tagprovenance staat in
+`.10x/evidence/2026-08-08-release-0.12.2-provenance.md` en blijft gescheiden
+van deze lokale picker-kandidaat.
+
+De huidige picker-kandidaat is dirty en ongetagd: lokale `main.js` is 429105
+bytes met digest
+`ba1f0b9c159be985042c930fd71a41a1fb659a7e64d07d9701179d31c52f3858`.
+Daarvoor is geen remote release-, CI-, attestation- of publicatiebewijs
+geclaimd.
 
 ## Retrospective
 

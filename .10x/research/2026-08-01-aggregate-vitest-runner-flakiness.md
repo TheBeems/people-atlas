@@ -1,6 +1,6 @@
-Status: active
+Status: done
 Created: 2026-08-01
-Updated: 2026-08-01
+Updated: 2026-08-09
 
 # Aggregate Vitest-runnerflakiness
 
@@ -85,6 +85,26 @@ wijziging doen en drie volledige groene canonical runs vastleggen.
   reduceren, timeout blind verhogen of productcode wijzigen om de suite groen
   te maken.
 - Deze research is geen live Obsidian Desktop/Mobile-evidence.
+
+## Resolution — 2026-08-09
+
+De diagnose is afgerond door de bounded executor in
+`.10x/tickets/2026-08-01-aggregate-test-runner-stability.md`. De canonieke
+runner voert de bestaande node-, browser-, integration- en DPR-projecten
+sequentieel uit en verwijdert geen tests, assertions of matrixfactoren.
+
+Onder Node `v24.18.1`/npm `11.16.0` zijn drie opeenvolgende exacte
+`npm run test`-runs exit 0 uitgevoerd. Elke run rapporteerde node 53
+bestanden/965 tests, browser 10 bestanden/166 tests, integration 9
+bestanden/39 tests en DPR 1/1.5/2 groen. De verwachte
+`MODULE_NOT_FOUND`-stderr uit de negatieve child-process-test blijft
+diagnostische output; de parent-runner slaagt.
+
+Daarmee is de oorspronkelijke resource-/orchestratiehypothese onder de
+gedeclareerde Node-24-runtime praktisch bevestigd voor de lokale runner. De
+historische Node-22-limiet, beperkte-hostcontext en het ontbreken van live
+Obsidian Desktop/Mobile-evidence blijven behouden; deze research claimt geen
+native-host- of remote-CI-validatie.
 
 ## References
 

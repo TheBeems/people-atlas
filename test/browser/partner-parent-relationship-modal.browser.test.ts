@@ -90,8 +90,8 @@ afterEach(() => {
 describe("create-success seam voor partner-ouderreview", () => {
 	it("prefillt de gewone tweede editor met partner eerst en exact parent-child, maar schrijft alleen na Save", async () => {
 		const { content, createRelationship, createSucceeded } = mount();
-		expect(inputForLabel(content, "First person — Robin").value).toBe(robin.filePath);
-		expect(inputForLabel(content, "Second person — Sam").value).toBe(sam.filePath);
+		expect(inputForLabel(content, "First person — Robin").value).toBe(robin.name);
+		expect(inputForLabel(content, "Second person — Sam").value).toBe(sam.name);
 		expect(inputForLabel(content, "Robin's role").value).toBe("parent");
 		expect(inputForLabel(content, "Sam's role").value).toBe("child");
 		expect(createRelationship).not.toHaveBeenCalled();

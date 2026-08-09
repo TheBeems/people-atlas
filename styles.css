@@ -687,6 +687,57 @@
 	gap: var(--size-4-1);
 }
 
+.people-atlas-person-picker {
+	position: relative;
+}
+
+.people-atlas-person-suggestions {
+	position: absolute;
+	inset-inline: 0;
+	inset-block-start: 100%;
+	z-index: var(--layer-popover);
+	display: grid;
+	box-sizing: border-box;
+	max-inline-size: 100%;
+	max-block-size: min(16rem, 40vh);
+	margin-block-start: var(--size-4-1);
+	padding: var(--size-4-1);
+	gap: var(--size-4-1);
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+.people-atlas-person-suggestions[hidden] {
+	display: none;
+}
+
+.people-atlas-person-suggestion {
+	box-sizing: border-box;
+	inline-size: 100%;
+	max-inline-size: 100%;
+	min-block-size: var(--size-4-6);
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 0;
+	border-radius: var(--radius-s);
+	background: transparent;
+	color: var(--text-normal);
+	font: inherit;
+	text-align: start;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.people-atlas-person-suggestion:hover,
+.people-atlas-person-suggestion:focus-visible,
+.people-atlas-person-suggestion[aria-selected="true"] {
+	background: var(--background-modifier-hover);
+}
+
 .people-atlas-form-field label {
 	font-weight: var(--font-semibold);
 	overflow-wrap: anywhere;

@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import { TFile as StubTFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { commands, userEvent } from "vitest/browser";
 import { notices } from "../obsidian-stub";
 import { createTranslator, type Translator } from "../../src/i18n";
 import type { PersonRecord, RelationshipRecord } from "../../src/domain/types";
@@ -40,11 +41,17 @@ const bob: PersonRecord = {
 	contacts: [],
 };
 
+const duplicateBob: PersonRecord = {
+	...bob,
+	id: "person-bob-duplicate",
+	filePath: "People/Bob-duplicate.md",
+};
+
 const charlie: PersonRecord = {
 	id: "person-charlie",
 	filePath: "People/Charlie.md",
 	name: "Charlie",
-	aliases: [],
+	aliases: ["Chuck"],
 	organisations: [],
 	gender: "woman",
 	emails: [],
@@ -78,6 +85,7 @@ interface MountedRelationshipModal {
 
 function mountModal(options?: {
 	mode?: RelationshipModalMode;
+	people?: PersonRecord[];
 	settings?: PeopleAtlasSettings;
 	templateCreation?: RelationshipTemplateCreation;
 	createRelationship?: ReturnType<typeof vi.fn>;
@@ -88,13 +96,14 @@ function mountModal(options?: {
 	translator?: Translator;
 }): MountedRelationshipModal {
 	const settings = { current: structuredClone(options?.settings ?? DEFAULT_SETTINGS) };
+	const people = options?.people ?? [alice, bob, charlie];
 	const createRelationship = options?.createRelationship ?? vi.fn(async () => relationshipFile("Created.md"));
 	const updateRelationship = options?.updateRelationship ?? vi.fn(async () => undefined);
 	const openFile = vi.fn(async () => undefined);
 	const app = {
 		metadataCache: {
 			getFirstLinkpathDest: (target: string) => {
-				const person = [alice, bob, charlie].find(
+				const person = people.find(
 					(candidate) =>
 						candidate.id === target ||
 						candidate.filePath === target ||
@@ -128,7 +137,7 @@ function mountModal(options?: {
 			toPersonPath: bob.filePath,
 			myPersonPath: alice.filePath,
 		},
-		[alice, bob, charlie],
+		people,
 		{ createRelationship, updateRelationship } as unknown as AtlasMutationService,
 		() => settings.current,
 		afterClose,
@@ -271,6 +280,257 @@ describe("relationship modal", () => {
 		expect(section.querySelector(".people-atlas-role-preview")).toBeDefined();
 	});
 
+	it("opens an owning-document listbox below the focused endpoint with name-only rows", () => {
+		const { content } = mountModal({
+			width: 280,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const secondPerson = inputForLabel(content, "Second person");
+		secondPerson.focus();
+
+		const field = secondPerson.closest<HTMLElement>(".people-atlas-form-field");
+		if (!field) throw new Error("Expected the second-person form field.");
+		const list = field.querySelector<HTMLElement>('[role="listbox"]');
+		if (!list) throw new Error("Expected the plugin-owned endpoint listbox.");
+		const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+
+		expect(field.classList.contains("people-atlas-person-picker")).toBe(true);
+		expect(content.querySelector("datalist")).toBeNull();
+		expect(secondPerson.getAttribute("list")).toBeNull();
+		expect(secondPerson.getAttribute("aria-expanded")).toBe("true");
+		expect(secondPerson.getAttribute("aria-autocomplete")).toBe("list");
+		expect(secondPerson.getAttribute("aria-haspopup")).toBe("listbox");
+		expect(secondPerson.getAttribute("aria-controls")).toBe(list.id);
+		expect(list.parentElement).toBe(field);
+		expect(options.map((option) => option.textContent)).toEqual(["Alice", "Bob", "Charlie"]);
+		expect(options.map((option) => option.dataset.personPath)).toEqual([
+			alice.filePath,
+			bob.filePath,
+			charlie.filePath,
+		]);
+		expect(options.map((option) => option.textContent).join(" ")).not.toContain("People/");
+		expect(getComputedStyle(field).position).toBe("relative");
+		expect(getComputedStyle(list).position).toBe("absolute");
+		expect(getComputedStyle(list).insetBlockStart).not.toBe("auto");
+		expect(getComputedStyle(list).boxSizing).toBe("border-box");
+		expect(options.every((option) => getComputedStyle(option).boxSizing === "border-box")).toBe(true);
+		const listRect = list.getBoundingClientRect();
+		expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth);
+		expect(
+			options.every((option) => {
+				const optionRect = option.getBoundingClientRect();
+				return optionRect.left >= listRect.left && optionRect.right <= listRect.right;
+			}),
+		).toBe(true);
+		expect(listRect.top).toBeGreaterThanOrEqual(secondPerson.getBoundingClientRect().bottom);
+	});
+
+	it("filters endpoint suggestions by person names and aliases", () => {
+		const { content } = mountModal({
+			width: 320,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const secondPerson = inputForLabel(content, "Second person");
+		setInput(secondPerson, "chuck");
+		const field = secondPerson.closest<HTMLElement>(".people-atlas-form-field");
+		if (!field) throw new Error("Expected the second-person form field.");
+		const options = Array.from(field.querySelectorAll<HTMLElement>('[role="option"]'));
+
+		expect(options.map((option) => option.textContent)).toEqual(["Charlie"]);
+		expect(options[0]?.dataset.personPath).toBe(charlie.filePath);
+	});
+
+	it("closes only the active listbox on Escape and resets combobox state", () => {
+		const { content, close } = mountModal({
+			width: 280,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const secondPerson = inputForLabel(content, "Second person");
+		const list = secondPerson
+			.closest<HTMLElement>(".people-atlas-form-field")
+			?.querySelector<HTMLElement>('[role="listbox"]');
+		if (!list) throw new Error("Expected the endpoint listbox.");
+
+		secondPerson.focus();
+		secondPerson.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		const activeDescendant = secondPerson.getAttribute("aria-activedescendant");
+		expect(activeDescendant).toBeTruthy();
+		secondPerson.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+		expect(list.hidden).toBe(true);
+		expect(secondPerson.getAttribute("aria-expanded")).toBe("false");
+		expect(secondPerson.getAttribute("aria-activedescendant")).toBeNull();
+		expect(close).not.toHaveBeenCalled();
+		expect(content.querySelector("form")).not.toBeNull();
+	});
+
+	it("keeps only the focused picker open and closes it on Tab or blur", async () => {
+		const { content, close } = mountModal({
+			width: 280,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const firstPerson = inputForLabel(content, "First person — Alice");
+		const secondPerson = inputForLabel(content, "Second person");
+		const firstList = firstPerson
+			.closest<HTMLElement>(".people-atlas-form-field")
+			?.querySelector<HTMLElement>('[role="listbox"]');
+		const secondList = secondPerson
+			.closest<HTMLElement>(".people-atlas-form-field")
+			?.querySelector<HTMLElement>('[role="listbox"]');
+		if (!firstList || !secondList) throw new Error("Expected both endpoint listboxes.");
+
+		firstPerson.focus();
+		expect(firstList.hidden).toBe(false);
+		expect(firstPerson.getAttribute("aria-expanded")).toBe("true");
+		secondPerson.focus();
+		expect(firstList.hidden).toBe(true);
+		expect(firstPerson.getAttribute("aria-expanded")).toBe("false");
+		expect(secondList.hidden).toBe(false);
+		expect(secondPerson.getAttribute("aria-expanded")).toBe("true");
+
+		await userEvent.tab();
+		expect(document.activeElement).not.toBe(secondPerson);
+		expect(secondPerson.getAttribute("aria-expanded")).toBe("false");
+		expect(close).not.toHaveBeenCalled();
+
+		firstPerson.focus();
+		expect(firstList.hidden).toBe(false);
+		inputForLabel(content, "Relationship types").focus();
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		expect(firstList.hidden).toBe(true);
+		expect(close).not.toHaveBeenCalled();
+	});
+
+	it("handles empty and no-match endpoint queries without exposing paths", () => {
+		const { content } = mountModal({
+			width: 280,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const secondPerson = inputForLabel(content, "Second person");
+		const field = secondPerson.closest<HTMLElement>(".people-atlas-form-field");
+		if (!field) throw new Error("Expected the second-person form field.");
+		const list = field.querySelector<HTMLElement>('[role="listbox"]');
+		if (!list) throw new Error("Expected the endpoint listbox.");
+
+		setInput(secondPerson, "no such person");
+		expect(list.hidden).toBe(true);
+		expect(secondPerson.getAttribute("aria-expanded")).toBe("false");
+		expect(list.querySelectorAll('[role="option"]')).toHaveLength(0);
+
+		setInput(secondPerson, "");
+		expect(list.hidden).toBe(false);
+		expect(
+			Array.from(list.querySelectorAll<HTMLElement>('[role="option"]')).map((option) => option.textContent),
+		).toEqual(["Alice", "Bob", "Charlie"]);
+	});
+
+	it("keeps duplicate display names as distinct canonical choices through Save", async () => {
+		const { content, createRelationship } = mountModal({
+			people: [alice, bob, duplicateBob],
+			width: 280,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const secondPerson = inputForLabel(content, "Second person");
+		const list = secondPerson
+			.closest<HTMLElement>(".people-atlas-form-field")
+			?.querySelector<HTMLElement>('[role="listbox"]');
+		if (!list) throw new Error("Expected the endpoint listbox.");
+
+		secondPerson.focus();
+		const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+		expect(options.map((option) => option.textContent)).toEqual(["Alice", "Bob", "Bob"]);
+		expect(options.map((option) => option.dataset.personPath)).toEqual([
+			alice.filePath,
+			duplicateBob.filePath,
+			bob.filePath,
+		]);
+
+		const duplicateOption = options.find((option) => option.dataset.personPath === duplicateBob.filePath);
+		if (!duplicateOption) throw new Error("Expected the duplicate Bob suggestion.");
+		const optionRect = duplicateOption.getBoundingClientRect();
+		await commands.dispatchTouch(`#${duplicateOption.id}`, [
+			{ type: "touchStart", points: [{ id: 1, x: optionRect.width / 2, y: optionRect.height / 2 }] },
+			{ type: "touchEnd", points: [] },
+		]);
+		expect(secondPerson.value).toBe(duplicateBob.name);
+		expect(createRelationship).not.toHaveBeenCalled();
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(createRelationship).toHaveBeenCalledOnce());
+		expect(createRelationship).toHaveBeenCalledWith(
+			expect.objectContaining({
+				to: `[[${duplicateBob.filePath.replace(/\.md$/i, "")}]]`,
+			}),
+		);
+	});
+
+	it("cancels pending picker blur cleanup when the modal closes", () => {
+		vi.useFakeTimers();
+		const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+		try {
+			const { content, modal } = mountModal({
+				width: 280,
+				mode: { kind: "create", fromPersonPath: alice.filePath },
+			});
+			const secondPerson = inputForLabel(content, "Second person");
+			secondPerson.focus();
+			secondPerson.blur();
+
+			modal.onClose();
+
+			expect(clearTimeoutSpy).toHaveBeenCalled();
+			vi.runAllTimers();
+			expect(content.querySelector("form")).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("selects canonical people with keyboard and touch without writing before Save", async () => {
+		const { content, createRelationship } = mountModal({
+			width: 320,
+			mode: { kind: "create", fromPersonPath: alice.filePath },
+		});
+		const secondPerson = inputForLabel(content, "Second person");
+		const field = secondPerson.closest<HTMLElement>(".people-atlas-form-field");
+		if (!field) throw new Error("Expected the second-person form field.");
+		const list = field.querySelector<HTMLElement>('[role="listbox"]');
+		if (!list) throw new Error("Expected the endpoint listbox.");
+
+		secondPerson.focus();
+		secondPerson.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		secondPerson.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+		const activeOption = list.querySelector<HTMLElement>('[aria-selected="true"]');
+		expect(activeOption?.textContent).toBe("Bob");
+		secondPerson.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+		expect(secondPerson.value).toBe(bob.name);
+		expect(inputForLabel(content, "Second person — Bob")).toBe(secondPerson);
+		expect(list.hidden).toBe(true);
+		expect(createRelationship).not.toHaveBeenCalled();
+
+		secondPerson.click();
+		const charlieOption = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]')).find(
+			(option) => option.dataset.personPath === charlie.filePath,
+		);
+		if (!charlieOption) throw new Error("Expected the Charlie suggestion.");
+		charlieOption.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }));
+
+		expect(secondPerson.value).toBe(charlie.name);
+		expect(inputForLabel(content, "Second person — Charlie")).toBe(secondPerson);
+		expect(list.hidden).toBe(true);
+		expect(createRelationship).not.toHaveBeenCalled();
+
+		buttonWithText(content, "Save").click();
+		await vi.waitFor(() => expect(createRelationship).toHaveBeenCalledOnce());
+		expect(createRelationship).toHaveBeenCalledWith(
+			expect.objectContaining({
+				from: `[[${alice.filePath.replace(/\.md$/i, "")}]]`,
+				to: `[[${charlie.filePath.replace(/\.md$/i, "")}]]`,
+			}),
+		);
+	});
+
 	it("opens the template disclosure on load in edit mode when a template is attached, and keeps it collapsed otherwise", () => {
 		const templateRelationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
@@ -365,7 +625,7 @@ describe("relationship modal", () => {
 		]);
 		expect(buttonWithText(content, "Annuleren")).toBeInstanceOf(HTMLButtonElement);
 		expect(buttonWithText(content, "Opslaan")).toBeInstanceOf(HTMLButtonElement);
-		expect(inputForLabel(content, "Eerste persoon — Alice").value).toBe(alice.filePath);
+		expect(inputForLabel(content, "Eerste persoon — Alice").value).toBe(alice.name);
 	});
 
 	it("applies explicit simple relationships in place for two other people without writing before Save", () => {
@@ -759,8 +1019,8 @@ describe("relationship modal", () => {
 		expect(Array.from(templateSelect.options).map((option) => option.value)).toEqual([""]);
 		expect(templateSelect.value).toBe("");
 		expect(content.textContent).toContain("No template is selected.");
-		expect(firstPerson.value).toBe(alice.filePath);
-		expect(secondPerson.value).toBe(bob.filePath);
+		expect(firstPerson.value).toBe(alice.name);
+		expect(secondPerson.value).toBe(bob.name);
 		expect(types.value).toBe("manual");
 		expect(firstRole.value).toBe("mentor");
 		expect(secondRole.value).toBe("mentee");

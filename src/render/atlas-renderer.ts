@@ -7,25 +7,24 @@ import type {
 	NodeId,
 } from "../domain/types";
 import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
-import { personPhotoInitials } from "../domain/person-photo";
 import { createTranslator, type Translator } from "../i18n";
 import type { PeopleAtlasSettings } from "../settings/types";
-import { Camera } from "./camera";
 import {
 	buildSelectedPersonContactMomentPresentation,
-	type ContactMomentFollowUpRow,
 	groupContactMomentFollowUps,
 } from "./contact-moment-presentation";
 import { createDeterministicLayout, type LayoutPoint } from "./layout";
-import { captureLayoutSnapshot, restoreLayoutSnapshot, type LayoutSnapshot } from "./layout-state";
-import { PERSON_PHOTO_THUMBNAIL_MAX_READY, PersonPhotoThumbnailCache } from "./person-photo-thumbnail-cache";
-import { renderPersonProfile, safeLocalPhotoResourceUrl, type PersonPhotoResourceResolver } from "./person-profile";
-import {
-	buildIncidentRelationshipRows,
-	type IncidentRelationshipRow,
-	relationshipActionAccessibleName,
-} from "./relationship-rows";
-import { TouchGestureController, type TouchGestureUpdate } from "./touch-gesture";
+import type { LayoutSnapshot } from "./layout-state";
+import { GraphCanvasSurface, type AtlasRendererPhotoCacheStats } from "./graph-canvas-surface";
+import { renderPersonProfile, type PersonPhotoResourceResolver } from "./person-profile";
+import { buildIncidentRelationshipRows, type IncidentRelationshipRow } from "./relationship-rows";
+import { GraphInteractionController } from "./graph-interaction-controller";
+import { FollowUpPanel } from "./follow-up-panel";
+import { PersonDetailsPanel } from "./person-details-panel";
+import { RelationshipDetailsPanel } from "./relationship-details-panel";
+import { SemanticPeopleList } from "./semantic-people-list";
+
+export type { AtlasRendererPhotoCacheStats } from "./graph-canvas-surface";
 
 export type ContactMomentAction = "open" | "edit" | "done" | "dismiss";
 
@@ -67,14 +66,6 @@ export interface AtlasRendererCallbacks {
 
 export type AtlasSelectionSource = "canvas" | "list" | "graph-update";
 
-interface DragState {
-	pointerId: number;
-	mode: "pan" | "node";
-	nodeId?: NodeId | undefined;
-	lastX: number;
-	lastY: number;
-}
-
 export type RendererMode = "graph" | "list" | "follow-ups";
 type SelectedAction = "open" | "center" | "log-contact";
 type SheetAction = "close" | "open" | "center" | "edit" | "create" | "log-contact";
@@ -96,34 +87,6 @@ interface ContactMomentActionFocus {
 	surface: ContactMomentSurface;
 }
 
-interface CanvasPhotoRequest {
-	cacheKey: string;
-	resourceUrl: string;
-}
-
-export interface AtlasRendererPhotoCacheStats {
-	ready: number;
-	pending: number;
-	failed: number;
-	total: number;
-	maxReady: number;
-	maxPending: number;
-	maxFailed: number;
-	maxDimension: number;
-	retainedPixels: number;
-	destroyed: boolean;
-	requests: number;
-	loadsStarted: number;
-	loadsSucceeded: number;
-	loadsFailed: number;
-	capacityRejections: number;
-	readyEvictions: number;
-}
-
-const PERSON_RADIUS = 24;
-const GHOST_RADIUS = 17;
-const LONG_PRESS_DELAY = 500;
-
 export class AtlasRenderer {
 	private readonly win: Window & typeof globalThis;
 	private readonly doc: Document;
@@ -132,30 +95,18 @@ export class AtlasRenderer {
 	private readonly graphModeButton: HTMLButtonElement;
 	private readonly listModeButton: HTMLButtonElement;
 	private readonly followUpsModeButton: HTMLButtonElement;
-	private readonly graphSurface: HTMLDivElement;
-	private readonly graphActions: HTMLDivElement;
-	private readonly zoomOutButton: HTMLButtonElement;
-	private readonly zoomInButton: HTMLButtonElement;
-	private readonly fitButton: HTMLButtonElement;
-	private readonly detailsButton: HTMLButtonElement;
-	private readonly canvas: HTMLCanvasElement;
-	private readonly context: CanvasRenderingContext2D;
+	private readonly graphCanvas: GraphCanvasSurface;
+	private readonly semanticPeopleList: SemanticPeopleList;
+	private readonly personDetailsPanel: PersonDetailsPanel;
+	private readonly relationshipDetailsPanel: RelationshipDetailsPanel;
+	private readonly relationshipSheetPanel: RelationshipDetailsPanel;
+	private readonly followUpPanel: FollowUpPanel;
 	private readonly semanticPanel: HTMLElement;
-	private readonly summary: HTMLParagraphElement;
-	private readonly emptyMessage: HTMLParagraphElement;
-	private readonly peopleList: HTMLUListElement;
 	private readonly details: HTMLElement;
 	private readonly followUpsPanel: HTMLElement;
 	private readonly followUpsHeading: HTMLHeadingElement;
-	private readonly followUpsSummary: HTMLParagraphElement;
-	private readonly followUpsContent: HTMLDivElement;
 	private readonly sheet: HTMLDialogElement;
 	private readonly sheetContent: HTMLDivElement;
-	private readonly resizeObserver: ResizeObserver;
-	private readonly photoThumbnailCache: PersonPhotoThumbnailCache;
-	private readonly camera = new Camera();
-	private readonly touchGesture = new TouchGestureController(this.camera.minScale, this.camera.maxScale);
-	private readonly relationshipEdgesByButton = new WeakMap<HTMLButtonElement, AtlasEdge>();
 	private readonly contactMomentsByButton = new WeakMap<HTMLButtonElement, ContactMomentSummary>();
 	private snapshot: AtlasSnapshot = {
 		nodes: [],
@@ -171,23 +122,14 @@ export class AtlasRenderer {
 	private selectedId: NodeId | undefined;
 	private focusedId: NodeId | undefined;
 	private mode: RendererMode = "graph";
-	private drag: DragState | undefined;
-	private width = 1;
-	private height = 1;
-	private ratio = 1;
-	private frame: number | undefined;
-	private cameraInitialized = false;
-	private longPressTimer: number | undefined;
+	private readonly graphInteraction: GraphInteractionController;
 	private followUpDayTimer: number | undefined;
 	private sheetNodeId: NodeId | undefined;
 	private sheetInvoker: SheetInvoker | undefined;
 	private sheetReturnFocusElement: HTMLElement | undefined;
-	private suppressMouseUntil = 0;
 	private destroyed = false;
 	private expandedContactHistoryPersonId: string | undefined;
 	private readonly pendingFollowUpMomentIdentities = new Set<string>();
-	private canvasPhotoRequests = new Map<NodeId, CanvasPhotoRequest>();
-	private admittedCanvasPhotoKeys = new Set<string>();
 
 	constructor(
 		private readonly container: HTMLElement,
@@ -199,20 +141,6 @@ export class AtlasRenderer {
 		const owningWindow = this.doc.defaultView as (Window & typeof globalThis) | null;
 		if (!owningWindow) throw new Error("AtlasRenderer requires a container with an owning window.");
 		this.win = owningWindow;
-		this.photoThumbnailCache = new PersonPhotoThumbnailCache({
-			window: this.win,
-			document: this.doc,
-			onStateChange: ({ cacheKey }) => {
-				if (
-					this.destroyed ||
-					!this.admittedCanvasPhotoKeys.has(cacheKey) ||
-					![...this.canvasPhotoRequests.values()].some((request) => request.cacheKey === cacheKey)
-				) {
-					return;
-				}
-				this.requestDraw();
-			},
-		});
 
 		this.root = this.doc.createElement("div");
 		this.root.className = "people-atlas-renderer";
@@ -230,63 +158,106 @@ export class AtlasRenderer {
 		);
 		this.modeControls.append(legend, this.graphModeButton, this.listModeButton, this.followUpsModeButton);
 
-		this.graphSurface = this.doc.createElement("div");
-		this.graphSurface.className = "people-atlas-graph-surface";
-		this.canvas = this.doc.createElement("canvas");
-		this.canvas.className = "people-atlas-canvas";
-		this.canvas.tabIndex = 0;
-		this.canvas.setAttribute("role", "application");
-		this.canvas.setAttribute("aria-label", this.t.atlasRenderer.interactiveAtlas);
-		this.graphActions = this.doc.createElement("div");
-		this.graphActions.className = "people-atlas-graph-actions";
-		this.graphActions.setAttribute("aria-label", this.t.atlasRenderer.graphControls);
-		this.zoomOutButton = this.createActionButton(this.t.atlasRenderer.zoomOut);
-		this.zoomInButton = this.createActionButton(this.t.atlasRenderer.zoomIn);
-		this.fitButton = this.createActionButton(this.t.atlasRenderer.fit);
-		this.detailsButton = this.createActionButton(this.t.atlasRenderer.details);
-		this.detailsButton.disabled = true;
-		this.graphActions.append(this.zoomOutButton, this.zoomInButton, this.fitButton, this.detailsButton);
-		this.graphSurface.append(this.canvas, this.graphActions);
+		this.graphCanvas = new GraphCanvasSurface({
+			container: this.container,
+			getSettings: this.getSettings,
+			getSnapshot: () => this.snapshot,
+			getPositions: () => this.positions,
+			setPositions: (positions) => {
+				this.positions = positions;
+			},
+			getSelectedId: () => this.selectedId,
+			...(this.callbacks.onLayoutChanged ? { onLayoutChanged: this.callbacks.onLayoutChanged } : {}),
+			...(this.callbacks.resolvePersonPhoto ? { resolvePersonPhoto: this.callbacks.resolvePersonPhoto } : {}),
+			translator: this.t,
+		});
 
-		const context = this.canvas.getContext("2d");
-		if (!context) throw new Error("Canvas 2D is unavailable.");
-		this.context = context;
+		this.graphInteraction = new GraphInteractionController({
+			surface: this.graphCanvas,
+			getSnapshot: () => this.snapshot,
+			getSelectedId: () => this.selectedId,
+			getMode: () => this.mode,
+			selectNode: (node) => this.selectNode(node, "canvas"),
+			onOpenNode: this.callbacks.onOpenNode,
+			onCenterNode: this.callbacks.onCenterNode,
+			...(this.callbacks.onLayoutChanged ? { onLayoutChanged: this.callbacks.onLayoutChanged } : {}),
+			fitToContent: () => this.fitToContent(),
+			openDetailsSheet: () => this.openSheet("canvas"),
+		});
 
-		this.semanticPanel = this.doc.createElement("section");
-		this.semanticPanel.className = "people-atlas-semantic-panel";
-		this.semanticPanel.setAttribute("aria-label", this.t.atlasRenderer.listView);
-		this.semanticPanel.hidden = true;
-		this.summary = this.doc.createElement("p");
-		this.summary.className = "people-atlas-semantic-summary";
-		this.summary.setAttribute("role", "status");
-		this.summary.setAttribute("aria-live", "polite");
-		this.emptyMessage = this.doc.createElement("p");
-		this.emptyMessage.className = "people-atlas-empty-message";
-		this.emptyMessage.textContent = this.t.atlasRenderer.noPeople;
-		this.emptyMessage.hidden = true;
-		this.peopleList = this.doc.createElement("ul");
-		this.peopleList.className = "people-atlas-people-list";
-		this.peopleList.setAttribute("aria-label", this.t.atlasRenderer.peopleInAtlas);
-		this.details = this.doc.createElement("section");
-		this.details.className = "people-atlas-semantic-details";
-		this.details.setAttribute("aria-label", this.t.atlasRenderer.selectedPersonDetails);
-		this.semanticPanel.append(this.summary, this.emptyMessage, this.peopleList, this.details);
+		this.semanticPeopleList = new SemanticPeopleList(this.doc, {
+			panelLabel: this.t.atlasRenderer.listView,
+			peopleLabel: this.t.atlasRenderer.peopleInAtlas,
+			noPeopleLabel: this.t.atlasRenderer.noPeople,
+			translator: this.t,
+			getSnapshot: () => this.snapshot,
+			getSelectedId: () => this.selectedId,
+			getFocusedId: () => this.focusedId,
+			setFocusedId: (id) => {
+				this.focusedId = id;
+			},
+			getSummary: (snapshot) =>
+				this.t.atlasRenderer.semanticListSummary({
+					people: this.t.formatInteger(snapshot.nodes.length),
+					peopleCount: snapshot.nodes.length,
+					connections: this.t.formatInteger(snapshot.edges.length),
+					connectionsCount: snapshot.edges.length,
+					hiddenContactMoments: this.t.formatInteger(Math.max(0, snapshot.hiddenContactMomentCount)),
+					hiddenContactMomentCount: Math.max(0, snapshot.hiddenContactMomentCount),
+				}),
+			onSelectNode: (node) => this.selectNode(node, "list"),
+			onOpenNode: this.callbacks.onOpenNode,
+			onRenderDetails: () => this.renderSelectedDetails(),
+		});
+		this.semanticPanel = this.semanticPeopleList.element;
+		this.personDetailsPanel = new PersonDetailsPanel(this.doc, {
+			label: this.t.atlasRenderer.selectedPersonDetails,
+			translator: this.t,
+			getSnapshot: () => this.snapshot,
+			getSelectedId: () => this.selectedId,
+			getSettings: this.getSettings,
+			...(this.callbacks.resolvePersonPhoto ? { resolvePersonPhoto: this.callbacks.resolvePersonPhoto } : {}),
+			renderContactMoments: (selected, headingLevel, surface) =>
+				this.renderSelectedContactMoments(selected, headingLevel, surface),
+			getRelationshipRows: (selected) =>
+				buildIncidentRelationshipRows(this.snapshot, selected, this.getSettings().relationshipRoleFormat, this.t),
+			renderRelationshipGroups: (rows, selected, headingLevel) =>
+				this.renderRelationshipGroups(rows, selected, headingLevel),
+			canLogContact: (selected) =>
+				Boolean(this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true),
+		});
+		this.details = this.personDetailsPanel.element;
+		this.relationshipDetailsPanel = new RelationshipDetailsPanel(this.doc, {
+			translator: this.t,
+			...(this.callbacks.onOpenRelationship ? { onOpenRelationship: this.callbacks.onOpenRelationship } : {}),
+			...(this.callbacks.canOpenRelationship ? { canOpenRelationship: this.callbacks.canOpenRelationship } : {}),
+			...(this.callbacks.onEditRelationship ? { onEditRelationship: this.callbacks.onEditRelationship } : {}),
+			...(this.callbacks.canEditRelationship ? { canEditRelationship: this.callbacks.canEditRelationship } : {}),
+		});
+		this.relationshipSheetPanel = new RelationshipDetailsPanel(this.doc, {
+			translator: this.t,
+			...(this.callbacks.onOpenRelationship ? { onOpenRelationship: this.callbacks.onOpenRelationship } : {}),
+			...(this.callbacks.canOpenRelationship ? { canOpenRelationship: this.callbacks.canOpenRelationship } : {}),
+			...(this.callbacks.onEditRelationship ? { onEditRelationship: this.callbacks.onEditRelationship } : {}),
+			...(this.callbacks.canEditRelationship ? { canEditRelationship: this.callbacks.canEditRelationship } : {}),
+		});
+		this.semanticPanel.append(this.details);
 
-		this.followUpsPanel = this.doc.createElement("section");
-		this.followUpsPanel.className = "people-atlas-follow-ups-panel";
-		this.followUpsPanel.setAttribute("aria-label", this.t.atlasRenderer.contactFollowUps);
-		this.followUpsPanel.hidden = true;
-		this.followUpsHeading = this.doc.createElement("h2");
-		this.followUpsHeading.textContent = this.t.atlasRenderer.contactFollowUps;
-		this.followUpsHeading.tabIndex = -1;
-		this.followUpsHeading.dataset.followUpsHeading = "true";
-		this.followUpsSummary = this.doc.createElement("p");
-		this.followUpsSummary.className = "people-atlas-follow-ups-summary";
-		this.followUpsSummary.setAttribute("role", "status");
-		this.followUpsSummary.setAttribute("aria-live", "polite");
-		this.followUpsContent = this.doc.createElement("div");
-		this.followUpsContent.className = "people-atlas-follow-ups-content";
-		this.followUpsPanel.append(this.followUpsHeading, this.followUpsSummary, this.followUpsContent);
+		this.followUpPanel = new FollowUpPanel(this.doc, {
+			panelLabel: this.t.atlasRenderer.contactFollowUps,
+			heading: this.t.atlasRenderer.contactFollowUps,
+			translator: this.t,
+			getContactMoments: () => this.contactMoments(),
+			getLocalCalendarDay: () => this.localCalendarDay(),
+			getHiddenCount: () => this.hiddenContactMomentCount(),
+			renderRow: (row, peers) =>
+				this.renderContactMomentRow(row.moment, "follow-ups", {
+					followUpOn: row.followUpOn,
+					accessiblePeers: peers,
+				}),
+		});
+		this.followUpsPanel = this.followUpPanel.element;
+		this.followUpsHeading = this.followUpPanel.heading;
 
 		this.sheet = this.doc.createElement("dialog");
 		this.sheet.className = "people-atlas-details-sheet";
@@ -295,44 +266,34 @@ export class AtlasRenderer {
 		this.sheetContent.className = "people-atlas-details-sheet-content";
 		this.sheet.append(this.sheetContent);
 
-		this.root.append(this.modeControls, this.graphSurface, this.semanticPanel, this.followUpsPanel, this.sheet);
+		this.root.append(this.modeControls, this.graphCanvas.element, this.semanticPanel, this.followUpsPanel, this.sheet);
 		this.container.append(this.root);
+		this.graphCanvas.resize();
+		this.graphInteraction.attach();
+		this.semanticPeopleList.attach();
 
 		this.graphModeButton.addEventListener("click", this.onGraphMode);
 		this.listModeButton.addEventListener("click", this.onListMode);
 		this.followUpsModeButton.addEventListener("click", this.onFollowUpsMode);
-		this.peopleList.addEventListener("click", this.onPeopleListClick);
-		this.peopleList.addEventListener("keydown", this.onPeopleListKeyDown);
-		this.peopleList.addEventListener("focusin", this.onPeopleListFocusIn);
 		this.details.addEventListener("click", this.onDetailsClick);
 		this.followUpsPanel.addEventListener("click", this.onFollowUpsClick);
-		this.zoomOutButton.addEventListener("click", this.onZoomOut);
-		this.zoomInButton.addEventListener("click", this.onZoomIn);
-		this.fitButton.addEventListener("click", this.onFit);
-		this.detailsButton.addEventListener("click", this.onShowDetails);
+		this.graphCanvas.zoomOutButton.addEventListener("click", this.onZoomOut);
+		this.graphCanvas.zoomInButton.addEventListener("click", this.onZoomIn);
+		this.graphCanvas.fitButton.addEventListener("click", this.onFit);
+		this.graphCanvas.detailsButton.addEventListener("click", this.onShowDetails);
 		this.sheet.addEventListener("click", this.onSheetClick);
 		this.sheet.addEventListener("cancel", this.onSheetCancel);
 		this.sheet.addEventListener("keydown", this.onSheetKeyDown);
-		this.canvas.addEventListener("pointerdown", this.onPointerDown);
-		this.canvas.addEventListener("pointermove", this.onPointerMove);
-		this.canvas.addEventListener("pointerup", this.onPointerUp);
-		this.canvas.addEventListener("pointercancel", this.onPointerCancel);
-		this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
-		this.canvas.addEventListener("dblclick", this.onDoubleClick);
-		this.canvas.addEventListener("keydown", this.onCanvasKeyDown);
 
-		this.resizeObserver = new this.win.ResizeObserver(() => this.resize());
-		this.resizeObserver.observe(this.graphSurface);
-		this.resize();
 		this.updateSemanticPanel();
 	}
 
 	setGraph(snapshot: AtlasSnapshot, savedLayout?: LayoutSnapshot): void {
-		this.cancelTouchInteraction();
+		this.graphInteraction.cancel();
 		const activeElement = this.doc.activeElement;
-		const focusedButton = this.personButtonFrom(activeElement);
+		const focusedButton = this.semanticPeopleList.personButtonFrom(activeElement);
 		const focusedNodeId = focusedButton?.dataset.nodeId;
-		const listHeldFocus = Boolean(focusedButton && this.semanticPanel.contains(focusedButton));
+		const listHeldFocus = Boolean(focusedButton && this.semanticPeopleList.contains(focusedButton));
 		const focusedAction = this.actionButtonFrom(activeElement)?.dataset.action as SelectedAction | undefined;
 		const actionHeldFocus = Boolean(focusedAction && this.details.contains(activeElement));
 		const focusedRelationshipAction = this.relationshipActionFocusFrom(activeElement);
@@ -352,7 +313,7 @@ export class AtlasRenderer {
 
 		this.snapshot = snapshot;
 		this.positions = createDeterministicLayout(snapshot);
-		if (savedLayout) this.restoreLayoutSnapshot(savedLayout);
+		if (savedLayout) this.graphCanvas.restoreLayoutSnapshot(savedLayout);
 
 		if (this.selectedId && !this.nodeById(this.selectedId)) {
 			this.selectedId = undefined;
@@ -363,7 +324,7 @@ export class AtlasRenderer {
 		const focusedStillExists = this.focusedId ? Boolean(this.nodeById(this.focusedId)) : false;
 		if (this.selectedId) this.focusedId = this.selectedId;
 		else if (!focusedStillExists) this.focusedId = snapshot.nodes[0]?.id;
-		this.reconcileCanvasPhotoRequests();
+		this.graphCanvas.refresh();
 		this.updateSemanticPanel();
 		if (this.mode === "follow-ups") this.renderFollowUps();
 		if (this.sheet.open) {
@@ -385,7 +346,7 @@ export class AtlasRenderer {
 
 		if (listHeldFocus) {
 			const targetId = focusedNodeId && this.nodeById(focusedNodeId) ? focusedNodeId : snapshot.nodes[0]?.id;
-			if (targetId) this.focusPersonButton(targetId);
+			if (targetId) this.semanticPeopleList.focusPersonButton(targetId);
 			else this.listModeButton.focus();
 		} else if (actionHeldFocus && focusedAction) {
 			this.focusSelectedAction(focusedAction);
@@ -413,72 +374,19 @@ export class AtlasRenderer {
 	}
 
 	fitToContent(): void {
-		if (this.positions.size === 0) return;
-		const previous = { x: this.camera.x, y: this.camera.y, scale: this.camera.scale };
-		let minX = Infinity;
-		let minY = Infinity;
-		let maxX = -Infinity;
-		let maxY = -Infinity;
-		for (const point of this.positions.values()) {
-			minX = Math.min(minX, point.x - 50);
-			minY = Math.min(minY, point.y - 50);
-			maxX = Math.max(maxX, point.x + 50);
-			maxY = Math.max(maxY, point.y + 50);
-		}
-		const graphWidth = Math.max(1, maxX - minX);
-		const graphHeight = Math.max(1, maxY - minY);
-		this.camera.scale = Math.min(
-			2,
-			Math.max(0.2, Math.min((this.width - 80) / graphWidth, (this.height - 80) / graphHeight)),
-		);
-		this.camera.x = this.width / 2 - ((minX + maxX) / 2) * this.camera.scale;
-		this.camera.y = this.height / 2 - ((minY + maxY) / 2) * this.camera.scale;
-		this.cameraInitialized = true;
-		this.persistCameraChange(previous);
-		this.requestDraw();
+		this.graphCanvas.fitToContent();
 	}
 
 	getLayoutSnapshot(): LayoutSnapshot {
-		return captureLayoutSnapshot(this.positions, this.camera);
+		return this.graphCanvas.getLayoutSnapshot();
 	}
 
 	getPhotoCacheStats(): Readonly<AtlasRendererPhotoCacheStats> {
-		const stats = this.photoThumbnailCache.stats();
-		return Object.freeze({
-			ready: stats.ready,
-			pending: stats.pending,
-			failed: stats.failures,
-			total: stats.ready + stats.pending + stats.failures,
-			maxReady: stats.maxReady,
-			maxPending: stats.maxPending,
-			maxFailed: stats.maxFailures,
-			maxDimension: stats.maxDimension,
-			retainedPixels: stats.retainedPixels,
-			destroyed: stats.destroyed,
-			requests: stats.requests,
-			loadsStarted: stats.loadsStarted,
-			loadsSucceeded: stats.loadsSucceeded,
-			loadsFailed: stats.loadsFailed,
-			capacityRejections: stats.capacityRejections,
-			readyEvictions: stats.readyEvictions,
-		});
+		return this.graphCanvas.getPhotoCacheStats();
 	}
 
 	restoreLayoutSnapshot(layout: LayoutSnapshot): void {
-		const restored = restoreLayoutSnapshot(
-			layout,
-			this.snapshot.nodes,
-			this.positions,
-			this.camera,
-			this.camera.minScale,
-			this.camera.maxScale,
-		);
-		this.positions = restored.positions;
-		this.camera.x = restored.camera.x;
-		this.camera.y = restored.camera.y;
-		this.camera.scale = restored.camera.scale;
-		this.cameraInitialized = true;
-		this.requestDraw();
+		this.graphCanvas.restoreLayoutSnapshot(layout);
 	}
 
 	restoreRelationshipActionFocus(invoker: HTMLButtonElement): void {
@@ -489,7 +397,8 @@ export class AtlasRenderer {
 		}
 		if (this.sheet.open && this.focusSelectedDetailsHeading(this.sheet)) return;
 		if (this.focusSelectedDetailsHeading(this.details)) return;
-		if (!this.detailsButton.disabled && this.detailsButton.isConnected) this.detailsButton.focus();
+		if (!this.graphCanvas.detailsButton.disabled && this.graphCanvas.detailsButton.isConnected)
+			this.graphCanvas.detailsButton.focus();
 	}
 
 	restoreContactMomentActionFocus(invoker: HTMLButtonElement): void {
@@ -511,42 +420,35 @@ export class AtlasRenderer {
 		}
 		if (focus?.surface === "sheet" && this.sheet.open && this.focusSelectedDetailsHeading(this.sheet)) return;
 		if (this.focusSelectedDetailsHeading(this.details)) return;
-		if (!this.detailsButton.disabled && this.detailsButton.isConnected) this.detailsButton.focus();
+		if (!this.graphCanvas.detailsButton.disabled && this.graphCanvas.detailsButton.isConnected)
+			this.graphCanvas.detailsButton.focus();
 	}
 
 	destroy(): void {
 		if (this.destroyed) return;
 		this.destroyed = true;
-		this.cancelTouchInteraction();
+		this.graphInteraction.cancel();
 		this.cancelFollowUpDayRefresh();
 		this.closeSheet(false);
-		this.resizeObserver.disconnect();
-		if (this.frame !== undefined) this.win.cancelAnimationFrame(this.frame);
-		this.photoThumbnailCache.destroy();
-		this.canvasPhotoRequests.clear();
-		this.admittedCanvasPhotoKeys.clear();
+		this.graphInteraction.destroy();
+		this.graphCanvas.destroy();
 		this.graphModeButton.removeEventListener("click", this.onGraphMode);
 		this.listModeButton.removeEventListener("click", this.onListMode);
 		this.followUpsModeButton.removeEventListener("click", this.onFollowUpsMode);
-		this.peopleList.removeEventListener("click", this.onPeopleListClick);
-		this.peopleList.removeEventListener("keydown", this.onPeopleListKeyDown);
-		this.peopleList.removeEventListener("focusin", this.onPeopleListFocusIn);
 		this.details.removeEventListener("click", this.onDetailsClick);
 		this.followUpsPanel.removeEventListener("click", this.onFollowUpsClick);
-		this.zoomOutButton.removeEventListener("click", this.onZoomOut);
-		this.zoomInButton.removeEventListener("click", this.onZoomIn);
-		this.fitButton.removeEventListener("click", this.onFit);
-		this.detailsButton.removeEventListener("click", this.onShowDetails);
+		this.graphCanvas.zoomOutButton.removeEventListener("click", this.onZoomOut);
+		this.graphCanvas.zoomInButton.removeEventListener("click", this.onZoomIn);
+		this.graphCanvas.fitButton.removeEventListener("click", this.onFit);
+		this.graphCanvas.detailsButton.removeEventListener("click", this.onShowDetails);
 		this.sheet.removeEventListener("click", this.onSheetClick);
 		this.sheet.removeEventListener("cancel", this.onSheetCancel);
 		this.sheet.removeEventListener("keydown", this.onSheetKeyDown);
-		this.canvas.removeEventListener("pointerdown", this.onPointerDown);
-		this.canvas.removeEventListener("pointermove", this.onPointerMove);
-		this.canvas.removeEventListener("pointerup", this.onPointerUp);
-		this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
-		this.canvas.removeEventListener("wheel", this.onWheel);
-		this.canvas.removeEventListener("dblclick", this.onDoubleClick);
-		this.canvas.removeEventListener("keydown", this.onCanvasKeyDown);
+		this.personDetailsPanel.destroy();
+		this.semanticPeopleList.destroy();
+		this.followUpPanel.destroy();
+		this.relationshipDetailsPanel.destroy();
+		this.relationshipSheetPanel.destroy();
 		this.root.remove();
 	}
 
@@ -576,7 +478,7 @@ export class AtlasRenderer {
 			}
 			return;
 		}
-		this.cancelTouchInteraction();
+		this.graphInteraction.cancel();
 		if (mode !== "graph") this.closeSheet(false);
 		this.cancelFollowUpDayRefresh();
 		this.mode = mode;
@@ -586,11 +488,11 @@ export class AtlasRenderer {
 		this.graphModeButton.setAttribute("aria-pressed", String(graphActive));
 		this.listModeButton.setAttribute("aria-pressed", String(listActive));
 		this.followUpsModeButton.setAttribute("aria-pressed", String(followUpsActive));
-		this.graphSurface.hidden = !graphActive;
+		this.graphCanvas.graphSurface.hidden = !graphActive;
 		this.semanticPanel.hidden = !listActive;
 		this.followUpsPanel.hidden = !followUpsActive;
-		this.canvas.hidden = !graphActive;
-		this.canvas.tabIndex = graphActive ? 0 : -1;
+		this.graphCanvas.canvas.hidden = !graphActive;
+		this.graphCanvas.canvas.tabIndex = graphActive ? 0 : -1;
 		if (graphActive) this.resize();
 		if (followUpsActive) {
 			this.renderFollowUps();
@@ -599,294 +501,24 @@ export class AtlasRenderer {
 	}
 
 	private resize(): void {
-		const rect = this.graphSurface.getBoundingClientRect();
-		this.width = Math.max(1, rect.width);
-		this.height = Math.max(1, rect.height);
-		this.ratio = this.win.devicePixelRatio || 1;
-		this.canvas.width = Math.round(this.width * this.ratio);
-		this.canvas.height = Math.round(this.height * this.ratio);
-		// Keep the CSS-pixel surface and high-DPI backing store synchronized, including at fractional DPR.
-		this.canvas.style.width = `${this.width}px`;
-		this.canvas.style.height = `${this.height}px`;
-		if (!this.cameraInitialized) {
-			this.camera.reset(this.width, this.height);
-			this.cameraInitialized = true;
-		}
-		this.requestDraw();
+		this.graphCanvas.resize();
 	}
 
 	private requestDraw(): void {
-		if (this.destroyed || this.frame !== undefined) return;
-		this.frame = this.win.requestAnimationFrame(() => {
-			this.frame = undefined;
-			this.draw();
-		});
-	}
-
-	private draw(): void {
-		const style = this.win.getComputedStyle(this.container);
-		const background = style.getPropertyValue("--background-primary").trim() || "Canvas";
-		const foreground = style.getPropertyValue("--text-normal").trim() || "CanvasText";
-		const muted = style.getPropertyValue("--text-muted").trim() || "GrayText";
-		const border = style.getPropertyValue("--background-modifier-border").trim() || "GrayText";
-		const accent = style.getPropertyValue("--interactive-accent").trim() || "Highlight";
-		const secondary = style.getPropertyValue("--background-secondary").trim() || "Canvas";
-
-		const ctx = this.context;
-		ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
-		ctx.fillStyle = background;
-		ctx.fillRect(0, 0, this.width, this.height);
-		ctx.save();
-		ctx.translate(this.camera.x, this.camera.y);
-		ctx.scale(this.camera.scale, this.camera.scale);
-
-		ctx.strokeStyle = border;
-		ctx.lineWidth = 1.25 / this.camera.scale;
-		for (const edge of this.snapshot.edges) {
-			const source = this.positions.get(edge.sourceId);
-			const target = this.positions.get(edge.targetId);
-			if (!source || !target) continue;
-			ctx.setLineDash(edge.inferred ? [5, 5] : []);
-			ctx.beginPath();
-			ctx.moveTo(source.x, source.y);
-			ctx.lineTo(target.x, target.y);
-			ctx.stroke();
-		}
-		ctx.setLineDash([]);
-
-		for (const node of this.snapshot.nodes) {
-			const point = this.positions.get(node.id);
-			if (!point) continue;
-			const radius = node.kind === "ghost" ? GHOST_RADIUS : PERSON_RADIUS;
-			const selected = node.id === this.selectedId;
-
-			ctx.beginPath();
-			ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-			ctx.fillStyle = node.kind === "ghost" ? background : secondary;
-			ctx.fill();
-
-			let photoDrawn = false;
-			const photoRequest = this.canvasPhotoRequests.get(node.id);
-			if (photoRequest && this.admittedCanvasPhotoKeys.has(photoRequest.cacheKey)) {
-				const state = this.photoThumbnailCache.get(photoRequest);
-				if (state.status === "ready") {
-					ctx.save();
-					try {
-						ctx.beginPath();
-						ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-						ctx.clip();
-						ctx.drawImage(state.thumbnail.source, point.x - radius, point.y - radius, radius * 2, radius * 2);
-						photoDrawn = true;
-					} catch {
-						// A released or browser-rejected source remains a deterministic initials fallback.
-					} finally {
-						ctx.restore();
-					}
-				}
-			}
-
-			ctx.strokeStyle = selected || node.isCenter ? accent : node.kind === "ghost" ? muted : border;
-			ctx.lineWidth = (selected || node.isCenter ? 3 : 2) / this.camera.scale;
-			ctx.setLineDash(node.kind === "ghost" ? [4, 4] : []);
-			ctx.stroke();
-			ctx.setLineDash([]);
-
-			if (!photoDrawn) {
-				ctx.fillStyle = node.kind === "ghost" ? muted : foreground;
-				ctx.font = `${Math.max(10, 13 / this.camera.scale)}px sans-serif`;
-				ctx.textAlign = "center";
-				ctx.textBaseline = "middle";
-				ctx.fillText(personPhotoInitials(node.label), point.x, point.y);
-			}
-
-			if (this.getSettings().showLabels) {
-				ctx.fillStyle = node.kind === "ghost" ? muted : foreground;
-				ctx.font = `${Math.max(9, 11 / this.camera.scale)}px sans-serif`;
-				ctx.textAlign = "center";
-				ctx.textBaseline = "top";
-				ctx.fillText(node.label, point.x, point.y + radius + 8 / this.camera.scale);
-			}
-		}
-
-		ctx.restore();
-	}
-
-	private reconcileCanvasPhotoRequests(): void {
-		const previousKeys = new Set([...this.canvasPhotoRequests.values()].map((request) => request.cacheKey));
-		const nextRequests = new Map<NodeId, CanvasPhotoRequest>();
-		for (const node of this.snapshot.nodes) {
-			if (!isResolvedAtlasPersonNode(node) || !node.photoPath || !this.callbacks.resolvePersonPhoto) continue;
-			try {
-				const resolution = this.callbacks.resolvePersonPhoto(node.photoPath);
-				if (resolution.status !== "ready") continue;
-				const resourceUrl = safeLocalPhotoResourceUrl(resolution.resourceUrl, node.photoPath);
-				if (!resourceUrl || !resolution.cacheKey.trim()) continue;
-				nextRequests.set(node.id, {
-					cacheKey: resolution.cacheKey,
-					resourceUrl,
-				});
-			} catch {
-				// Resolver failures are contained as initials fallback.
-			}
-		}
-		const nextKeys = new Set([...nextRequests.values()].map((request) => request.cacheKey));
-		this.photoThumbnailCache.invalidate([...previousKeys].filter((cacheKey) => !nextKeys.has(cacheKey)));
-		this.canvasPhotoRequests = nextRequests;
-		this.reconcileCanvasPhotoAdmission();
+		this.graphCanvas.requestDraw();
 	}
 
 	private reconcileCanvasPhotoAdmission(): void {
-		const orderedNodes = [...this.snapshot.nodes].sort((left, right) => {
-			const leftSelected = left.id === this.selectedId ? 1 : 0;
-			const rightSelected = right.id === this.selectedId ? 1 : 0;
-			if (leftSelected !== rightSelected) return rightSelected - leftSelected;
-			const leftCenter = left.isCenter ? 1 : 0;
-			const rightCenter = right.isCenter ? 1 : 0;
-			return rightCenter - leftCenter;
-		});
-		const nextKeys = new Set<string>();
-		for (const node of orderedNodes) {
-			const request = this.canvasPhotoRequests.get(node.id);
-			if (!request || nextKeys.has(request.cacheKey)) continue;
-			nextKeys.add(request.cacheKey);
-			if (nextKeys.size >= PERSON_PHOTO_THUMBNAIL_MAX_READY) break;
-		}
-		this.photoThumbnailCache.invalidate(
-			[...this.admittedCanvasPhotoKeys].filter((cacheKey) => !nextKeys.has(cacheKey)),
-		);
-		this.admittedCanvasPhotoKeys = nextKeys;
+		this.graphCanvas.refreshPhotoAdmission();
 	}
 
 	private updateSemanticPanel(): void {
-		this.detailsButton.disabled = !this.selectedId || !this.nodeById(this.selectedId);
-		const hiddenMomentCount = this.hiddenContactMomentCount();
-		const summaryText = this.t.atlasRenderer.semanticListSummary({
-			people: this.t.formatInteger(this.snapshot.nodes.length),
-			peopleCount: this.snapshot.nodes.length,
-			connections: this.t.formatInteger(this.snapshot.edges.length),
-			connectionsCount: this.snapshot.edges.length,
-			hiddenContactMoments: this.t.formatInteger(hiddenMomentCount),
-			hiddenContactMomentCount: hiddenMomentCount,
-		});
-		if (this.summary.textContent !== summaryText) this.summary.textContent = summaryText;
-		this.emptyMessage.hidden = this.snapshot.nodes.length > 0;
-		this.peopleList.hidden = this.snapshot.nodes.length === 0;
-		this.peopleList.replaceChildren();
-
-		const rovingId =
-			this.selectedId && this.nodeById(this.selectedId)
-				? this.selectedId
-				: this.focusedId && this.nodeById(this.focusedId)
-					? this.focusedId
-					: this.snapshot.nodes[0]?.id;
-		this.focusedId = rovingId;
-
-		for (const node of this.snapshot.nodes) {
-			const item = this.doc.createElement("li");
-			const button = this.doc.createElement("button");
-			button.type = "button";
-			button.className = "people-atlas-person-button";
-			button.dataset.nodeId = node.id;
-			button.tabIndex = node.id === rovingId ? 0 : -1;
-			button.setAttribute("aria-pressed", String(node.id === this.selectedId));
-			button.setAttribute("aria-label", personAccessibleName(node, this.t));
-			const label = this.doc.createElement("span");
-			label.textContent = node.label;
-			button.append(label);
-			const metadata = personMetadata(node, this.t);
-			if (metadata) {
-				const meta = this.doc.createElement("small");
-				meta.textContent = metadata;
-				button.append(meta);
-			}
-			item.append(button);
-			this.peopleList.append(item);
-		}
-
-		this.renderSelectedDetails();
+		this.graphCanvas.detailsButton.disabled = !this.selectedId || !this.nodeById(this.selectedId);
+		this.semanticPeopleList.update();
 	}
 
 	private renderSelectedDetails(): void {
-		const messages = this.t.atlasRenderer;
-		this.details.replaceChildren();
-		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
-		const heading = this.doc.createElement("h3");
-		heading.textContent = selected?.label ?? messages.selection;
-		if (selected) {
-			heading.tabIndex = -1;
-			heading.dataset.selectedPersonHeading = selected.id;
-		}
-		this.details.append(heading);
-		if (!selected) {
-			const hint = this.doc.createElement("p");
-			hint.textContent = messages.selectPersonHint;
-			this.details.append(hint);
-			return;
-		}
-
-		if (isResolvedAtlasPersonNode(selected)) {
-			const profile = renderPersonProfile(this.doc, selected, {
-				contactHeadingLevel: 4,
-				resolvePhotoResource: this.callbacks.resolvePersonPhoto,
-				translator: this.t,
-			});
-			if (profile) this.details.append(profile);
-			const contactMoments = this.renderSelectedContactMoments(selected, 4, "details");
-			if (contactMoments) this.details.append(contactMoments);
-		}
-
-		if (isAmbiguousAtlasNode(selected)) {
-			const unavailable = this.doc.createElement("p");
-			unavailable.textContent = messages.ambiguousNoOpenCenter;
-			this.details.append(unavailable);
-		} else if (selected.kind === "ghost") {
-			const unavailable = this.doc.createElement("p");
-			unavailable.textContent = messages.unresolvedNoNote;
-			this.details.append(unavailable);
-		} else if (!selected.filePath) {
-			const unavailable = this.doc.createElement("p");
-			unavailable.textContent = messages.noNote;
-			this.details.append(unavailable);
-		}
-
-		const relationshipRows = buildIncidentRelationshipRows(
-			this.snapshot,
-			selected,
-			this.getSettings().relationshipRoleFormat,
-			this.t,
-		);
-		if (relationshipRows.length === 0) {
-			const empty = this.doc.createElement("p");
-			empty.textContent = messages.noVisibleConnections;
-			this.details.append(empty);
-		} else {
-			this.details.append(this.renderRelationshipGroups(relationshipRows, selected, 4));
-		}
-
-		if (isResolvedAtlasPersonNode(selected)) {
-			const actions = this.doc.createElement("div");
-			actions.className = "people-atlas-semantic-actions";
-			const open = this.doc.createElement("button");
-			open.type = "button";
-			open.dataset.action = "open";
-			open.setAttribute("aria-label", messages.openNote);
-			open.textContent = messages.openNote;
-			const center = this.doc.createElement("button");
-			center.type = "button";
-			center.dataset.action = "center";
-			center.setAttribute("aria-label", messages.useAsCenter);
-			center.textContent = messages.useAsCenter;
-			actions.append(open, center);
-			if (this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
-				const logContact = this.doc.createElement("button");
-				logContact.type = "button";
-				logContact.dataset.action = "log-contact";
-				logContact.setAttribute("aria-label", messages.logContact);
-				logContact.textContent = messages.logContact;
-				actions.append(logContact);
-			}
-			this.details.append(actions);
-		}
+		this.personDetailsPanel.render();
 	}
 
 	private renderRelationshipGroups(
@@ -894,80 +526,8 @@ export class AtlasRenderer {
 		selected: AtlasNode,
 		headingLevel: 3 | 4,
 	): HTMLDivElement {
-		const groups = this.doc.createElement("div");
-		groups.className = "people-atlas-connection-groups";
-		const relationshipRows = rows.filter((row) => !row.edge.inferred);
-		const linkedPeopleRows = rows.filter((row) => row.edge.inferred);
-		if (relationshipRows.length > 0) {
-			groups.append(this.renderRelationshipGroup("relationships", relationshipRows, selected, headingLevel));
-		}
-		if (linkedPeopleRows.length > 0) {
-			groups.append(this.renderRelationshipGroup("linked-people", linkedPeopleRows, selected, headingLevel));
-		}
-		return groups;
-	}
-
-	private renderRelationshipGroup(
-		label: "relationships" | "linked-people",
-		rows: IncidentRelationshipRow[],
-		selected: AtlasNode,
-		headingLevel: 3 | 4,
-	): HTMLElement {
-		const group = this.doc.createElement("section");
-		group.className = "people-atlas-connection-group";
-		group.dataset.connectionGroup = label;
-		const heading = this.doc.createElement(`h${headingLevel}`);
-		const translatedLabel =
-			label === "relationships" ? this.t.atlasRenderer.relationships : this.t.atlasRenderer.linkedPeople;
-		heading.textContent = translatedLabel;
-		group.append(heading, this.renderRelationshipRows(rows, selected, translatedLabel));
-		return group;
-	}
-
-	private renderRelationshipRows(
-		rows: IncidentRelationshipRow[],
-		selected: AtlasNode,
-		groupLabel: string,
-	): HTMLUListElement {
-		const relationships = this.doc.createElement("ul");
-		relationships.className = "people-atlas-relationship-list";
-		relationships.setAttribute(
-			"aria-label",
-			this.t.atlasRenderer.relationshipListFor({ group: groupLabel, name: selected.label }),
-		);
-		for (const row of rows) {
-			const item = this.doc.createElement("li");
-			item.dataset.edgeId = row.edge.id;
-			if (row.edge.filePath) item.dataset.relationshipPath = row.edge.filePath;
-			const description = this.doc.createElement("span");
-			description.textContent = row.description;
-			item.append(description);
-
-			if (row.noteBacked) {
-				const actions = this.doc.createElement("div");
-				actions.className = "people-atlas-semantic-actions";
-				if (this.callbacks.onOpenRelationship && this.callbacks.canOpenRelationship?.(row.edge) === true) {
-					actions.append(this.createRelationshipActionButton("open", row));
-				}
-				if (this.callbacks.onEditRelationship && this.callbacks.canEditRelationship?.(row.edge) === true) {
-					actions.append(this.createRelationshipActionButton("edit", row));
-				}
-				if (actions.childElementCount > 0) item.append(actions);
-			}
-			relationships.append(item);
-		}
-		return relationships;
-	}
-
-	private createRelationshipActionButton(action: RelationshipAction, row: IncidentRelationshipRow): HTMLButtonElement {
-		const label = action === "open" ? this.t.atlasRenderer.openRelationshipNote : this.t.atlasRenderer.editRelationship;
-		const button = this.createActionButton(label);
-		button.dataset.relationshipAction = action;
-		button.dataset.edgeId = row.edge.id;
-		if (row.edge.filePath) button.dataset.relationshipPath = row.edge.filePath;
-		button.setAttribute("aria-label", relationshipActionAccessibleName(action, row, this.t));
-		this.relationshipEdgesByButton.set(button, row.edge);
-		return button;
+		const panel = headingLevel === 4 ? this.relationshipDetailsPanel : this.relationshipSheetPanel;
+		return panel.render(rows, selected, headingLevel);
 	}
 
 	private selectNode(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
@@ -1140,54 +700,7 @@ export class AtlasRenderer {
 	}
 
 	private renderFollowUps(): void {
-		const groups = groupContactMomentFollowUps(this.contactMoments(), this.localCalendarDay());
-		const rows = [...groups.overdue, ...groups.dueToday, ...groups.upcoming];
-		const accessiblePeers = rows.map((row) => row.moment);
-		const hiddenMomentCount = this.hiddenContactMomentCount();
-		this.followUpsSummary.textContent = this.t.atlasRenderer.followUpsSummary({
-			openCount: this.t.formatInteger(rows.length),
-			openCountValue: rows.length,
-			hiddenCount: this.t.formatInteger(hiddenMomentCount),
-			hiddenCountValue: hiddenMomentCount,
-		});
-		this.followUpsContent.replaceChildren();
-		if (rows.length === 0) {
-			const empty = this.doc.createElement("p");
-			empty.className = "people-atlas-empty-message";
-			empty.textContent = this.t.atlasRenderer.noOpenFollowUps;
-			this.followUpsContent.append(empty);
-			return;
-		}
-		const definitions: ReadonlyArray<{
-			label: string;
-			key: string;
-			rows: ContactMomentFollowUpRow[];
-		}> = [
-			{ label: this.t.atlasRenderer.overdue, key: "overdue", rows: groups.overdue },
-			{ label: this.t.atlasRenderer.dueToday, key: "due-today", rows: groups.dueToday },
-			{ label: this.t.atlasRenderer.upcoming, key: "upcoming", rows: groups.upcoming },
-		];
-		for (const definition of definitions) {
-			if (definition.rows.length === 0) continue;
-			const section = this.doc.createElement("section");
-			section.className = "people-atlas-follow-up-group";
-			section.dataset.followUpGroup = definition.key;
-			const heading = this.doc.createElement("h3");
-			heading.textContent = definition.label;
-			const list = this.doc.createElement("ul");
-			list.className = "people-atlas-follow-up-list";
-			list.setAttribute("aria-label", definition.label);
-			for (const row of definition.rows) {
-				list.append(
-					this.renderContactMomentRow(row.moment, "follow-ups", {
-						followUpOn: row.followUpOn,
-						accessiblePeers,
-					}),
-				);
-			}
-			section.append(heading, list);
-			this.followUpsContent.append(section);
-		}
+		this.followUpPanel.render();
 	}
 
 	private renderContactMomentRow(
@@ -1495,9 +1008,10 @@ export class AtlasRenderer {
 		this.sheetInvoker = undefined;
 		this.sheetReturnFocusElement = undefined;
 		if (!restoreFocus || this.destroyed) return;
-		if (invoker === "details" && !this.detailsButton.disabled && this.detailsButton.isConnected)
-			this.detailsButton.focus();
-		else if (invoker === "canvas" && this.canvas.isConnected && this.mode === "graph") this.canvas.focus();
+		if (invoker === "details" && !this.graphCanvas.detailsButton.disabled && this.graphCanvas.detailsButton.isConnected)
+			this.graphCanvas.detailsButton.focus();
+		else if (invoker === "canvas" && this.graphCanvas.canvas.isConnected && this.mode === "graph")
+			this.graphCanvas.canvas.focus();
 	}
 
 	private closeSheetForExternalAction(): void {
@@ -1517,19 +1031,6 @@ export class AtlasRenderer {
 
 	private nodeById(nodeId: NodeId | string): AtlasNode | undefined {
 		return this.snapshot.nodes.find((node) => node.id === nodeId);
-	}
-
-	private personButtonFrom(target: EventTarget | Element | null): HTMLButtonElement | undefined {
-		if (!(target instanceof this.win.Element)) return undefined;
-		const button = target.closest<HTMLButtonElement>(".people-atlas-person-button");
-		return button ?? undefined;
-	}
-
-	private focusPersonButton(nodeId: NodeId): void {
-		const button = Array.from(this.peopleList.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button")).find(
-			(candidate) => candidate.dataset.nodeId === nodeId,
-		);
-		button?.focus();
 	}
 
 	private actionButtonFrom(target: EventTarget | Element | null): HTMLButtonElement | undefined {
@@ -1646,99 +1147,24 @@ export class AtlasRenderer {
 		return Boolean(button);
 	}
 
-	private nodeAt(screenX: number, screenY: number): AtlasNode | undefined {
-		if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return undefined;
-		const world = this.camera.toWorld(screenX, screenY);
-		for (let index = this.snapshot.nodes.length - 1; index >= 0; index--) {
-			const node = this.snapshot.nodes[index];
-			if (!node) continue;
-			const point = this.positions.get(node.id);
-			if (!point) continue;
-			const radius = node.kind === "ghost" ? GHOST_RADIUS : PERSON_RADIUS;
-			if (Math.hypot(world.x - point.x, world.y - point.y) <= radius + 6) return node;
-		}
-		return undefined;
-	}
-
-	private pointerPosition(event: PointerEvent | MouseEvent | WheelEvent): { x: number; y: number } | undefined {
-		if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return undefined;
-		const rect = this.canvas.getBoundingClientRect();
-		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-		return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
-	}
-
-	private capturePointer(pointerId: number): void {
-		try {
-			this.canvas.setPointerCapture(pointerId);
-		} catch {
-			// Stable pointer tracking does not depend on browser capture succeeding.
-		}
-	}
-
-	private releasePointer(pointerId: number): void {
-		let shouldRelease = true;
-		try {
-			shouldRelease = this.canvas.hasPointerCapture(pointerId);
-		} catch {
-			// Attempt release anyway; the browser may have lost only the query state.
-		}
-		if (!shouldRelease) return;
-		try {
-			this.canvas.releasePointerCapture(pointerId);
-		} catch {
-			// Capture can be lost implicitly before renderer cleanup.
-		}
-	}
-
-	private persistCameraChange(previous: { x: number; y: number; scale: number }): void {
-		if (previous.x === this.camera.x && previous.y === this.camera.y && previous.scale === this.camera.scale) return;
-		this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
-	}
-
 	private zoomAtCanvasCenter(factor: number): void {
-		const previous = { x: this.camera.x, y: this.camera.y, scale: this.camera.scale };
-		this.camera.zoomAt(this.width / 2, this.height / 2, factor);
-		this.persistCameraChange(previous);
-		this.requestDraw();
+		this.graphCanvas.zoomAtCanvasCenter(factor);
 	}
 
-	private applyTouchUpdate(update: TouchGestureUpdate): void {
-		if (update.cancelLongPress) this.cancelLongPress();
-		if (update.camera) {
-			this.camera.x = update.camera.x;
-			this.camera.y = update.camera.y;
-			this.camera.scale = update.camera.scale;
-			this.requestDraw();
-		}
-		if (update.tapTargetId !== undefined) {
-			const node = update.tapTargetId === null ? undefined : this.nodeById(update.tapTargetId);
-			this.selectNode(node, "canvas");
-		}
-		if (update.persistLayout) this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
+	onPointerDown(event: PointerEvent): void {
+		this.graphInteraction.handlePointerDown(event);
 	}
 
-	private scheduleLongPress(pointerId: number): void {
-		this.cancelLongPress();
-		this.longPressTimer = this.win.setTimeout(() => {
-			this.longPressTimer = undefined;
-			if (this.destroyed || this.mode !== "graph") return;
-			const nodeId = this.touchGesture.consumeLongPress(pointerId);
-			const node = nodeId ? this.nodeById(nodeId) : undefined;
-			if (!node) return;
-			this.selectNode(node, "canvas");
-			if (!this.destroyed && this.selectedId === node.id && this.nodeById(node.id)) this.openSheet("canvas");
-		}, LONG_PRESS_DELAY);
+	onPointerMove(event: PointerEvent): void {
+		this.graphInteraction.handlePointerMove(event);
 	}
 
-	private cancelLongPress(): void {
-		if (this.longPressTimer === undefined) return;
-		this.win.clearTimeout(this.longPressTimer);
-		this.longPressTimer = undefined;
+	onPointerUp(event: PointerEvent): void {
+		this.graphInteraction.handlePointerUp(event);
 	}
 
-	private cancelTouchInteraction(): void {
-		this.cancelLongPress();
-		for (const pointerId of this.touchGesture.cancel()) this.releasePointer(pointerId);
+	onPointerCancel(event: PointerEvent): void {
+		this.graphInteraction.handlePointerCancel(event);
 	}
 
 	private localCalendarDay(): string {
@@ -1799,56 +1225,6 @@ export class AtlasRenderer {
 
 	private readonly onShowDetails = (): void => {
 		this.openSheet("details");
-	};
-
-	private readonly onPeopleListClick = (event: MouseEvent): void => {
-		const button = this.personButtonFrom(event.target);
-		const node = button?.dataset.nodeId ? this.nodeById(button.dataset.nodeId) : undefined;
-		if (node) {
-			this.selectNode(node, "list");
-			this.focusPersonButton(node.id);
-		}
-	};
-
-	private readonly onPeopleListFocusIn = (event: FocusEvent): void => {
-		const button = this.personButtonFrom(event.target);
-		if (button?.dataset.nodeId && this.nodeById(button.dataset.nodeId)) this.focusedId = button.dataset.nodeId;
-	};
-
-	private readonly onPeopleListKeyDown = (event: KeyboardEvent): void => {
-		const button = this.personButtonFrom(event.target);
-		if (!button?.dataset.nodeId) return;
-		const currentIndex = this.snapshot.nodes.findIndex((node) => node.id === button.dataset.nodeId);
-		if (currentIndex < 0) return;
-
-		let nextIndex: number | undefined;
-		if (event.key === "ArrowDown" && currentIndex < this.snapshot.nodes.length - 1) nextIndex = currentIndex + 1;
-		else if (event.key === "ArrowUp" && currentIndex > 0) nextIndex = currentIndex - 1;
-		else if (event.key === "Home") nextIndex = 0;
-		else if (event.key === "End") nextIndex = this.snapshot.nodes.length - 1;
-
-		if (nextIndex !== undefined) {
-			event.preventDefault();
-			const node = this.snapshot.nodes[nextIndex];
-			if (!node) return;
-			this.selectNode(node, "list");
-			this.focusPersonButton(node.id);
-			return;
-		}
-
-		if (event.key === "Enter") {
-			event.preventDefault();
-			const node = this.snapshot.nodes[currentIndex];
-			if (isResolvedAtlasPersonNode(node)) this.callbacks.onOpenNode(node);
-			return;
-		}
-
-		if (event.key === "Escape") {
-			event.preventDefault();
-			const focusedId = this.snapshot.nodes[currentIndex]?.id;
-			this.selectNode(undefined, "list");
-			if (focusedId) this.focusPersonButton(focusedId);
-		}
 	};
 
 	private readonly onDetailsClick = (event: MouseEvent): void => {
@@ -1959,7 +1335,7 @@ export class AtlasRenderer {
 	}
 
 	private async invokeRelationshipAction(button: HTMLButtonElement, closeSheet: boolean): Promise<void> {
-		const edge = this.relationshipEdgesByButton.get(button);
+		const edge = this.relationshipDetailsPanel.getEdge(button) ?? this.relationshipSheetPanel.getEdge(button);
 		const action = button.dataset.relationshipAction;
 		if (!edge || (action !== "open" && action !== "edit")) return;
 		if (closeSheet) this.closeSheetForExternalAction();
@@ -2061,134 +1437,4 @@ export class AtlasRenderer {
 			first.focus();
 		}
 	};
-
-	private readonly onPointerDown = (event: PointerEvent): void => {
-		const point = this.pointerPosition(event);
-		if (!point) return;
-		const node = this.nodeAt(point.x, point.y);
-		this.capturePointer(event.pointerId);
-		if (event.pointerType === "touch") {
-			event.preventDefault();
-			this.suppressMouseUntil = this.win.performance.now() + 1000;
-			const update = this.touchGesture.begin(
-				{
-					pointerId: event.pointerId,
-					x: point.x,
-					y: point.y,
-					time: event.timeStamp,
-					targetId: node?.id,
-				},
-				{ x: this.camera.x, y: this.camera.y, scale: this.camera.scale },
-			);
-			this.applyTouchUpdate(update);
-			if (!update.cancelLongPress && node) this.scheduleLongPress(event.pointerId);
-			return;
-		}
-		this.drag = {
-			pointerId: event.pointerId,
-			mode: node ? "node" : "pan",
-			nodeId: node?.id,
-			lastX: point.x,
-			lastY: point.y,
-		};
-		if (node) this.selectNode(node, "canvas");
-	};
-
-	private readonly onPointerMove = (event: PointerEvent): void => {
-		if (event.pointerType === "touch") {
-			event.preventDefault();
-			const point = this.pointerPosition(event);
-			if (!point) return;
-			this.applyTouchUpdate(this.touchGesture.move(event.pointerId, point));
-			return;
-		}
-		if (!this.drag || this.drag.pointerId !== event.pointerId) return;
-		const point = this.pointerPosition(event);
-		if (!point) return;
-		const dx = point.x - this.drag.lastX;
-		const dy = point.y - this.drag.lastY;
-		if (this.drag.mode === "pan") {
-			this.camera.pan(dx, dy);
-		} else if (this.drag.nodeId) {
-			const position = this.positions.get(this.drag.nodeId);
-			if (position) {
-				position.x += dx / this.camera.scale;
-				position.y += dy / this.camera.scale;
-			}
-		}
-		this.drag.lastX = point.x;
-		this.drag.lastY = point.y;
-		this.requestDraw();
-	};
-
-	private readonly onPointerUp = (event: PointerEvent): void => {
-		if (event.pointerType === "touch") {
-			event.preventDefault();
-			const point = this.pointerPosition(event);
-			if (!point) {
-				this.cancelTouchInteraction();
-				return;
-			}
-			const update = this.touchGesture.end(event.pointerId, point, event.timeStamp);
-			this.releasePointer(event.pointerId);
-			this.applyTouchUpdate(update);
-			return;
-		}
-		if (!this.drag || this.drag.pointerId !== event.pointerId) return;
-		this.releasePointer(event.pointerId);
-		this.drag = undefined;
-		this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
-	};
-
-	private readonly onPointerCancel = (event: PointerEvent): void => {
-		if (event.pointerType === "touch") {
-			this.cancelTouchInteraction();
-			return;
-		}
-		this.onPointerUp(event);
-	};
-
-	private readonly onWheel = (event: WheelEvent): void => {
-		event.preventDefault();
-		const point = this.pointerPosition(event);
-		if (!point) return;
-		this.camera.zoomAt(point.x, point.y, event.deltaY < 0 ? 1.12 : 0.88);
-		this.callbacks.onLayoutChanged?.(this.getLayoutSnapshot());
-		this.requestDraw();
-	};
-
-	private readonly onDoubleClick = (event: MouseEvent): void => {
-		if (this.win.performance.now() < this.suppressMouseUntil) return;
-		const point = this.pointerPosition(event);
-		if (!point) return;
-		const node = this.nodeAt(point.x, point.y);
-		if (!node) {
-			this.fitToContent();
-			return;
-		}
-		if (!isResolvedAtlasPersonNode(node)) return;
-		if (event.shiftKey) this.callbacks.onOpenNode(node);
-		else this.callbacks.onCenterNode(node);
-	};
-
-	private readonly onCanvasKeyDown = (event: KeyboardEvent): void => {
-		if (event.key === "Escape") this.selectNode(undefined, "canvas");
-		if (event.key === "Enter" && this.selectedId) {
-			const node = this.nodeById(this.selectedId);
-			if (isResolvedAtlasPersonNode(node)) this.callbacks.onOpenNode(node);
-		}
-		if (event.key.toLowerCase() === "f") this.fitToContent();
-	};
-}
-
-function personMetadata(node: AtlasNode, translator: Translator): string {
-	if (isAmbiguousAtlasNode(node)) return translator.atlasRenderer.ambiguousPerson;
-	if (node.kind === "ghost") return translator.atlasRenderer.unresolvedPerson;
-	return node.organisations.join(", ");
-}
-
-function personAccessibleName(node: AtlasNode, translator: Translator): string {
-	if (isAmbiguousAtlasNode(node)) return `${node.label}, ${translator.atlasRenderer.ambiguousPersonListLabel}`;
-	if (node.kind === "ghost") return `${node.label}, ${translator.atlasRenderer.unresolvedPersonListLabel}`;
-	return node.organisations.length > 0 ? `${node.label}, ${node.organisations.join(", ")}` : node.label;
 }

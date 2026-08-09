@@ -72,7 +72,6 @@ export class PersonMentionSuggest extends EditorSuggest<PersonMentionSuggestion>
 						})
 					: item.name,
 		});
-		if (item.kind === "person") el.createDiv({ text: item.filePath, cls: "suggestion-note" });
 	}
 
 	override selectSuggestion(item: PersonMentionSuggestion, _evt: MouseEvent | KeyboardEvent): void {

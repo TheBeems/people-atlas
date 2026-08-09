@@ -49,6 +49,46 @@ describe("person mention parsing", () => {
 		});
 	});
 
+	it("renders only the person name for an existing @ suggestion", () => {
+		const suggest = new PersonMentionSuggest(
+			{ vault: { getAllLoadedFiles: () => [] } } as unknown as App,
+			{
+				getSnapshot: () => ({
+					people: [
+						{
+							id: "person-123",
+							filePath: "People/Profiles/Jan Jansen/Jan Jansen.md",
+							name: "Jan Jansen",
+							aliases: [],
+							organisations: [],
+							emails: [],
+							phones: [],
+							contacts: [],
+						},
+					],
+					relationships: [],
+					contactMoments: [],
+					diagnostics: [],
+				}),
+			},
+			{ createPerson: vi.fn() } as unknown as AtlasMutationService,
+			() => DEFAULT_SETTINGS,
+		);
+		const element = { createDiv: vi.fn() } as unknown as HTMLElement & { createDiv: ReturnType<typeof vi.fn> };
+
+		suggest.renderSuggestion(
+			{
+				kind: "person",
+				name: "Jan Jansen",
+				filePath: "People/Profiles/Jan Jansen/Jan Jansen.md",
+				personId: "person-123",
+			},
+			element,
+		);
+
+		expect(element.createDiv).toHaveBeenCalledExactlyOnceWith({ text: "Jan Jansen" });
+	});
+
 	it("plans one explicit UUID-backed person ID before an @ create action writes", async () => {
 		vi.spyOn(crypto, "randomUUID").mockReturnValue("12345678-90ab-4cde-8f01-23456789abcd");
 		const createdFile = { path: "People/Profiles/Zoë Example/Zoë Example.md" } as TFile;

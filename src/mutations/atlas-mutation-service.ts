@@ -54,6 +54,9 @@ import {
 	type RelationshipMutationInput,
 	type RelationshipUpdates,
 } from "./validation";
+import { ContactMomentMutationCoordinator } from "./contact-moment-coordinator";
+import { PersonMutationCoordinator } from "./person-mutation-coordinator";
+import { RelationshipMutationCoordinator } from "./relationship-mutation-coordinator";
 
 export class MutationError extends Error {
 	constructor(message: string) {
@@ -161,6 +164,9 @@ export class AtlasMutationService {
 	private readonly index: MutationIndex;
 	private readonly generateId: () => string;
 	private readonly generateContactMomentId: () => string;
+	private readonly personMutations: PersonMutationCoordinator;
+	private readonly relationshipMutations: RelationshipMutationCoordinator;
+	private readonly contactMomentMutations: ContactMomentMutationCoordinator;
 
 	constructor(
 		private readonly app: App,
@@ -173,29 +179,50 @@ export class AtlasMutationService {
 		this.index = index as MutationIndex;
 		this.generateId = generateId;
 		this.generateContactMomentId = generateContactMomentId;
+		this.personMutations = new PersonMutationCoordinator({
+			createPerson: (input) => this.runExclusive(() => this.createPersonExclusive(input)),
+			updatePerson: (file, updates, options) =>
+				this.runExclusive(() => this.updatePersonExclusive(file, updates, options)),
+		});
+		this.relationshipMutations = new RelationshipMutationCoordinator({
+			createRelationship: (input) => this.runExclusive(() => this.createRelationshipExclusive(input)),
+			updateRelationship: (file, updates) => this.runExclusive(() => this.updateRelationshipExclusive(file, updates)),
+			syncRelationshipPreset: (file, approvedBefore, updates) =>
+				this.runExclusive(() => this.syncRelationshipPresetExclusive(file, approvedBefore, updates)),
+		});
+		this.contactMomentMutations = new ContactMomentMutationCoordinator({
+			createContactMoment: (input, options) =>
+				this.runExclusive(() => this.createContactMomentExclusive(input, options)),
+			updateContactMoment: (file, input, updates, options) =>
+				this.runExclusive(() => this.updateContactMomentExclusive(file, input, updates, options)),
+			updateContactMomentFollowUpStatus: (input) =>
+				this.runExclusive(() => this.updateContactMomentFollowUpStatusExclusive(input)),
+			retryContactMomentRelationship: (retry) =>
+				this.runExclusive(() => this.retryContactMomentRelationshipExclusive(retry)),
+		});
 	}
 
 	createPerson(input: PersonMutationInput): Promise<TFile> {
-		return this.runExclusive(() => this.createPersonExclusive(input));
+		return this.personMutations.createPerson(input);
 	}
 
 	createRelationship(input: RelationshipMutationInput): Promise<TFile> {
-		return this.runExclusive(() => this.createRelationshipExclusive(input));
+		return this.relationshipMutations.createRelationship(input);
 	}
 
 	updatePerson(file: TFile, updates: PersonUpdates, options: PersonEditOptions = {}): Promise<PersonEditResult> {
-		return this.runExclusive(() => this.updatePersonExclusive(file, updates, options));
+		return this.personMutations.updatePerson(file, updates, options);
 	}
 
 	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void> {
-		return this.runExclusive(() => this.updateRelationshipExclusive(file, updates));
+		return this.relationshipMutations.updateRelationship(file, updates);
 	}
 
 	createContactMoment(
 		input: ContactMomentMutationInput,
 		options: ContactMomentSaveOptions,
 	): Promise<ContactMomentMutationResult> {
-		return this.runExclusive(() => this.createContactMomentExclusive(input, options));
+		return this.contactMomentMutations.createContactMoment(input, options);
 	}
 
 	updateContactMoment(
@@ -204,19 +231,19 @@ export class AtlasMutationService {
 		updates: ContactMomentUpdates,
 		options: ContactMomentUpdateOptions,
 	): Promise<ContactMomentMutationResult> {
-		return this.runExclusive(() => this.updateContactMomentExclusive(file, input, updates, options));
+		return this.contactMomentMutations.updateContactMoment(file, input, updates, options);
 	}
 
 	updateContactMomentFollowUpStatus(
 		input: ContactMomentFollowUpStatusMutationInput,
 	): Promise<ContactMomentFollowUpStatusMutationResult> {
-		return this.runExclusive(() => this.updateContactMomentFollowUpStatusExclusive(input));
+		return this.contactMomentMutations.updateContactMomentFollowUpStatus(input);
 	}
 
 	retryContactMomentRelationship(
 		retry: ContactMomentRelationshipRetryToken,
 	): Promise<ContactMomentRelationshipRetryResult> {
-		return this.runExclusive(() => this.retryContactMomentRelationshipExclusive(retry));
+		return this.contactMomentMutations.retryContactMomentRelationship(retry);
 	}
 
 	syncRelationshipPreset(
@@ -224,7 +251,7 @@ export class AtlasMutationService {
 		approvedBefore: RelationshipPresetValues,
 		updates: RelationshipPresetSyncUpdates,
 	): Promise<RelationshipPresetSyncMutationResult> {
-		return this.runExclusive(() => this.syncRelationshipPresetExclusive(file, approvedBefore, updates));
+		return this.relationshipMutations.syncRelationshipPreset(file, approvedBefore, updates);
 	}
 
 	private async createPersonExclusive(input: PersonMutationInput): Promise<TFile> {

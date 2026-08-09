@@ -60,6 +60,18 @@ huidige pickerimplementatie defect is.
 - `test/browser/partner-parent-relationship-modal.browser.test.ts`
 - `test/integration/partner-parent-confirmation.integration.test.ts`
 
+## Assumptions
+
+- Record-backed: the existing identity, relationship-editor and safe-mutation
+  specs remain authoritative; this ticket does not change canonical identity,
+  display labels, persistence or Save-boundary behavior.
+- User-ratified scope: this is an open verification/coverage follow-up, not a
+  claim that the current relationship picker is defective.
+- Native Obsidian Desktop/Mobile/WebView/IME behavior is outside Chromium
+  evidence and requires separate host validation.
+- No implementation, source/test change, vault write or external publication is
+  authorized by this open record.
+
 ## Journal
 
 - 2026-08-09 opened from the independent post-repair review findings. The

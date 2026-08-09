@@ -1,20 +1,8 @@
-import { Modal, Notice, TFile, type App, type EventRef } from "obsidian";
-import {
-	canonicalPersonPhotoWikilink,
-	dossierPersonPhotoAssets,
-	filterPersonPhotoAssets,
-	isExternalPhotoReference,
-	isSupportedPersonPhotoPath,
-	personPhotoInitials,
-	supportedPersonPhotoAssets,
-	type PersonPhotoAsset,
-} from "../domain/person-photo";
-import { personDossierPathFromProfile } from "../domain/people-paths";
+import { Modal, Notice, type App, type TFile } from "obsidian";
 import type { PersonRecord } from "../domain/types";
-import { parsePersonReference } from "../domain/wikilink";
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
 import type { PersonEditSourceBaseline } from "../mutations/person-source-guard";
-import { resolvePersonPhotoResource } from "../person-photo-resource";
+import { PersonPhotoPicker } from "./person-photo-picker";
 import type { PeopleAtlasSettings } from "../settings/types";
 import { createTranslator, type Translator } from "../i18n";
 import {
@@ -58,15 +46,6 @@ interface PersonInputOptions {
 	onInput?(value: string): void;
 }
 
-type PersonPhotoResolution =
-	| { status: "empty" }
-	| { status: "unreadable" }
-	| { status: "missing" }
-	| { status: "unsupported" }
-	| { status: "external" }
-	| { status: "unavailable" }
-	| { status: "ready"; file: TFile };
-
 let personModalSequence = 0;
 
 export class PersonModal extends Modal {
@@ -85,16 +64,7 @@ export class PersonModal extends Modal {
 	private emailErrorEls: HTMLElement[] = [];
 	private phoneInputs: HTMLInputElement[] = [];
 	private phoneErrorEls: HTMLElement[] = [];
-	private photoInput: HTMLInputElement | undefined;
-	private photoSearchInput: HTMLInputElement | undefined;
-	private photoSelect: HTMLSelectElement | undefined;
-	private photoPreviewEl: HTMLElement | undefined;
-	private photoInitialsEl: HTMLElement | undefined;
-	private photoImageEl: HTMLImageElement | undefined;
-	private photoStatusEl: HTMLElement | undefined;
-	private filteredPhotoAssets: PersonPhotoAsset[] = [];
-	private photoPreviewSequence = 0;
-	private photoEventRefs: EventRef[] = [];
+	private readonly photoPicker: PersonPhotoPicker | undefined;
 	private advancedOpen = false;
 
 	constructor(
@@ -107,20 +77,11 @@ export class PersonModal extends Modal {
 		private readonly t: Translator = createTranslator("en"),
 	) {
 		super(app);
-		const getCurrentPhotoAssets = () => this.currentPhotoAssets();
 		if (mode.kind === "create") {
 			const personId = `person-${crypto.randomUUID()}`;
 			this.values = createPersonFormValues(getSettings().peopleRootFolder, personId);
 			this.originalValues = undefined;
-			this.session = new PersonFormSession(
-				{ kind: "create" },
-				mutations,
-				people,
-				getCurrentPeople,
-				getCurrentPhotoAssets,
-				() => getSettings().peopleRootFolder,
-				() => this.app.vault.getAllLoadedFiles().map((file) => file.path),
-			);
+			this.session = new PersonFormSession({ kind: "create" }, mutations, people, getCurrentPeople);
 		} else {
 			this.values = editPersonFormValues(
 				mode.person,
@@ -129,6 +90,14 @@ export class PersonModal extends Modal {
 				(target, sourcePath) => app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
 			);
 			this.originalValues = structuredClone(this.values);
+			this.photoPicker = new PersonPhotoPicker({
+				app,
+				mode: { kind: "edit", file: mode.file, personId: mode.person.id },
+				values: this.values,
+				getSettings,
+				getCurrentPeople,
+				translator: this.t,
+			});
 			this.session = new PersonFormSession(
 				{
 					kind: "edit",
@@ -140,21 +109,24 @@ export class PersonModal extends Modal {
 				mutations,
 				people,
 				getCurrentPeople,
-				getCurrentPhotoAssets,
-				() => getSettings().peopleRootFolder,
-				() => this.app.vault.getAllLoadedFiles().map((file) => file.path),
+				(values) => {
+					if (!this.photoPicker) {
+						throw new Error("Choose a supported photo with the photo picker, or clear the existing photo.");
+					}
+					this.photoPicker.validateSelection(values);
+				},
 			);
 		}
 	}
 
 	override onOpen(): void {
 		this.contentEl.classList.add("people-atlas-person-modal");
-		if (this.mode.kind === "edit") this.registerPhotoAssetListeners();
+		this.photoPicker?.registerAssetListeners();
 		this.renderForm();
 	}
 
 	override onClose(): void {
-		this.unregisterPhotoAssetListeners();
+		this.photoPicker?.unregisterAssetListeners();
 		this.session.cancel();
 		this.contentEl.replaceChildren();
 		this.resetControls();
@@ -179,7 +151,7 @@ export class PersonModal extends Modal {
 			onInput: (value) => {
 				this.values.name = value;
 				this.refreshPathPreview();
-				this.refreshPhotoInitials();
+				this.photoPicker?.refreshInitials();
 			},
 		});
 		if (this.mode.kind === "create") {
@@ -188,7 +160,7 @@ export class PersonModal extends Modal {
 			photoHint.setAttribute("role", "note");
 			photoHint.textContent = this.t.personModal.createPhotoHint;
 			basic.append(photoHint);
-		} else this.addPhotoControl(basic);
+		} else this.photoPicker?.append(basic);
 		this.addTextarea(basic, {
 			label: this.t.personModal.aliases,
 			description: this.t.personModal.aliasesDescription,
@@ -302,293 +274,8 @@ export class PersonModal extends Modal {
 		this.contentEl.append(form);
 		this.refreshPathPreview();
 		this.refreshProfileErrors();
-		if (this.mode.kind === "edit") this.refreshPhotoPreview();
+		this.photoPicker?.refreshPreview();
 		this.restoreFocus(focusTarget);
-	}
-
-	private addPhotoControl(container: HTMLElement): void {
-		const document = container.ownerDocument;
-		const section = document.createElement("section");
-		section.className = "people-atlas-person-photo";
-
-		this.photoPreviewEl = document.createElement("div");
-		this.photoPreviewEl.className = "people-atlas-person-photo-preview";
-		this.photoPreviewEl.dataset.photoStatus = "empty";
-		const frame = document.createElement("div");
-		frame.className = "people-atlas-person-photo-frame";
-		this.photoInitialsEl = document.createElement("span");
-		this.photoInitialsEl.className = "people-atlas-person-photo-initials";
-		this.photoInitialsEl.setAttribute("aria-hidden", "true");
-		frame.append(this.photoInitialsEl);
-		this.photoStatusEl = document.createElement("p");
-		this.photoStatusEl.id = `people-atlas-person-photo-status-${++personModalSequence}`;
-		this.photoStatusEl.className = "people-atlas-person-photo-status";
-		this.photoStatusEl.setAttribute("role", "status");
-		this.photoStatusEl.setAttribute("aria-live", "polite");
-		this.photoPreviewEl.append(frame, this.photoStatusEl);
-		section.append(this.photoPreviewEl);
-		this.refreshPhotoInitials();
-
-		this.photoInput = this.addInput(section, {
-			label: this.t.personModal.photo,
-			description: this.t.personModal.photoDescription,
-			value: this.values.photo,
-			readOnly: true,
-		});
-		appendDescribedBy(this.photoInput, this.photoStatusEl.id);
-
-		this.photoSearchInput = this.addInput(section, {
-			label: this.t.personModal.searchDossierImages,
-			description: this.t.personModal.searchDossierImagesDescription,
-			value: "",
-			type: "search",
-			inputMode: "search",
-			onInput: () => this.refreshPhotoPickerOptions(),
-		});
-		this.photoSearchInput.addEventListener("keydown", (event) => {
-			const firstAsset = this.filteredPhotoAssets[0];
-			if (!firstAsset) return;
-			if (event.key === "ArrowDown") {
-				event.preventDefault();
-				if (this.photoSelect) {
-					this.photoSelect.value = firstAsset.path;
-					this.photoSelect.focus();
-				}
-			} else if (event.key === "Enter") {
-				event.preventDefault();
-				this.selectPhotoAsset(firstAsset.path);
-			}
-		});
-
-		const selectRow = document.createElement("div");
-		selectRow.className = "people-atlas-form-field";
-		const selectId = `people-atlas-person-photo-select-${++personModalSequence}`;
-		const selectDescriptionId = `${selectId}-description`;
-		const selectLabel = document.createElement("label");
-		selectLabel.htmlFor = selectId;
-		selectLabel.textContent = this.t.personModal.dossierImage;
-		const selectDescription = document.createElement("small");
-		selectDescription.id = selectDescriptionId;
-		selectDescription.textContent = this.t.personModal.dossierImageDescription;
-		this.photoSelect = document.createElement("select");
-		this.photoSelect.id = selectId;
-		this.photoSelect.dataset.personPhotoSelect = "true";
-		this.photoSelect.setAttribute("aria-describedby", `${selectDescriptionId} ${this.photoStatusEl.id}`);
-		this.photoSelect.addEventListener("change", () => {
-			const path = this.photoSelect?.value;
-			if (path) this.selectPhotoAsset(path);
-		});
-		selectRow.append(selectLabel, selectDescription, this.photoSelect);
-		section.append(selectRow);
-
-		const actions = document.createElement("div");
-		actions.className = "people-atlas-person-photo-actions";
-		const clear = document.createElement("button");
-		clear.type = "button";
-		clear.textContent = this.t.personModal.clearPhoto;
-		clear.addEventListener("click", () => {
-			this.values.photo = "";
-			this.values.photoSelectionPath = undefined;
-			if (this.photoInput) this.photoInput.value = "";
-			if (this.photoSelect) this.photoSelect.value = "";
-			this.refreshPhotoPreview();
-			this.photoInput?.focus();
-		});
-		actions.append(clear);
-		section.append(actions);
-		container.append(section);
-		this.refreshPhotoPickerOptions();
-	}
-
-	private currentPhotoAssets(): PersonPhotoAsset[] {
-		if (this.mode.kind !== "edit") return [];
-		const personId = this.mode.person.id;
-		const dossierPath = personDossierPathFromProfile(
-			this.getSettings().peopleRootFolder,
-			this.mode.file.path,
-			personId,
-			this.app.vault.getAllLoadedFiles().map((file) => file.path),
-			this.getCurrentPeople(),
-		);
-		if (!dossierPath) return [];
-		return dossierPersonPhotoAssets(
-			supportedPersonPhotoAssets(this.app.vault.getFiles().map((file) => file.path)),
-			dossierPath,
-		);
-	}
-
-	private refreshPhotoPickerOptions(): void {
-		if (!this.photoSelect) return;
-		const assets = this.currentPhotoAssets();
-		this.filteredPhotoAssets = filterPersonPhotoAssets(assets, this.photoSearchInput?.value ?? "");
-		const document = this.photoSelect.ownerDocument;
-		const placeholder = document.createElement("option");
-		placeholder.value = "";
-		if (assets.length === 0) placeholder.textContent = this.t.personModal.noSupportedDossierImages;
-		else if (this.filteredPhotoAssets.length === 0) placeholder.textContent = this.t.personModal.noDossierImagesMatch;
-		else placeholder.textContent = this.t.personModal.chooseDossierImage;
-		this.photoSelect.replaceChildren(placeholder);
-		for (const asset of this.filteredPhotoAssets) {
-			const option = document.createElement("option");
-			option.value = asset.path;
-			option.textContent = `${asset.path.slice(asset.path.lastIndexOf("/") + 1)} — ${asset.path}`;
-			this.photoSelect.append(option);
-		}
-		const pendingPath = this.values.photoSelectionPath;
-		this.photoSelect.value =
-			pendingPath && this.filteredPhotoAssets.some((asset) => asset.path === pendingPath) ? pendingPath : "";
-	}
-
-	private selectPhotoAsset(path: string): void {
-		const matches = this.currentPhotoAssets().filter((asset) => asset.path === path);
-		const asset = matches.length === 1 ? matches[0] : undefined;
-		if (!asset) {
-			this.showPhotoFallback("missing", this.t.personModal.selectedPhotoUnavailable({ path }));
-			this.refreshPhotoPickerOptions();
-			return;
-		}
-		this.values.photo = canonicalPersonPhotoWikilink(asset.path);
-		this.values.photoSelectionPath = asset.path;
-		if (this.photoInput) this.photoInput.value = this.values.photo;
-		if (this.photoSelect) this.photoSelect.value = asset.path;
-		this.refreshPhotoPreview();
-	}
-
-	private refreshPhotoPreview(): void {
-		const preview = this.photoPreviewEl;
-		const initials = this.photoInitialsEl;
-		const status = this.photoStatusEl;
-		if (!preview || !initials || !status) return;
-		const sequence = ++this.photoPreviewSequence;
-		this.photoImageEl?.remove();
-		this.photoImageEl = undefined;
-		initials.hidden = false;
-
-		const resolution = this.resolvePhoto();
-		if (resolution.status !== "ready") {
-			this.showPhotoFallback(resolution.status, this.photoFallbackMessage(resolution.status));
-			return;
-		}
-
-		const resource = resolvePersonPhotoResource(this.app, resolution.file.path);
-		if (resource.status !== "ready") {
-			const fallbackStatus =
-				resource.status === "missing" || resource.status === "unsupported" ? resource.status : "unavailable";
-			this.showPhotoFallback(fallbackStatus, this.photoFallbackMessage(fallbackStatus));
-			return;
-		}
-
-		const image = preview.ownerDocument.createElement("img");
-		image.className = "people-atlas-person-photo-image";
-		image.alt = "";
-		image.decoding = "async";
-		image.hidden = true;
-		this.photoImageEl = image;
-		const frame = preview.querySelector(".people-atlas-person-photo-frame");
-		frame?.append(image);
-		preview.dataset.photoStatus = "loading";
-		status.hidden = false;
-		status.textContent = this.t.personModal.photoLoading;
-		image.addEventListener("load", () => {
-			if (!this.isCurrentPhotoImage(image, sequence)) return;
-			image.hidden = false;
-			initials.hidden = true;
-			preview.dataset.photoStatus = "ready";
-			status.textContent = "";
-			status.hidden = true;
-		});
-		image.addEventListener("error", () => {
-			if (!this.isCurrentPhotoImage(image, sequence)) return;
-			image.hidden = true;
-			initials.hidden = false;
-			preview.dataset.photoStatus = "decode-error";
-			status.hidden = false;
-			status.textContent = this.t.personModal.photoDecodeError;
-		});
-		image.src = resource.resourceUrl;
-	}
-
-	private resolvePhoto(): PersonPhotoResolution {
-		const rawPhoto = this.values.photo;
-		if (!rawPhoto.trim()) return { status: "empty" };
-		if (isExternalPhotoReference(rawPhoto)) return { status: "external" };
-		const target = parsePersonReference(rawPhoto)?.target.trim();
-		if (!target) return { status: "unreadable" };
-		if (isExternalPhotoReference(target)) return { status: "external" };
-
-		let file: TFile | undefined;
-		if (this.values.photoSelectionPath !== undefined) {
-			const matches = this.app.vault
-				.getFiles()
-				.filter((candidate) => candidate.path === this.values.photoSelectionPath);
-			file = matches.length === 1 ? matches[0] : undefined;
-		} else {
-			const exact = this.app.vault.getAbstractFileByPath(target);
-			if (exact instanceof TFile) file = exact;
-			else {
-				const resolved = this.app.metadataCache.getFirstLinkpathDest(target, this.photoSourcePath());
-				if (resolved) file = resolved;
-			}
-		}
-		if (!file) return { status: pathHasUnsupportedExtension(target) ? "unsupported" : "missing" };
-		if (!isSupportedPersonPhotoPath(file.path)) return { status: "unsupported" };
-		return { status: "ready", file };
-	}
-
-	private photoFallbackMessage(status: Exclude<PersonPhotoResolution["status"], "ready">): string {
-		switch (status) {
-			case "empty":
-				return this.t.personModal.photoEmpty;
-			case "external":
-				return this.t.personModal.photoExternal;
-			case "unreadable":
-				return this.t.personModal.photoUnreadable;
-			case "missing":
-				return this.t.personModal.photoMissing;
-			case "unsupported":
-				return this.t.personModal.photoUnsupported;
-			case "unavailable":
-				return this.t.personModal.photoUnavailable;
-		}
-	}
-
-	private photoSourcePath(): string {
-		return this.mode.kind === "edit" ? this.mode.file.path : this.values.path;
-	}
-
-	private showPhotoFallback(status: Exclude<PersonPhotoResolution["status"], "ready">, message: string): void {
-		if (!this.photoPreviewEl || !this.photoInitialsEl || !this.photoStatusEl) return;
-		this.photoPreviewEl.dataset.photoStatus = status;
-		this.photoInitialsEl.hidden = false;
-		this.photoStatusEl.hidden = false;
-		this.photoStatusEl.textContent = message;
-	}
-
-	private refreshPhotoInitials(): void {
-		if (this.photoInitialsEl) this.photoInitialsEl.textContent = personPhotoInitials(this.values.name);
-	}
-
-	private isCurrentPhotoImage(image: HTMLImageElement, sequence: number): boolean {
-		return image === this.photoImageEl && sequence === this.photoPreviewSequence && image.isConnected;
-	}
-
-	private registerPhotoAssetListeners(): void {
-		this.unregisterPhotoAssetListeners();
-		const refresh = () => {
-			this.refreshPhotoPickerOptions();
-			this.refreshPhotoPreview();
-		};
-		this.photoEventRefs = [
-			this.app.vault.on("create", refresh),
-			this.app.vault.on("modify", refresh),
-			this.app.vault.on("delete", refresh),
-			this.app.vault.on("rename", refresh),
-		];
-	}
-
-	private unregisterPhotoAssetListeners(): void {
-		for (const eventRef of this.photoEventRefs) this.app.vault.offref(eventRef);
-		this.photoEventRefs = [];
 	}
 
 	private addBirthDateControl(container: HTMLElement): void {
@@ -1069,7 +756,6 @@ export class PersonModal extends Modal {
 	}
 
 	private resetControls(): void {
-		this.photoPreviewSequence += 1;
 		this.errorEl = undefined;
 		this.saveButton = undefined;
 		this.advancedDetails = undefined;
@@ -1082,14 +768,6 @@ export class PersonModal extends Modal {
 		this.emailErrorEls = [];
 		this.phoneInputs = [];
 		this.phoneErrorEls = [];
-		this.photoInput = undefined;
-		this.photoSearchInput = undefined;
-		this.photoSelect = undefined;
-		this.photoPreviewEl = undefined;
-		this.photoInitialsEl = undefined;
-		this.photoImageEl = undefined;
-		this.photoStatusEl = undefined;
-		this.filteredPhotoAssets = [];
 	}
 }
 
@@ -1113,9 +791,4 @@ function appendDescribedBy(control: HTMLElement, id: string): void {
 function setAriaInvalid(control: HTMLElement, invalid: boolean): void {
 	if (invalid) control.setAttribute("aria-invalid", "true");
 	else control.removeAttribute("aria-invalid");
-}
-
-function pathHasUnsupportedExtension(path: string): boolean {
-	const filename = path.slice(path.lastIndexOf("/") + 1);
-	return filename.includes(".") && !isSupportedPersonPhotoPath(path);
 }

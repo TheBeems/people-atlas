@@ -13,10 +13,8 @@ import { PeopleAtlasBasesView } from "./bases/people-atlas-bases-view";
 import { BASES_VIEW_TYPE_PEOPLE_ATLAS, VIEW_TYPE_PEOPLE_ATLAS } from "./constants";
 import { PersonIndex } from "./index/person-index";
 import { AtlasMutationService } from "./mutations/atlas-mutation-service";
-import {
-	captureContactMomentEditSourceBaseline,
-	type ContactMomentEditSourceBaseline,
-} from "./mutations/contact-moment";
+import { CanonicalEntryPointResolver, type CanonicalContactMomentResolution } from "./entrypoints/canonical-resolution";
+import { captureContactMomentEditSourceBaseline } from "./mutations/contact-moment";
 import { capturePersonEditSourceBaseline } from "./mutations/person-source-guard";
 import { PersonMentionSuggest } from "./editor/person-mention-suggest";
 import { PersonModal } from "./editor/person-modal";
@@ -67,11 +65,7 @@ export interface MyPersonCandidate {
 	filePath: string;
 }
 
-interface ResolvedCanonicalContactMoment {
-	file: TFile;
-	contactMoment: ContactMomentRecord;
-	sourceBaseline: ContactMomentEditSourceBaseline;
-}
+type ResolvedCanonicalContactMoment = CanonicalContactMomentResolution;
 
 export default class PeopleAtlasPlugin extends Plugin {
 	override settings: PeopleAtlasSettings = structuredClone(DEFAULT_SETTINGS);
@@ -89,6 +83,42 @@ export default class PeopleAtlasPlugin extends Plugin {
 		() => this.settingsWriteEnabled,
 		this.index,
 	);
+	private readonly canonicalResolver = new CanonicalEntryPointResolver({
+		people: () => this.index.getSnapshot().people,
+		relationships: () => this.index.getSnapshot().relationships,
+		contactMoments: () => this.index.getSnapshot().contactMoments ?? [],
+		file: (path) => this.app.vault.getAbstractFileByPath(path),
+		readPerson: (file) => {
+			const cache = this.app.metadataCache.getFileCache(file);
+			const person = parseAtlasFile(this.app, file, cache, this.settings).person;
+			if (!person) return undefined;
+			const rawType = cache?.frontmatter?.[this.settings.typeProperty];
+			return {
+				file,
+				person,
+				frontmatter: cache?.frontmatter ?? {},
+				personClassification:
+					typeof rawType === "string" &&
+					rawType.trim().toLowerCase() === this.settings.personTypeValue.trim().toLowerCase()
+						? "type"
+						: "tag",
+			};
+		},
+		readRelationship: (file) => {
+			const cache = this.app.metadataCache.getFileCache(file);
+			return parseAtlasFile(this.app, file, cache, this.settings).relationship;
+		},
+		readContactMoment: (file) => {
+			const cache = this.app.metadataCache.getFileCache(file);
+			const contactMoment = parseAtlasFile(this.app, file, cache, this.settings).contactMoment;
+			if (!contactMoment) return undefined;
+			return {
+				file,
+				contactMoment,
+				sourceBaseline: captureContactMomentEditSourceBaseline(cache?.frontmatter ?? {}, this.settings),
+			};
+		},
+	});
 
 	override async onload(): Promise<void> {
 		const lifecycleGeneration = ++this.lifecycleGeneration;
@@ -883,66 +913,21 @@ export default class PeopleAtlasPlugin extends Plugin {
 	private resolveCanonicalRelationship(
 		relationshipPath: string,
 	): { file: TFile; relationship: RelationshipRecord } | undefined {
-		const relationships = this.index.getSnapshot().relationships;
-		const canonicalMatches = relationships.filter((candidate) => candidate.filePath === relationshipPath);
-		if (canonicalMatches.length !== 1) return undefined;
-		const indexedRelationship = canonicalMatches[0];
-		if (!indexedRelationship) return undefined;
-		if (relationships.filter((candidate) => candidate.id === indexedRelationship.id).length !== 1) return undefined;
-
-		const file = this.app.vault.getAbstractFileByPath(relationshipPath);
-		if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return undefined;
-		const cache = this.app.metadataCache.getFileCache(file);
-		const currentRelationship = parseAtlasFile(this.app, file, cache, this.settings).relationship;
-		if (!currentRelationship || currentRelationship.id !== indexedRelationship.id) return undefined;
-
-		return { file, relationship: currentRelationship };
+		return this.canonicalResolver.resolveRelationship(relationshipPath);
 	}
 
 	private resolveCanonicalContactMoment(contactMomentPath: string): ResolvedCanonicalContactMoment | undefined {
-		const contactMoments = this.index.getSnapshot().contactMoments ?? [];
-		const pathMatches = contactMoments.filter((candidate) => candidate.filePath === contactMomentPath);
-		if (pathMatches.length !== 1) return undefined;
-		const indexedContactMoment = pathMatches[0];
-		if (
-			!indexedContactMoment ||
-			contactMoments.filter((candidate) => candidate.id === indexedContactMoment.id).length !== 1
-		) {
-			return undefined;
-		}
-
-		const file = this.app.vault.getAbstractFileByPath(contactMomentPath);
-		if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return undefined;
-		const cache = this.app.metadataCache.getFileCache(file);
-		const currentContactMoment = parseAtlasFile(this.app, file, cache, this.settings).contactMoment;
-		if (!currentContactMoment || currentContactMoment.id !== indexedContactMoment.id) return undefined;
-		const sourceBaseline = captureContactMomentEditSourceBaseline(cache?.frontmatter ?? {}, this.settings);
-		return { file, contactMoment: currentContactMoment, sourceBaseline };
+		return this.canonicalResolver.resolveContactMoment(contactMomentPath);
 	}
 
 	private resolveCanonicalContactMomentSummary(
 		moment: ContactMomentSummary,
 	): ResolvedCanonicalContactMoment | undefined {
-		const target = this.resolveCanonicalContactMoment(moment.filePath);
-		if (!target || target.contactMoment.id !== moment.id) return undefined;
-		return this.resolveIndexedContactMomentSummary(moment) ? target : undefined;
+		return this.canonicalResolver.resolveContactMomentSummary(moment);
 	}
 
 	private resolveIndexedContactMomentSummary(moment: ContactMomentSummary): ContactMomentRecord | undefined {
-		const indexedMatches = (this.index.getSnapshot().contactMoments ?? []).filter(
-			(candidate) => candidate.id === moment.id && candidate.filePath === moment.filePath,
-		);
-		const indexed = indexedMatches.length === 1 ? indexedMatches[0] : undefined;
-		if (
-			!indexed?.actionable ||
-			indexed.occurredOn !== moment.occurredOn ||
-			indexed.relationshipId !== moment.relationshipId ||
-			indexed.personIds.length !== moment.personIds.length ||
-			indexed.personIds.some((personId, index) => personId !== moment.personIds[index])
-		) {
-			return undefined;
-		}
-		return indexed;
+		return this.canonicalResolver.resolveIndexedContactMomentSummary(moment);
 	}
 
 	private contactMomentContext(): ContactMomentFormContext {
@@ -962,30 +947,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				personClassification: "type" | "tag";
 		  }
 		| undefined {
-		const people = this.index.getSnapshot().people;
-		const pathMatches = people.filter((candidate) => candidate.filePath === personPath);
-		if (pathMatches.length !== 1) return undefined;
-		const indexedPerson = pathMatches[0];
-		if (!indexedPerson || people.filter((candidate) => candidate.id === indexedPerson.id).length !== 1) {
-			return undefined;
-		}
-
-		const file = this.app.vault.getAbstractFileByPath(personPath);
-		if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md") return undefined;
-		const cache = this.app.metadataCache.getFileCache(file);
-		const currentPerson = parseAtlasFile(this.app, file, cache, this.settings).person;
-		if (!currentPerson || currentPerson.id !== indexedPerson.id) return undefined;
-		const rawType = cache?.frontmatter?.[this.settings.typeProperty];
-		const personClassification =
-			typeof rawType === "string" && rawType.trim().toLowerCase() === this.settings.personTypeValue.trim().toLowerCase()
-				? "type"
-				: "tag";
-		return {
-			file,
-			person: currentPerson,
-			frontmatter: cache?.frontmatter ?? {},
-			personClassification,
-		};
+		return this.canonicalResolver.resolvePerson(personPath);
 	}
 
 	private noticePersonWritesDisabled(): void {

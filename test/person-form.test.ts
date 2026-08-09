@@ -1,6 +1,6 @@
-import type { TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
-import { canonicalPersonPhotoWikilink, supportedPersonPhotoAssets } from "../src/domain/person-photo";
+import { canonicalPersonPhotoWikilink } from "../src/domain/person-photo";
 import { personDossierPathFromProfile, personProfilePath } from "../src/domain/people-paths";
 import type { PersonRecord } from "../src/domain/types";
 import {
@@ -16,7 +16,11 @@ import {
 	proposeCreatePersonPath,
 	proposePersonRenamePath,
 	type PersonMutationPort,
+	type PersonPhotoSelectionValidator,
 } from "../src/editor/person-form";
+import { PersonPhotoPicker } from "../src/editor/person-photo-picker";
+import { createTranslator } from "../src/i18n";
+import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import { UNSAFE_PEOPLE_ROOT_CASES } from "./people-root-fixtures";
 
 const alice: PersonRecord = {
@@ -54,6 +58,40 @@ function mutationPort(): PersonMutationPort {
 		createPerson: vi.fn(async () => ({ path: "People/Created.md" }) as TFile),
 		updatePerson: vi.fn(async (file) => ({ file, renamed: true })),
 	};
+}
+
+function photoPickerFor(options: {
+	person: PersonRecord;
+	people: () => PersonRecord[];
+	assetPaths: () => string[];
+	loadedPaths?: () => string[];
+	peopleRootFolder?: string;
+}): PersonPhotoPicker {
+	const app = {
+		vault: {
+			getAllLoadedFiles: () =>
+				(options.loadedPaths?.() ?? [options.person.filePath, ...options.assetPaths()]).map(
+					(path) => ({ path }) as TFile,
+				),
+			getFiles: () => options.assetPaths().map((path) => ({ path }) as TFile),
+			on: vi.fn(),
+			offref: vi.fn(),
+		},
+		metadataCache: { getFirstLinkpathDest: () => undefined },
+	} as unknown as App;
+	return new PersonPhotoPicker({
+		app,
+		mode: { kind: "edit", file: { path: options.person.filePath } as TFile, personId: options.person.id },
+		values: { name: options.person.name, photo: "" },
+		getSettings: () => ({ ...DEFAULT_SETTINGS, peopleRootFolder: options.peopleRootFolder ?? "People" }),
+		getCurrentPeople: options.people,
+		translator: createTranslator("en"),
+	});
+}
+
+function photoValidatorFor(options: Parameters<typeof photoPickerFor>[0]): PersonPhotoSelectionValidator {
+	const picker = photoPickerFor(options);
+	return (values) => picker.validateSelection(values);
 }
 
 describe("person form contract", () => {
@@ -460,9 +498,12 @@ describe("person form contract", () => {
 			port,
 			[person, bob],
 			() => [person, bob],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
-			() => [person.filePath, selectedPath],
+			photoValidatorFor({
+				person,
+				people: () => [person, bob],
+				assetPaths: () => [selectedPath],
+				loadedPaths: () => [person.filePath, selectedPath],
+			}),
 		);
 		const values = {
 			...structuredClone(original),
@@ -496,9 +537,12 @@ describe("person form contract", () => {
 			stalePort,
 			[person, bob],
 			() => [],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
-			() => [person.filePath, selectedPath],
+			photoValidatorFor({
+				person,
+				people: () => [],
+				assetPaths: () => [selectedPath],
+				loadedPaths: () => [person.filePath, selectedPath],
+			}),
 		);
 
 		await expect(staleSession.submit(values)).resolves.toMatchObject({
@@ -513,9 +557,12 @@ describe("person form contract", () => {
 			currentPort,
 			[person, bob],
 			() => [person, bob],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
-			() => [person.filePath, selectedPath],
+			photoValidatorFor({
+				person,
+				people: () => [person, bob],
+				assetPaths: () => [selectedPath],
+				loadedPaths: () => [person.filePath, selectedPath],
+			}),
 		);
 		await expect(currentSession.submit(values)).resolves.toMatchObject({ status: "success", created: false });
 		expect(currentPort.updatePerson).toHaveBeenCalledOnce();
@@ -538,9 +585,12 @@ describe("person form contract", () => {
 			port,
 			[person, otherOwner],
 			() => [person, otherOwner],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
-			() => [person.filePath, otherOwner.filePath, selectedPath],
+			photoValidatorFor({
+				person,
+				people: () => [person, otherOwner],
+				assetPaths: () => [selectedPath],
+				loadedPaths: () => [person.filePath, otherOwner.filePath, selectedPath],
+			}),
 		);
 		const values = {
 			...structuredClone(original),
@@ -572,9 +622,12 @@ describe("person form contract", () => {
 			port,
 			[person, bob],
 			() => [person, bob],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
-			() => [person.filePath, selectedPath],
+			photoValidatorFor({
+				person,
+				people: () => [person, bob],
+				assetPaths: () => [selectedPath],
+				loadedPaths: () => [person.filePath, selectedPath],
+			}),
 		);
 		const values = {
 			...structuredClone(original),
@@ -604,8 +657,12 @@ describe("person form contract", () => {
 			port,
 			[person, bob],
 			() => [person, bob],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
+			photoValidatorFor({
+				person,
+				people: () => [person, bob],
+				assetPaths: () => [selectedPath],
+				loadedPaths: () => [person.filePath, selectedPath],
+			}),
 		);
 
 		await expect(
@@ -621,14 +678,7 @@ describe("person form contract", () => {
 	it("rejects a photo selection on create even when an injected asset exists", async () => {
 		const selectedPath = "People/Profiles/Carol/Portrait.jpg";
 		const port = mutationPort();
-		const session = new PersonFormSession(
-			{ kind: "create" },
-			port,
-			[alice, bob],
-			() => [alice, bob],
-			() => supportedPersonPhotoAssets([selectedPath]),
-			() => "People",
-		);
+		const session = new PersonFormSession({ kind: "create" }, port, [alice, bob], () => [alice, bob]);
 		const values = {
 			...createPersonFormValues("People", "person-c0ffee00-1111-4222-8333-444455556666"),
 			name: "Carol",
@@ -653,15 +703,18 @@ describe("person form contract", () => {
 		const file = { path: person.filePath } as TFile;
 		const original = editPersonFormValues(person, undefined, [person, bob], () => undefined);
 		const port = mutationPort();
-		let currentAssets = supportedPersonPhotoAssets([selectedPath]);
+		let currentAssets = [selectedPath];
 		const session = new PersonFormSession(
 			{ kind: "edit", file, original },
 			port,
 			[person, bob],
 			() => [person, bob],
-			() => currentAssets,
-			() => "People",
-			() => [person.filePath],
+			photoValidatorFor({
+				person,
+				people: () => [person, bob],
+				assetPaths: () => currentAssets,
+				loadedPaths: () => [person.filePath, ...currentAssets],
+			}),
 		);
 		const values = {
 			...structuredClone(original),

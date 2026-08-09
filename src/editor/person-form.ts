@@ -7,12 +7,7 @@ import {
 	type PersonProfileListIssue,
 } from "../domain/person-profile";
 import { resolveCanonicalPersonByPath } from "../domain/identity";
-import {
-	dossierPersonPhotoAssets,
-	getPendingPersonPhotoSelectionError,
-	type PersonPhotoAsset,
-} from "../domain/person-photo";
-import { peopleCollectionPaths, personDossierPathFromProfile, planPersonDossier } from "../domain/people-paths";
+import { peopleCollectionPaths, planPersonDossier } from "../domain/people-paths";
 import type { PersonRecord, PersonReference } from "../domain/types";
 import type { PersonMutationInput, PersonUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
@@ -46,6 +41,8 @@ export interface PersonFormValues {
 	jobTitle: string;
 	contacts: PersonContactFormValue[];
 }
+
+export type PersonPhotoSelectionValidator = (values: Pick<PersonFormValues, "photo" | "photoSelectionPath">) => void;
 
 export interface PersonEditOptions {
 	targetPath?: string | undefined;
@@ -262,9 +259,7 @@ export class PersonFormSession {
 		private readonly mutations: PersonMutationPort,
 		people: PersonRecord[] = [],
 		private readonly getCurrentPeople: () => PersonRecord[] = () => people,
-		private readonly getCurrentPhotoAssets: () => readonly PersonPhotoAsset[] = () => [],
-		private readonly getPeopleRootFolder: () => string = () => "",
-		private readonly getCurrentVaultPaths: () => readonly string[] = () => [],
+		private readonly validatePhotoSelection?: PersonPhotoSelectionValidator,
 	) {}
 
 	cancel(): void {
@@ -321,27 +316,10 @@ export class PersonFormSession {
 			if (this.mode.kind === "create") {
 				throw new Error("Choose a local photo in Edit after the dossier exists.");
 			}
-			const original = this.mode.original;
-			const currentPeople = this.getCurrentPeople();
-			const dossierPath = personDossierPathFromProfile(
-				this.getPeopleRootFolder(),
-				original.path,
-				original.personId,
-				this.getCurrentVaultPaths(),
-				currentPeople,
-			);
-			if (!dossierPath) {
-				throw new Error("The current profile note has no safe canonical dossier boundary.");
+			if (!this.validatePhotoSelection) {
+				throw new Error("Choose a supported photo with the photo picker, or clear the existing photo.");
 			}
-			const currentAssets = this.getCurrentPhotoAssets();
-			const error = getPendingPersonPhotoSelectionError(values.photo, values.photoSelectionPath, currentAssets);
-			if (error) throw new Error(error);
-			if (
-				dossierPersonPhotoAssets(currentAssets, dossierPath).filter((asset) => asset.path === values.photoSelectionPath)
-					.length !== 1
-			) {
-				throw new Error("Choose a supported photo from this person's own dossier.");
-			}
+			this.validatePhotoSelection(values);
 			return;
 		}
 		const originalPhoto = this.mode.kind === "edit" ? this.mode.original.photo : "";

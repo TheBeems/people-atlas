@@ -5,17 +5,22 @@ on:
     tags:
       - "*"
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
+permissions: {}
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release-channel: ${{ steps.release-channel.outputs.channel }}
+      release-title: ${{ steps.release-channel.outputs.title }}
+      release-prerelease: ${{ steps.release-channel.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
           cache: npm
@@ -46,13 +51,48 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: npm run release:contract -- --tag "$RELEASE_TAG"
-      - name: Attest release files
-        uses: actions/attest@v4
+      - name: Validate release candidate files
+        run: |
+          set -euo pipefail
+          for release_file in main.js manifest.json styles.css; do
+            if [[ ! -f "$release_file" ]]; then
+              echo "Release candidate file ${release_file} is missing or not a regular file." >&2
+              exit 1
+            fi
+          done
+      - name: Upload release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          subject-path: |
+          name: release-candidate
+          path: |
             main.js
             manifest.json
             styles.css
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Download release candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: release-candidate
+      - name: Attest release files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            release-candidate/main.js
+            release-candidate/manifest.json
+            release-candidate/styles.css
       - name: Verify remote release tag revision
         env:
           EXPECTED_SHA: ${{ github.sha }}
@@ -80,10 +120,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-          RELEASE_TITLE: ${{ steps.release-channel.outputs.title }}
-          RELEASE_PRERELEASE: ${{ steps.release-channel.outputs.prerelease }}
+          RELEASE_CHANNEL: ${{ needs.build.outputs.release-channel }}
+          RELEASE_TITLE: ${{ needs.build.outputs.release-title }}
+          RELEASE_PRERELEASE: ${{ needs.build.outputs.release-prerelease }}
         run: |
           set -euo pipefail
+          echo "Publishing validated ${RELEASE_CHANNEL} release ${TAG}."
           release_notes_file=".github/release-notes/${TAG}.md"
           release_args=(
             "$TAG"
@@ -97,4 +139,4 @@ jobs:
           if [[ -f "$release_notes_file" ]]; then
             release_args+=(--notes "$(cat "$release_notes_file")")
           fi
-          gh release create "${release_args[@]}" main.js manifest.json styles.css
+          gh release create "${release_args[@]}" release-candidate/main.js release-candidate/manifest.json release-candidate/styles.css

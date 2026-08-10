@@ -205,7 +205,9 @@ describe("release workflow tag guard", () => {
 		expect(workflow).toContain("--verify-tag");
 		expect(workflow).toContain(`release_notes_file=".github/release-notes/\${TAG}.md"`);
 		expect(workflow).toContain('release_args+=(--notes "$(cat "$release_notes_file")")');
-		expect(workflow).toContain(`gh release create "\${release_args[@]}" main.js manifest.json styles.css`);
+		expect(workflow).toContain(
+			`gh release create "\${release_args[@]}" release-candidate/main.js release-candidate/manifest.json release-candidate/styles.css`,
+		);
 	});
 
 	test("resolves the release channel before attestation and reuses the validated outputs for publication", async () => {
@@ -222,8 +224,10 @@ describe("release workflow tag guard", () => {
 			'channel_resolution="$(node scripts/release-channel.mjs "$release_notes_file" "$RELEASE_TAG")"',
 		);
 		expect(workflow).toContain('} >> "$GITHUB_OUTPUT"');
-		expect(workflow).toContain(`RELEASE_TITLE: \${{ steps.release-channel.outputs.title }}`);
-		expect(workflow).toContain(`RELEASE_PRERELEASE: \${{ steps.release-channel.outputs.prerelease }}`);
+		expect(workflow).toContain(`release-title: \${{ steps.release-channel.outputs.title }}`);
+		expect(workflow).toContain(`release-prerelease: \${{ steps.release-channel.outputs.prerelease }}`);
+		expect(publishBlock).toContain(`RELEASE_TITLE: \${{ needs.build.outputs.release-title }}`);
+		expect(publishBlock).toContain(`RELEASE_PRERELEASE: \${{ needs.build.outputs.release-prerelease }}`);
 		expect(publishBlock).not.toContain("node scripts/release-channel.mjs");
 		expect(publishBlock).toContain('if [[ "$RELEASE_PRERELEASE" == "true" ]]');
 	});
@@ -255,13 +259,18 @@ describe("release workflow tag guard", () => {
 				GH_ARGS_FILE: argsPath,
 				GITHUB_TOKEN: "[REDACTED]",
 				TAG: "0.12.1",
+				RELEASE_CHANNEL: channel.channel,
 				RELEASE_TITLE: channel.title,
 				RELEASE_PRERELEASE: String(channel.prerelease),
 			},
 		});
 
 		const args = (await readFile(argsPath, "utf8")).trim().split("\n");
-		expect(args.slice(-3)).toEqual(["main.js", "manifest.json", "styles.css"]);
+		expect(args.slice(-3)).toEqual([
+			"release-candidate/main.js",
+			"release-candidate/manifest.json",
+			"release-candidate/styles.css",
+		]);
 		expect(args.slice(0, 3)).toEqual(["release", "create", "0.12.1"]);
 		expect(args).toContain("--verify-tag");
 		expect(args).toContain("--generate-notes");
@@ -289,5 +298,145 @@ describe("release workflow tag guard", () => {
 		expect(notes).toContain("only supports Obsidian 1.13.0 or newer");
 		expect(notes).toContain("Obsidian 1.12.x and older are not supported");
 		expect(notes).not.toContain("currently");
+	});
+});
+
+function majorVersion(version: string): number {
+	const match = version.match(/\d+/);
+	if (!match) throw new Error(`Expected a numeric version, received ${version}.`);
+	return Number(match[0]);
+}
+
+function extractJob(workflow: string, jobName: string): string {
+	const marker = `\n  ${jobName}:\n`;
+	const start = workflow.indexOf(marker);
+	if (start === -1) return "";
+
+	const bodyStart = start + marker.length;
+	const nextJob = workflow.slice(bodyStart).match(/\n {2}[A-Za-z0-9_-]+:\n/);
+	const end = nextJob?.index === undefined ? workflow.length : bodyStart + nextJob.index;
+	return workflow.slice(start, end);
+}
+
+async function readWorkflow(name: "ci.yml" | "release.yml"): Promise<string> {
+	return readFile(path.join(process.cwd(), ".github", "workflows", name), "utf8");
+}
+
+describe("supply-chain hardening contract", () => {
+	test("keeps Node runtime and @types/node on the same major", async () => {
+		const packageJson = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8")) as {
+			engines: { node: string };
+			devDependencies: { "@types/node": string };
+		};
+		const packageLock = JSON.parse(await readFile(path.join(process.cwd(), "package-lock.json"), "utf8")) as {
+			packages: {
+				"": { devDependencies: { "@types/node": string } };
+				"node_modules/@types/node": { version: string };
+			};
+		};
+
+		expect(majorVersion(packageJson.engines.node)).toBe(24);
+		expect(majorVersion(packageJson.devDependencies["@types/node"])).toBe(24);
+		expect(majorVersion(packageLock.packages[""].devDependencies["@types/node"])).toBe(24);
+		expect(majorVersion(packageLock.packages["node_modules/@types/node"].version)).toBe(24);
+	});
+
+	test("pins every GitHub Action to a full commit SHA", async () => {
+		const workflows = await Promise.all([readWorkflow("ci.yml"), readWorkflow("release.yml")]);
+		const actionRefs = workflows.flatMap((workflow) =>
+			[...workflow.matchAll(/^\s*(?:-\s*)?uses:\s*([^\s#]+)(?:\s+#.*)?$/gm)].map((match) => match[1]),
+		);
+
+		expect(actionRefs).toHaveLength(8);
+		for (const actionRef of actionRefs) expect(actionRef).toMatch(/@[0-9a-f]{40}$/);
+	});
+
+	test("uses explicit read-only CI permissions and disables checkout credentials", async () => {
+		const ci = await readWorkflow("ci.yml");
+
+		expect(ci).toMatch(/^permissions:\s*\n {2}contents: read\s*$/m);
+		const checkoutSteps = ci.split("- uses: actions/checkout@").slice(1);
+		expect(checkoutSteps).toHaveLength(1);
+		expect(checkoutSteps[0]?.split("\n      - ")[0]).toContain("persist-credentials: false");
+	});
+
+	test("isolates release permissions and the build/publication job boundary", async () => {
+		const release = await readWorkflow("release.yml");
+		const build = extractJob(release, "build");
+		const publish = extractJob(release, "publish");
+
+		expect(release).toMatch(/^permissions:\s*\{\}\s*$/m);
+		expect(build).toContain("permissions:\n      contents: read\n    outputs:");
+		expect(build).not.toMatch(/(?:id-token|attestations):\s*write/);
+		expect(publish).toContain("needs: build");
+		expect(publish).toContain(
+			"permissions:\n      contents: write\n      id-token: write\n      attestations: write\n    steps:",
+		);
+		expect(publish).not.toMatch(/\n\s+if:\s+.*always\(\)/);
+		expect(publish).not.toMatch(/\bnpm(?:\s+(?:ci|install|update)|\s+run)\b|\bnpx\b|\bvitest\b|playwright install/);
+
+		const checkoutSteps = release.split("- uses: actions/checkout@").slice(1);
+		expect(checkoutSteps).toHaveLength(2);
+		for (const checkoutStep of checkoutSteps) {
+			expect(checkoutStep.split("\n      - ")[0]).toContain("persist-credentials: false");
+		}
+	});
+
+	test("runs all verification before uploading exactly the release candidate", async () => {
+		const release = await readWorkflow("release.yml");
+		const build = extractJob(release, "build");
+		const publish = extractJob(release, "publish");
+
+		for (const command of ["npm ci", "npm run dependency:audit", "npm run check", "npm run verify:reproducible"]) {
+			expect(build).toContain(command);
+		}
+		expect(build.indexOf("Validate release tag")).toBeGreaterThan(-1);
+		expect(build.indexOf("Validate release channel")).toBeGreaterThan(-1);
+		expect(build.indexOf("Validate verified release candidate")).toBeGreaterThan(-1);
+		const uploadIndex = build.indexOf("actions/upload-artifact@");
+		expect(uploadIndex).toBeGreaterThan(-1);
+		for (const gate of [
+			"npm ci",
+			"npm run dependency:audit",
+			"npm run check",
+			"Validate release tag",
+			"Validate release channel",
+			"npm run verify:reproducible",
+			"Validate verified release candidate",
+		]) {
+			const gateIndex = build.indexOf(gate);
+			expect(gateIndex).toBeGreaterThan(-1);
+			expect(gateIndex, `${gate} must run before artifact upload`).toBeLessThan(uploadIndex);
+		}
+		expect(build).toContain("- name: Validate release candidate files");
+		expect(build).toContain("for release_file in main.js manifest.json styles.css; do");
+		expect(build).toContain('[[ ! -f "$release_file" ]]');
+		expect(build.indexOf("Validate release candidate files")).toBeLessThan(uploadIndex);
+		expect(build).toContain("path: |\n            main.js\n            manifest.json\n            styles.css");
+		expect(build).toContain("if-no-files-found: error");
+
+		expect(publish).toContain("actions/download-artifact@");
+		expect(publish).toContain("name: release-candidate");
+		expect(publish).toContain("path: release-candidate");
+		expect(publish).toContain("release-candidate/main.js");
+		expect(publish).toContain("release-candidate/manifest.json");
+		expect(publish).toContain("release-candidate/styles.css");
+		expect(publish).toContain(
+			`gh release create "\${release_args[@]}" release-candidate/main.js release-candidate/manifest.json release-candidate/styles.css`,
+		);
+	});
+
+	test("passes the validated channel outputs from build to publication", async () => {
+		const release = await readWorkflow("release.yml");
+		const build = extractJob(release, "build");
+		const publish = extractJob(release, "publish");
+
+		expect(build).toContain(`release-channel: \${{ steps.release-channel.outputs.channel }}`);
+		expect(build).toContain(`release-title: \${{ steps.release-channel.outputs.title }}`);
+		expect(build).toContain(`release-prerelease: \${{ steps.release-channel.outputs.prerelease }}`);
+		expect(publish).toContain(`RELEASE_CHANNEL: \${{ needs.build.outputs.release-channel }}`);
+		expect(publish).toContain(`RELEASE_TITLE: \${{ needs.build.outputs.release-title }}`);
+		expect(publish).toContain(`RELEASE_PRERELEASE: \${{ needs.build.outputs.release-prerelease }}`);
+		expect(publish).not.toContain("node scripts/release-channel.mjs");
 	});
 });

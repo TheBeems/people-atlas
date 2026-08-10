@@ -76,8 +76,8 @@ export function generatePerformanceFixture(size: PerformanceSize, profile: Perfo
 			relationships.push({
 				id: relationshipId,
 				filePath: `Relationships/${relationshipId}.md`,
-				from: { raw: source.id, target: source.id },
-				to: { raw: target.id, target: target.id },
+				from: { raw: source.id, target: source.id, kind: "id" },
+				to: { raw: target.id, target: target.id, kind: "id" },
 				types: ["performance-fixture"],
 				closeness: ((sourceIndex + offset) % 5) + 1,
 				since: `20${(sourceIndex % 20).toString().padStart(2, "0")}-01-01`,

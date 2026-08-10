@@ -116,7 +116,7 @@ afterEach(() => {
 describe("controlled People Atlas Obsidian integration", () => {
 	it("drives registered plugin, index, standalone and Bases lifecycles through targeted events and teardown", async () => {
 		const runtime = new ControlledObsidianRuntime(document);
-		const unresolvedCarol = "[[People/Carol|Shared person]]";
+		const unresolvedCarol = "[[Carol|Shared person]]";
 		const aliceFile = runtime.seedFile("People/Alice.md", person("alice", "Shared person", [unresolvedCarol]));
 		const bobFile = runtime.seedFile("People/Bob.md", person("bob", "Different person"));
 		runtime.seedFile("Relationships/Alice-Bob.md", relationship("rel-alice-bob", "alice", "bob"));
@@ -317,8 +317,8 @@ describe("controlled People Atlas Obsidian integration", () => {
 			);
 		}
 
-		runtime.resolveLink("People/Alice.md", "People/Carol", carolFile.path);
-		runtime.resolveLink("Relationships/Alice-Carol.md", "People/Carol", carolFile.path);
+		runtime.resolveLink("People/Alice.md", "Carol", carolFile.path);
+		runtime.resolveLink("Relationships/Alice-Carol.md", "Carol", carolFile.path);
 		const standaloneResolved = fullSnapshot(standalone.view);
 		const resolvedRelationship = standaloneResolved.edges.find((edge) => edge.id === "rel-alice-carol");
 		expect(resolvedRelationship).toEqual(

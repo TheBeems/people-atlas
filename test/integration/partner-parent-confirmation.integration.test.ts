@@ -41,8 +41,8 @@ const sam: PersonRecord = {
 const partnerRelationship: RelationshipRecord = {
 	id: "relationship-alex-robin",
 	filePath: "People/Relationships/Alex - Robin.md",
-	from: { raw: "[[People/Alex]]", target: "People/Alex", resolvedPath: alex.filePath },
-	to: { raw: "[[People/Robin]]", target: "People/Robin", resolvedPath: robin.filePath },
+	from: { raw: "[[People/Alex]]", target: "People/Alex", kind: "wikilink", resolvedPath: alex.filePath },
+	to: { raw: "[[People/Robin]]", target: "People/Robin", kind: "wikilink", resolvedPath: robin.filePath },
 	types: [],
 	fromRole: "partner",
 	toRole: "partner",

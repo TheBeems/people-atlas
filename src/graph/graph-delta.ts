@@ -1,4 +1,5 @@
 import { referenceKey } from "../domain/wikilink";
+import { createReferenceIndex, resolveReference, type ReferenceIndex } from "../domain/person-reference-resolver";
 import type {
 	AtlasDiagnostic,
 	AtlasEdge,
@@ -22,14 +23,8 @@ export interface ApplyGraphDeltaOptions {
 	relationships?: readonly RelationshipRecord[];
 }
 
-interface ResolvedReference {
-	person?: PersonRecord;
-	ambiguous: PersonRecord[];
-}
-
 interface ResolutionContext {
-	peopleById: Map<string, PersonRecord[]>;
-	peopleByPath: Map<string, PersonRecord>;
+	people: ReferenceIndex<PersonRecord>;
 	nodeByPersonPath: Map<string, AtlasNode>;
 	resolveLink: LinkResolver;
 }
@@ -43,41 +38,13 @@ function buildResolutionContext(
 	nodes: Map<NodeId, AtlasNode>,
 	resolveLink: LinkResolver,
 ): ResolutionContext {
-	const peopleById = new Map<string, PersonRecord[]>();
-	const peopleByPath = new Map<string, PersonRecord>();
-	for (const person of people) {
-		const matches = peopleById.get(person.id) ?? [];
-		matches.push(person);
-		peopleById.set(person.id, matches);
-		if (!peopleByPath.has(person.filePath)) peopleByPath.set(person.filePath, person);
-	}
 	const nodeByPersonPath = new Map<string, AtlasNode>();
 	for (const node of nodes.values()) {
 		if (node.kind === "person" && node.filePath && !nodeByPersonPath.has(node.filePath)) {
 			nodeByPersonPath.set(node.filePath, node);
 		}
 	}
-	return { peopleById, peopleByPath, nodeByPersonPath, resolveLink };
-}
-
-function resolveReference(
-	reference: PersonReference,
-	sourcePath: string,
-	context: ResolutionContext,
-): ResolvedReference {
-	const idMatches = context.peopleById.get(reference.target);
-	if (idMatches && idMatches.length > 1) return { ambiguous: idMatches };
-	if (idMatches?.length === 1) {
-		const person = idMatches[0];
-		return person ? { person, ambiguous: [] } : { ambiguous: [] };
-	}
-	const resolvedPath = context.resolveLink(reference.target, sourcePath);
-	if (resolvedPath) {
-		const person = context.peopleByPath.get(resolvedPath);
-		return person ? { person, ambiguous: [] } : { ambiguous: [] };
-	}
-	const person = context.peopleByPath.get(reference.target);
-	return person ? { person, ambiguous: [] } : { ambiguous: [] };
+	return { people: createReferenceIndex(people), nodeByPersonPath, resolveLink };
 }
 
 function findNodeForPerson(context: ResolutionContext, person: PersonRecord): AtlasNode | undefined {
@@ -94,7 +61,7 @@ function diagnosticForAmbiguous(
 		severity: "error",
 		code: "ambiguous-person-reference",
 		message: `The person reference “${reference.target}” is ambiguous; it matches multiple notes.`,
-		filePaths: [sourcePath, ...matches.map((person) => person.filePath)],
+		filePaths: [sourcePath, ...new Set(matches.map((person) => person.filePath))],
 	};
 }
 
@@ -112,13 +79,22 @@ function addContactEdge(
 	contactIndex: number,
 ): void {
 	const source = findNodeForPerson(context, person);
-	const resolved = resolveReference(reference, person.filePath, context);
-	if (resolved.ambiguous.length > 1) {
-		addDiagnostic(diagnostics, diagnosticForAmbiguous(reference, person.filePath, resolved.ambiguous));
+	const resolution = resolveReference(reference, person.filePath, context.people, context.resolveLink);
+	if (resolution.status === "ambiguous") {
+		addDiagnostic(diagnostics, diagnosticForAmbiguous(reference, person.filePath, resolution.candidates));
 		return;
 	}
-	if (!resolved.person) {
-		if (!source) return;
+	if (resolution.status !== "resolved" || !resolution.resolved) {
+		if (!source) {
+			addDiagnostic(diagnostics, {
+				id: `unresolved-contact:${person.filePath}:${referenceKey(reference)}`,
+				severity: "warning",
+				code: "unresolved-contact",
+				message: `Could not resolve contact “${reference.target}”.`,
+				filePaths: [person.filePath],
+			});
+			return;
+		}
 		const targetId: NodeId = `ghost:${stableHash(referenceKey(reference))}`;
 		if (!nodes.has(targetId)) {
 			nodes.set(targetId, {
@@ -151,7 +127,7 @@ function addContactEdge(
 		return;
 	}
 
-	const target = findNodeForPerson(context, resolved.person);
+	const target = findNodeForPerson(context, resolution.resolved);
 	if (!source || !target) {
 		addDiagnostic(
 			diagnostics,
@@ -178,16 +154,39 @@ function addRelationshipEdge(
 	context: ResolutionContext,
 	diagnostics: Map<string, AtlasDiagnostic>,
 ): void {
-	const source = resolveReference(relationship.from, relationship.filePath, context);
-	const target = resolveReference(relationship.to, relationship.filePath, context);
-	if (source.ambiguous.length > 1 || target.ambiguous.length > 1) {
-		if (source.ambiguous.length > 1)
-			addDiagnostic(diagnostics, diagnosticForAmbiguous(relationship.from, relationship.filePath, source.ambiguous));
-		if (target.ambiguous.length > 1)
-			addDiagnostic(diagnostics, diagnosticForAmbiguous(relationship.to, relationship.filePath, target.ambiguous));
+	const sourceResolution = resolveReference(
+		relationship.from,
+		relationship.filePath,
+		context.people,
+		context.resolveLink,
+	);
+	const targetResolution = resolveReference(
+		relationship.to,
+		relationship.filePath,
+		context.people,
+		context.resolveLink,
+	);
+	if (sourceResolution.status === "ambiguous" || targetResolution.status === "ambiguous") {
+		if (sourceResolution.status === "ambiguous") {
+			addDiagnostic(
+				diagnostics,
+				diagnosticForAmbiguous(relationship.from, relationship.filePath, sourceResolution.candidates),
+			);
+		}
+		if (targetResolution.status === "ambiguous") {
+			addDiagnostic(
+				diagnostics,
+				diagnosticForAmbiguous(relationship.to, relationship.filePath, targetResolution.candidates),
+			);
+		}
 		return;
 	}
-	if (!source.person || !target.person) {
+	if (
+		sourceResolution.status !== "resolved" ||
+		!sourceResolution.resolved ||
+		targetResolution.status !== "resolved" ||
+		!targetResolution.resolved
+	) {
 		addDiagnostic(diagnostics, {
 			id: `relationship-endpoint:${relationship.id}:${relationship.filePath}`,
 			severity: "error",
@@ -197,7 +196,9 @@ function addRelationshipEdge(
 		});
 		return;
 	}
-	if (source.person.filePath === target.person.filePath) {
+	const source = sourceResolution.resolved;
+	const target = targetResolution.resolved;
+	if (source.filePath === target.filePath) {
 		addDiagnostic(diagnostics, {
 			id: `self:${relationship.id}:${relationship.filePath}`,
 			severity: "warning",
@@ -207,8 +208,8 @@ function addRelationshipEdge(
 		});
 		return;
 	}
-	const sourceNode = findNodeForPerson(context, source.person);
-	const targetNode = findNodeForPerson(context, target.person);
+	const sourceNode = findNodeForPerson(context, source);
+	const targetNode = findNodeForPerson(context, target);
 	if (!sourceNode || !targetNode) {
 		addDiagnostic(diagnostics, {
 			id: `filtered-endpoint:${relationship.filePath}:relationship`,

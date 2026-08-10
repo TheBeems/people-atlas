@@ -1,4 +1,10 @@
 import { normalizePathIdentity } from "../domain/identity";
+import {
+	createReferenceIndex,
+	resolveReference,
+	type LinkResolver,
+	type ReferenceIndex,
+} from "../domain/person-reference-resolver";
 import { referenceKey } from "../domain/wikilink";
 import type {
 	AtlasDiagnostic,
@@ -13,29 +19,25 @@ import type {
 	PersonReference,
 	RawIndexSnapshot,
 	RelationshipRecord,
-	RelationshipReference,
 } from "../domain/types";
 import { stableHash } from "../utils/hash";
 import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-elements";
 
-export type LinkResolver = (referenceTarget: string, sourcePath: string) => string | undefined;
+export type { LinkResolver } from "../domain/person-reference-resolver";
 
 export interface BuildAtlasSnapshotOptions {
 	resolutionPeople?: PersonRecord[] | undefined;
 }
 
 interface ResolutionContext {
-	peopleById: Map<PersonId, PersonRecord[]>;
-	peopleByPath: Map<string, PersonRecord>;
+	people: ReferenceIndex<PersonRecord>;
 	outputNodeIdByPath: Map<string, NodeId>;
 	resolveLink: LinkResolver;
 }
 
 interface ContactMomentResolutionContext {
-	peopleById: Map<string, PersonRecord[]>;
-	peopleByPath: Map<string, PersonRecord[]>;
-	relationshipsById: Map<string, RelationshipRecord[]>;
-	relationshipsByPath: Map<string, RelationshipRecord[]>;
+	people: ReferenceIndex<PersonRecord>;
+	relationships: ReferenceIndex<RelationshipRecord>;
 	resolveLink: LinkResolver;
 }
 
@@ -96,46 +98,17 @@ function duplicateDiagnostics(resolutionPeople: PersonRecord[], outputPeople: Pe
 	return diagnostics;
 }
 
-function addPersonToIdIndex(index: Map<PersonId, PersonRecord[]>, person: PersonRecord): void {
-	const matches = index.get(person.id) ?? [];
-	if (!matches.some((match) => match.filePath === person.filePath)) matches.push(person);
-	index.set(person.id, matches);
-}
-
 function buildResolutionContext(
 	resolutionPeople: PersonRecord[],
 	outputPeople: PersonRecord[],
 	resolveLink: LinkResolver,
 	outputNodeIdByPath: Map<string, NodeId>,
 ): ResolutionContext {
-	const peopleById = new Map<PersonId, PersonRecord[]>();
-	for (const person of [...resolutionPeople, ...outputPeople]) addPersonToIdIndex(peopleById, person);
-
-	const peopleByPath = new Map<string, PersonRecord>();
-	for (const person of resolutionPeople) peopleByPath.set(person.filePath, person);
-	for (const person of outputPeople) {
-		if (!peopleByPath.has(person.filePath)) peopleByPath.set(person.filePath, person);
-	}
-
 	return {
-		peopleById,
-		peopleByPath,
+		people: createReferenceIndex([...resolutionPeople, ...outputPeople]),
 		outputNodeIdByPath,
 		resolveLink,
 	};
-}
-
-function resolveReference(
-	reference: PersonReference,
-	sourcePath: string,
-	context: ResolutionContext,
-): PersonRecord | undefined {
-	const idMatches = context.peopleById.get(reference.target);
-	if (idMatches) return idMatches.length === 1 ? idMatches[0] : undefined;
-
-	const resolvedPath = context.resolveLink(reference.target, sourcePath);
-	if (resolvedPath) return context.peopleByPath.get(resolvedPath);
-	return context.peopleByPath.get(reference.target);
 }
 
 function ambiguousReferenceDiagnostic(
@@ -148,8 +121,16 @@ function ambiguousReferenceDiagnostic(
 		severity: "error",
 		code: "ambiguous-person-reference",
 		message: `The person reference “${reference.target}” is ambiguous; it matches multiple notes.`,
-		filePaths: [sourcePath, ...matches.map((person) => person.filePath)],
+		filePaths: [sourcePath, ...new Set(matches.map((person) => person.filePath))],
 	};
+}
+
+function appendDiagnostic(diagnostics: AtlasDiagnostic[], diagnostic: AtlasDiagnostic): void {
+	if (!diagnostics.some((existing) => existing.id === diagnostic.id)) diagnostics.push(diagnostic);
+}
+
+function appendEdge(edges: Map<string, AtlasEdge>, edge: AtlasEdge): void {
+	edges.set(edge.id, edge);
 }
 
 function relationshipDuplicateDiagnostics(relationships: RelationshipRecord[]): AtlasDiagnostic[] {
@@ -192,60 +173,16 @@ function pathIdentities(path: string): string[] {
 	return [...identities];
 }
 
-function addRecordByPath<T extends { filePath: string }>(index: Map<string, T[]>, record: T): void {
-	for (const identity of pathIdentities(record.filePath)) {
-		const records = index.get(identity) ?? [];
-		if (!records.some((candidate) => candidate.filePath === record.filePath)) records.push(record);
-		index.set(identity, records);
-	}
-}
-
 function buildContactMomentResolutionContext(
 	people: readonly PersonRecord[],
 	relationships: readonly RelationshipRecord[],
 	resolveLink: LinkResolver,
 ): ContactMomentResolutionContext {
-	const peopleById = new Map<string, PersonRecord[]>();
-	const peopleByPath = new Map<string, PersonRecord[]>();
-	for (const person of people) {
-		const idMatches = peopleById.get(person.id) ?? [];
-		idMatches.push(person);
-		peopleById.set(person.id, idMatches);
-		addRecordByPath(peopleByPath, person);
-	}
-
-	const relationshipsById = new Map<string, RelationshipRecord[]>();
-	const relationshipsByPath = new Map<string, RelationshipRecord[]>();
-	for (const relationship of relationships) {
-		const idMatches = relationshipsById.get(relationship.id) ?? [];
-		idMatches.push(relationship);
-		relationshipsById.set(relationship.id, idMatches);
-		addRecordByPath(relationshipsByPath, relationship);
-	}
-	return { peopleById, peopleByPath, relationshipsById, relationshipsByPath, resolveLink };
-}
-
-function resolveUniqueRecord<T extends { filePath: string }>(
-	reference: PersonReference | RelationshipReference,
-	sourcePath: string,
-	byId: Map<string, T[]>,
-	byPath: Map<string, T[]>,
-	resolveLink: LinkResolver,
-): T | undefined {
-	const candidates = new Map<string, T>();
-	for (const record of byId.get(reference.target) ?? []) candidates.set(record.filePath, record);
-	const candidatePaths = new Set(pathIdentities(reference.target));
-	if (reference.resolvedPath) {
-		for (const identity of pathIdentities(reference.resolvedPath)) candidatePaths.add(identity);
-	}
-	const linkedPath = resolveLink(reference.target, sourcePath);
-	if (linkedPath) {
-		for (const identity of pathIdentities(linkedPath)) candidatePaths.add(identity);
-	}
-	for (const identity of candidatePaths) {
-		for (const record of byPath.get(identity) ?? []) candidates.set(record.filePath, record);
-	}
-	return candidates.size === 1 ? candidates.values().next().value : undefined;
+	return {
+		people: createReferenceIndex(people),
+		relationships: createReferenceIndex(relationships),
+		resolveLink,
+	};
 }
 
 function resolveContactMomentReferences(
@@ -254,10 +191,10 @@ function resolveContactMomentReferences(
 ): ResolvedContactMomentReferences | undefined {
 	if (record.people.length === 0 || record.people.length !== record.personIds.length) return undefined;
 	const resolvedPeople = record.people.map((reference) =>
-		resolveUniqueRecord(reference, record.filePath, context.peopleById, context.peopleByPath, context.resolveLink),
+		resolveReference(reference, record.filePath, context.people, context.resolveLink),
 	);
-	if (resolvedPeople.some((person) => person === undefined)) return undefined;
-	const people = resolvedPeople.filter((person): person is PersonRecord => person !== undefined);
+	if (resolvedPeople.some((resolution) => resolution.status !== "resolved" || !resolution.resolved)) return undefined;
+	const people = resolvedPeople.flatMap((resolution) => (resolution.resolved ? [resolution.resolved] : []));
 	const resolvedIds = people.map((person) => person.id);
 	if (
 		new Set(resolvedIds).size !== resolvedIds.length ||
@@ -270,25 +207,21 @@ function resolveContactMomentReferences(
 		return { personPaths: people.map((person) => person.filePath), relationshipEndpointPaths: [] };
 	}
 	if (!record.relationship || !record.relationshipId) return undefined;
-	const relationship = resolveUniqueRecord(
+	const relationshipResolution = resolveReference(
 		record.relationship,
 		record.filePath,
-		context.relationshipsById,
-		context.relationshipsByPath,
+		context.relationships,
 		context.resolveLink,
 	);
-	if (!relationship || relationship.id !== record.relationshipId) return undefined;
-	const endpointPeople = [relationship.from, relationship.to].map((reference) =>
-		resolveUniqueRecord(
-			reference,
-			relationship.filePath,
-			context.peopleById,
-			context.peopleByPath,
-			context.resolveLink,
-		),
+	if (relationshipResolution.status !== "resolved" || !relationshipResolution.resolved) return undefined;
+	const relationship = relationshipResolution.resolved;
+	if (relationship.id !== record.relationshipId) return undefined;
+	const endpointResolutions = [relationship.from, relationship.to].map((reference) =>
+		resolveReference(reference, relationship.filePath, context.people, context.resolveLink),
 	);
-	if (endpointPeople.some((person) => person === undefined)) return undefined;
-	const endpoints = endpointPeople.filter((person): person is PersonRecord => person !== undefined);
+	if (endpointResolutions.some((resolution) => resolution.status !== "resolved" || !resolution.resolved))
+		return undefined;
+	const endpoints = endpointResolutions.flatMap((resolution) => (resolution.resolved ? [resolution.resolved] : []));
 	if (
 		endpoints.length !== 2 ||
 		endpoints[0]?.filePath === endpoints[1]?.filePath ||
@@ -492,7 +425,7 @@ export function buildAtlasSnapshot(
 		});
 	}
 
-	const edges: AtlasEdge[] = [];
+	const edges = new Map<string, AtlasEdge>();
 	let hiddenEdgeCount = 0;
 	const contactPeopleByPath = new Map<string, PersonRecord>();
 	for (const person of resolutionPeople) contactPeopleByPath.set(person.filePath, person);
@@ -500,15 +433,14 @@ export function buildAtlasSnapshot(
 	for (const person of contactPeopleByPath.values()) {
 		const sourceId = outputNodeIdByPath.get(person.filePath);
 		for (const [contactIndex, reference] of person.contacts.entries()) {
-			const target = resolveReference(reference, person.filePath, context);
-			if (!target) {
-				const ambiguousMatches = context.peopleById.get(reference.target);
-				if (ambiguousMatches && ambiguousMatches.length > 1) {
-					diagnostics.push(ambiguousReferenceDiagnostic(reference, person.filePath, ambiguousMatches));
-					continue;
-				}
+			const resolution = resolveReference(reference, person.filePath, context.people, context.resolveLink);
+			if (resolution.status === "ambiguous") {
+				appendDiagnostic(diagnostics, ambiguousReferenceDiagnostic(reference, person.filePath, resolution.candidates));
+				continue;
+			}
+			if (resolution.status !== "resolved" || !resolution.resolved) {
 				if (!sourceId) {
-					diagnostics.push({
+					appendDiagnostic(diagnostics, {
 						id: `unresolved-contact:${person.filePath}:${referenceKey(reference)}`,
 						severity: "warning",
 						code: "unresolved-contact",
@@ -529,7 +461,7 @@ export function buildAtlasSnapshot(
 						isCenter: false,
 					});
 				}
-				diagnostics.push({
+				appendDiagnostic(diagnostics, {
 					id: `unresolved-contact:${person.filePath}:${targetId}`,
 					severity: "warning",
 					code: "unresolved-contact",
@@ -537,7 +469,7 @@ export function buildAtlasSnapshot(
 					filePaths: [person.filePath],
 				});
 				if (targetId === sourceId) continue;
-				edges.push({
+				appendEdge(edges, {
 					id: `edge:${stableHash(`${sourceId}:${targetId}:contact`)}`,
 					sourceId,
 					targetId,
@@ -548,6 +480,8 @@ export function buildAtlasSnapshot(
 				continue;
 			}
 
+			const target = resolution.resolved;
+
 			const targetId = context.outputNodeIdByPath.get(target.filePath);
 			if (!sourceId || !targetId) {
 				hiddenEdgeCount += 1;
@@ -557,7 +491,7 @@ export function buildAtlasSnapshot(
 				continue;
 			}
 			if (targetId === sourceId) continue;
-			edges.push({
+			appendEdge(edges, {
 				id: inferredContactEdgeId(sourceId, targetId),
 				sourceId,
 				targetId,
@@ -573,18 +507,39 @@ export function buildAtlasSnapshot(
 		relationshipIdCounts.set(relationship.id, (relationshipIdCounts.get(relationship.id) ?? 0) + 1);
 	}
 	for (const relationship of raw.relationships) {
-		const source = resolveReference(relationship.from, relationship.filePath, context);
-		const target = resolveReference(relationship.to, relationship.filePath, context);
-		if (!source || !target) {
-			const ambiguousSource = context.peopleById.get(relationship.from.target);
-			const ambiguousTarget = context.peopleById.get(relationship.to.target);
-			if ((ambiguousSource && ambiguousSource.length > 1) || (ambiguousTarget && ambiguousTarget.length > 1)) {
-				if (ambiguousSource && ambiguousSource.length > 1)
-					diagnostics.push(ambiguousReferenceDiagnostic(relationship.from, relationship.filePath, ambiguousSource));
-				if (ambiguousTarget && ambiguousTarget.length > 1)
-					diagnostics.push(ambiguousReferenceDiagnostic(relationship.to, relationship.filePath, ambiguousTarget));
-				continue;
+		const sourceResolution = resolveReference(
+			relationship.from,
+			relationship.filePath,
+			context.people,
+			context.resolveLink,
+		);
+		const targetResolution = resolveReference(
+			relationship.to,
+			relationship.filePath,
+			context.people,
+			context.resolveLink,
+		);
+		if (sourceResolution.status === "ambiguous" || targetResolution.status === "ambiguous") {
+			if (sourceResolution.status === "ambiguous") {
+				appendDiagnostic(
+					diagnostics,
+					ambiguousReferenceDiagnostic(relationship.from, relationship.filePath, sourceResolution.candidates),
+				);
 			}
+			if (targetResolution.status === "ambiguous") {
+				appendDiagnostic(
+					diagnostics,
+					ambiguousReferenceDiagnostic(relationship.to, relationship.filePath, targetResolution.candidates),
+				);
+			}
+			continue;
+		}
+		if (
+			sourceResolution.status !== "resolved" ||
+			!sourceResolution.resolved ||
+			targetResolution.status !== "resolved" ||
+			!targetResolution.resolved
+		) {
 			diagnostics.push({
 				id: `relationship-endpoint:${relationship.id}:${relationship.filePath}`,
 				severity: "error",
@@ -594,6 +549,8 @@ export function buildAtlasSnapshot(
 			});
 			continue;
 		}
+		const source = sourceResolution.resolved;
+		const target = targetResolution.resolved;
 		if (source.filePath === target.filePath) {
 			diagnostics.push({
 				id: `self:${relationship.id}:${relationship.filePath}`,
@@ -618,7 +575,7 @@ export function buildAtlasSnapshot(
 				? relationship.id
 				: `${relationship.id}:${stableHash(relationship.filePath)}`;
 		const types = relationship.types.length > 0 ? relationship.types : ["relationship"];
-		edges.push({
+		appendEdge(edges, {
 			id: edgeId,
 			sourceId,
 			targetId,
@@ -646,7 +603,7 @@ export function buildAtlasSnapshot(
 	);
 	return {
 		nodes: [...nodes.values()],
-		edges,
+		edges: [...edges.values()],
 		contactMoments: contactMomentProjection.contactMoments,
 		diagnostics,
 		hiddenNodeCount,

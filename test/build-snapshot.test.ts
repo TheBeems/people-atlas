@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildAtlasSnapshot } from "../src/graph/build-snapshot";
 import { buildGraphSnapshot } from "../src/graph/graph-source";
-import type { ContactMomentRecord, RawIndexSnapshot } from "../src/domain/types";
+import type { ContactMomentRecord, PersonRecord, RawIndexSnapshot } from "../src/domain/types";
 
 const raw: RawIndexSnapshot = {
 	people: [
@@ -17,7 +17,7 @@ const raw: RawIndexSnapshot = {
 			emails: ["alice@example.test"],
 			phones: ["+31 6 1234"],
 			jobTitle: "Engineer",
-			contacts: [{ raw: "[[Bob]]", target: "Bob" }],
+			contacts: [{ raw: "[[Bob]]", target: "Bob", kind: "wikilink" as const }],
 		},
 		{
 			id: "bob",
@@ -42,7 +42,7 @@ function contactMoment(
 	return {
 		id,
 		filePath,
-		people: personIds.map((target) => ({ raw: `[[${target}]]`, target })),
+		people: personIds.map((target) => ({ raw: target, target, kind: "id" as const })),
 		occurredOn: "2026-07-30",
 		personIds,
 		actionable: true,
@@ -67,6 +67,39 @@ describe("buildAtlasSnapshot", () => {
 		});
 	});
 
+	it("uses stored resolved-path evidence for a relative explicit person contact", () => {
+		const source: PersonRecord = {
+			id: "source",
+			filePath: "People/Source.md",
+			name: "Source",
+			aliases: [],
+			organisations: [],
+			emails: [],
+			phones: [],
+			contacts: [
+				{
+					raw: "Bob.md",
+					target: "Bob.md",
+					kind: "path",
+					resolvedPath: "People/Bob.md",
+				},
+			],
+		};
+		const alice = raw.people[0];
+		const bob = raw.people[1];
+		if (!alice || !bob) throw new Error("Test fixture is incomplete.");
+		const idOwned = { ...alice, id: "Bob", filePath: "People/A.md", name: "ID-owned Bob", contacts: [] };
+		const pathOwned = { ...bob, id: "person-bob", filePath: "People/Bob.md", name: "Path-owned Bob" };
+		const snapshot = buildAtlasSnapshot({ people: [source, idOwned, pathOwned], relationships: [] }, () => undefined);
+
+		expect(snapshot.edges).toEqual([
+			expect.objectContaining({ sourceId: "source", targetId: "person-bob", inferred: true }),
+		]);
+		expect(snapshot.diagnostics).not.toEqual(
+			expect.arrayContaining([expect.objectContaining({ code: "ambiguous-person-reference" })]),
+		);
+	});
+
 	it("creates a ghost and diagnostic for an unresolved contact", () => {
 		const snapshot = buildAtlasSnapshot(raw, () => undefined);
 		expect(snapshot.nodes.some((node) => node.kind === "ghost")).toBe(true);
@@ -81,8 +114,8 @@ describe("buildAtlasSnapshot", () => {
 				{
 					id: "rel-friend",
 					filePath: "Relationships/Alice-Bob-friend.md",
-					from: { raw: "[[Alice]]", target: "Alice" },
-					to: { raw: "[[Bob]]", target: "Bob" },
+					from: { raw: "[[Alice]]", target: "Alice", kind: "wikilink" as const },
+					to: { raw: "[[Bob]]", target: "Bob", kind: "wikilink" as const },
 					presetId: "friend",
 					fromRole: "Friend",
 					toRole: "Friend",
@@ -95,8 +128,8 @@ describe("buildAtlasSnapshot", () => {
 				{
 					id: "rel-colleague",
 					filePath: "Relationships/Alice-Bob-colleague.md",
-					from: { raw: "[[Alice]]", target: "Alice" },
-					to: { raw: "[[Bob]]", target: "Bob" },
+					from: { raw: "[[Alice]]", target: "Alice", kind: "wikilink" as const },
+					to: { raw: "[[Bob]]", target: "Bob", kind: "wikilink" as const },
 					types: ["colleague"],
 				},
 			],
@@ -150,7 +183,7 @@ describe("buildAtlasSnapshot", () => {
 					organisations: [],
 					emails: [],
 					phones: [],
-					contacts: [{ raw: "duplicate", target: "duplicate" }],
+					contacts: [{ raw: "duplicate", target: "duplicate", kind: "id" }],
 				},
 			],
 			relationships: [],
@@ -163,6 +196,63 @@ describe("buildAtlasSnapshot", () => {
 		expect(snapshot.edges.some((edge) => edge.targetId === "duplicate")).toBe(false);
 	});
 
+	it("fails closed when a wikilink path conflicts with another person's ID", () => {
+		const source: PersonRecord = {
+			id: "source",
+			filePath: "People/Source.md",
+			name: "Source",
+			aliases: [],
+			organisations: [],
+			emails: [],
+			phones: [],
+			contacts: [
+				{
+					raw: "[[Bob]]",
+					target: "Bob",
+					kind: "wikilink" as const,
+					resolvedPath: "People/Bob.md",
+				},
+			],
+		};
+		const alice = raw.people[0];
+		const bob = raw.people[1];
+		if (!alice || !bob) throw new Error("Test fixture is incomplete.");
+		const idOwned = { ...alice, id: "Bob", filePath: "People/A.md", name: "ID-owned Bob", contacts: [] };
+		const pathOwned = { ...bob, id: "person-bob", filePath: "People/Bob.md", name: "Path-owned Bob" };
+		const relationship: RawIndexSnapshot["relationships"][number] = {
+			id: "relationship-source-bob",
+			filePath: "Relationships/Source-Bob.md",
+			from: { raw: "source", target: "source", kind: "id" },
+			to: {
+				raw: "[[Bob]]",
+				target: "Bob",
+				kind: "wikilink" as const,
+				resolvedPath: "People/Bob.md",
+			},
+			types: ["friend"],
+		};
+
+		const snapshot = buildAtlasSnapshot(
+			{ people: [source, idOwned, pathOwned], relationships: [relationship] },
+			() => undefined,
+		);
+
+		expect(snapshot.edges).toEqual([]);
+		expect(snapshot.nodes.some((node) => node.kind === "ghost")).toBe(false);
+		expect(snapshot.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "ambiguous-person-reference",
+					filePaths: ["People/Source.md", "People/A.md", "People/Bob.md"],
+				}),
+				expect.objectContaining({
+					code: "ambiguous-person-reference",
+					filePaths: ["Relationships/Source-Bob.md", "People/A.md", "People/Bob.md"],
+				}),
+			]),
+		);
+	});
+
 	it("keeps a resolved relationship to a filtered person distinct from unresolved data", () => {
 		const alice = raw.people[0];
 		const bob = raw.people[1];
@@ -171,8 +261,8 @@ describe("buildAtlasSnapshot", () => {
 		const relationship = {
 			id: "rel-filtered",
 			filePath: "Relationships/Alice-Bob.md",
-			from: { raw: "[[Alice]]", target: "Alice" },
-			to: { raw: "[[Bob]]", target: "Bob" },
+			from: { raw: "[[Alice]]", target: "Alice", kind: "wikilink" as const },
+			to: { raw: "[[Bob]]", target: "Bob", kind: "wikilink" as const },
 			types: ["friend"],
 		};
 		const snapshot = buildGraphSnapshot(
@@ -212,12 +302,12 @@ describe("buildAtlasSnapshot", () => {
 		const relationship = {
 			id: "rel-alice-bob",
 			filePath: "Relationships/Alice-Bob.md",
-			from: { raw: "alice", target: "alice" },
-			to: { raw: "bob", target: "bob" },
+			from: { raw: "alice", target: "alice", kind: "id" as const },
+			to: { raw: "bob", target: "bob", kind: "id" as const },
 			types: ["friend"],
 		};
 		const valid = contactMoment("valid", "Moments/Valid.md", ["alice", "bob"], {
-			relationship: { raw: "rel-alice-bob", target: "rel-alice-bob" },
+			relationship: { raw: "rel-alice-bob", target: "rel-alice-bob", kind: "id" as const },
 			relationshipId: "rel-alice-bob",
 			channel: " call ",
 			summary: " caught up ",
@@ -293,13 +383,13 @@ describe("buildAtlasSnapshot", () => {
 		const relationship = {
 			id: "rel-alice-bob",
 			filePath: "Relationships/Alice-Bob.md",
-			from: { raw: "alice", target: "alice" },
-			to: { raw: "bob", target: "bob" },
+			from: { raw: "alice", target: "alice", kind: "id" as const },
+			to: { raw: "bob", target: "bob", kind: "id" as const },
 			types: ["friend"],
 		};
 		const hiddenMulti = contactMoment("hidden-multi", "Moments/Alice, Bob and Carol.md", ["alice", "bob", "carol"]);
 		const hiddenRelationship = contactMoment("hidden-relationship", "Moments/Alice relationship.md", ["alice"], {
-			relationship: { raw: "rel-alice-bob", target: "rel-alice-bob" },
+			relationship: { raw: "rel-alice-bob", target: "rel-alice-bob", kind: "id" as const },
 			relationshipId: "rel-alice-bob",
 		});
 		const visible = contactMoment("visible", "Moments/Alice.md", ["alice"]);

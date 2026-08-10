@@ -37,11 +37,13 @@ const relationship: RelationshipRecord = {
 	from: {
 		raw: "[[People/Alice]]",
 		target: "People/Alice",
+		kind: "wikilink",
 		resolvedPath: alice.filePath,
 	},
 	to: {
 		raw: "[[People/Bob]]",
 		target: "People/Bob",
+		kind: "wikilink",
 		resolvedPath: bob.filePath,
 	},
 	types: ["friend"],
@@ -347,8 +349,8 @@ describe("contact-moment modal", () => {
 	it("labels canonical relationship endpoints referenced by stable person IDs", () => {
 		const idRelationship: RelationshipRecord = {
 			...relationship,
-			from: { raw: alice.id, target: alice.id },
-			to: { raw: bob.id, target: bob.id },
+			from: { raw: alice.id, target: alice.id, kind: "id" },
+			to: { raw: bob.id, target: bob.id, kind: "id" },
 		};
 		const mounted = mountModal({
 			context: {

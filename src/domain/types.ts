@@ -6,10 +6,12 @@ export type RelationshipStatus = "active" | "dormant" | "ended";
 export type ContactMomentFollowUpStatus = "open" | "done" | "dismissed";
 export type ProjectionCenterMode = "configured" | "active-note" | "selected-node" | "none";
 export type ProjectionMode = "ego" | "free-network" | "contact-health";
+export type ReferenceKind = "wikilink" | "path" | "id";
 
 export interface PersonReference {
 	raw: string;
 	target: string;
+	kind: ReferenceKind;
 	label?: string | undefined;
 	resolvedPath?: string | undefined;
 }
@@ -17,6 +19,7 @@ export interface PersonReference {
 export interface RelationshipReference {
 	raw: string;
 	target: string;
+	kind: ReferenceKind;
 	label?: string | undefined;
 	resolvedPath?: string | undefined;
 }

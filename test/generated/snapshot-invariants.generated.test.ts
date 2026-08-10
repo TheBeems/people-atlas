@@ -23,7 +23,7 @@ describe("generated graph snapshot invariants", () => {
 			): ContactMomentRecord => ({
 				id,
 				filePath,
-				people: personIds.map((target) => ({ raw: target, target })),
+				people: personIds.map((target) => ({ raw: target, target, kind: "id" })),
 				occurredOn: "2026-07-30",
 				personIds,
 				actionable: true,
@@ -35,7 +35,7 @@ describe("generated graph snapshot invariants", () => {
 				`Moments/${seed}/Visible.md`,
 				[generated.ids.alpha, generated.ids.beta],
 				{
-					relationship: { raw: generated.ids.richRelationship, target: generated.ids.richRelationship },
+					relationship: { raw: generated.ids.richRelationship, target: generated.ids.richRelationship, kind: "id" },
 					relationshipId: generated.ids.richRelationship,
 				},
 			);
@@ -53,7 +53,7 @@ describe("generated graph snapshot invariants", () => {
 				`Moments/${seed}/Hidden relationship.md`,
 				[generated.ids.alpha],
 				{
-					relationship: { raw: filteredRelationship.id, target: filteredRelationship.id },
+					relationship: { raw: filteredRelationship.id, target: filteredRelationship.id, kind: "id" },
 					relationshipId: filteredRelationship.id,
 				},
 			);

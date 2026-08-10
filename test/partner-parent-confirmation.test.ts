@@ -69,8 +69,18 @@ function relationship(
 	return {
 		id,
 		filePath: `People/Relationships/${id}.md`,
-		from: { raw: `[[${from.filePath.replace(/\.md$/i, "")}]]`, target: from.filePath, resolvedPath: from.filePath },
-		to: { raw: `[[${to.filePath.replace(/\.md$/i, "")}]]`, target: to.filePath, resolvedPath: to.filePath },
+		from: {
+			raw: `[[${from.filePath.replace(/\.md$/i, "")}]]`,
+			target: from.filePath,
+			kind: "wikilink",
+			resolvedPath: from.filePath,
+		},
+		to: {
+			raw: `[[${to.filePath.replace(/\.md$/i, "")}]]`,
+			target: to.filePath,
+			kind: "wikilink",
+			resolvedPath: to.filePath,
+		},
 		types: [],
 		...overrides,
 	};
@@ -145,7 +155,7 @@ describe("partner-ouderbevestigingsplanner", () => {
 					relationship("partner-ambiguous-endpoint", alex, robin, {
 						fromRole: "partner",
 						toRole: "partner",
-						to: { raw: "[[People/Robin]]", target: "People/Robin" },
+						to: { raw: "[[People/Robin]]", target: "People/Robin", kind: "wikilink" as const },
 					}),
 				],
 			}),
@@ -255,7 +265,7 @@ describe("partner-ouderbevestigingsplanner", () => {
 				relationships: [
 					{
 						...relationship("partner-ghost", alex, robin, { fromRole: "partner", toRole: "partner" }),
-						to: { raw: "[[People/Missing]]", target: "People/Missing" },
+						to: { raw: "[[People/Missing]]", target: "People/Missing", kind: "wikilink" as const },
 					},
 				],
 			},

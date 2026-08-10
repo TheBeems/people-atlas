@@ -7,12 +7,16 @@ function person(id: string, filePath: string, contacts: PersonRecord["contacts"]
 	return { id, filePath, name: id, aliases: [], organisations: [], emails: [], phones: [], contacts };
 }
 
+function referenceKind(target: string): "id" | "path" {
+	return target.includes("/") || target.toLowerCase().endsWith(".md") ? "path" : "id";
+}
+
 function relationship(id: string, filePath: string, from: string, to: string): RelationshipRecord {
 	return {
 		id,
 		filePath,
-		from: { raw: `[[${from}]]`, target: from },
-		to: { raw: `[[${to}]]`, target: to },
+		from: { raw: from, target: from, kind: "id" },
+		to: { raw: to, target: to, kind: "id" },
 		types: [],
 	};
 }
@@ -26,8 +30,10 @@ function contactMoment(
 	return {
 		id,
 		filePath,
-		people: people.map((target) => ({ raw: `[[${target}]]`, target })),
-		relationship: relationshipTarget ? { raw: `[[${relationshipTarget}]]`, target: relationshipTarget } : undefined,
+		people: people.map((target) => ({ raw: target, target, kind: referenceKind(target) })),
+		relationship: relationshipTarget
+			? { raw: relationshipTarget, target: relationshipTarget, kind: referenceKind(relationshipTarget) }
+			: undefined,
 		occurredOn: "2026-07-30",
 		followUpOn: "2026-08-01",
 		personIds: [],
@@ -73,7 +79,7 @@ describe("IndexState", () => {
 		state.upsert({ filePath: "People/Alice.md", person: person("alice", "People/Alice.md"), diagnostics: [] });
 		state.upsert({
 			filePath: "People/Carol.md",
-			person: person("carol", "People/Carol.md", [{ raw: "alice", target: "alice" }]),
+			person: person("carol", "People/Carol.md", [{ raw: "alice", target: "alice", kind: "id" }]),
 			diagnostics: [],
 		});
 
@@ -127,6 +133,31 @@ describe("IndexState", () => {
 		expect(state.getAdjacency("moment-1")).toEqual([]);
 	});
 
+	it("uses stored resolved-path evidence for relative contact-moment people", () => {
+		const state = new IndexState();
+		state.upsert({ filePath: "People/Id-owned.md", person: person("Bob", "People/Id-owned.md"), diagnostics: [] });
+		state.upsert({
+			filePath: "People/Bob.md",
+			person: person("person-bob", "People/Bob.md"),
+			diagnostics: [],
+		});
+		const moment = contactMoment("relative-path", "Moments/Relative path.md", []);
+		moment.people = [
+			{
+				raw: "Bob.md",
+				target: "Bob.md",
+				kind: "path",
+				resolvedPath: "People/Bob.md",
+			},
+		];
+		state.upsert({ filePath: moment.filePath, contactMoment: moment, diagnostics: [] });
+
+		expect(state.getSnapshot().contactMoments).toEqual([
+			expect.objectContaining({ id: "relative-path", personIds: ["person-bob"], actionable: true }),
+		]);
+		expect(state.getSnapshot().diagnostics).toEqual([]);
+	});
+
 	it("keeps unresolved, ambiguous and mismatched contact moments indexed without first-match resolution", () => {
 		const state = new IndexState();
 		state.upsert({ filePath: "People/Alice.md", person: person("same", "People/Alice.md"), diagnostics: [] });
@@ -173,6 +204,14 @@ describe("IndexState", () => {
 			"bob",
 		);
 		const personConflict = contactMoment("person-conflict", "Moments/Person conflict.md", ["People/Path-owned.md"]);
+		personConflict.people = [
+			{
+				raw: "[[People/Path-owned.md]]",
+				target: "People/Path-owned.md",
+				kind: "wikilink",
+				resolvedPath: "People/Path-owned.md",
+			},
+		];
 		const relationshipConflict = contactMoment(
 			"relationship-conflict",
 			"Moments/Relationship conflict.md",
@@ -182,6 +221,7 @@ describe("IndexState", () => {
 		relationshipConflict.relationship = {
 			raw: "[[relationship-token]]",
 			target: "relationship-token",
+			kind: "wikilink",
 			resolvedPath: "Relationships/Path-owned.md",
 		};
 		const records: ParsedAtlasFile[] = [
@@ -242,6 +282,26 @@ describe("IndexState", () => {
 				filePaths: ["Moments/Relationship conflict.md", "Relationships/Id-owned.md", "Relationships/Path-owned.md"],
 			}),
 		]);
+	});
+
+	it("does not resolve an unresolved wikilink through a matching person ID", () => {
+		const state = new IndexState();
+		const idOwnedPerson = person("Bob", "People/Id-owned.md");
+		const moment = contactMoment("unresolved-wikilink", "Moments/Unresolved wikilink.md", []);
+		moment.people = [{ raw: "[[Bob]]", target: "Bob", kind: "wikilink" }];
+		state.upsert({ filePath: idOwnedPerson.filePath, person: idOwnedPerson, diagnostics: [] });
+		state.upsert({ filePath: moment.filePath, contactMoment: moment, diagnostics: [] });
+
+		const snapshot = state.getSnapshot();
+		expect(snapshot.contactMoments).toEqual([
+			expect.objectContaining({ id: moment.id, personIds: [], actionable: false }),
+		]);
+		expect(snapshot.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: "unresolved-contact-moment-person",
+				filePaths: [moment.filePath],
+			}),
+		);
 	});
 
 	it("marks every duplicate contact-moment ID invalid and invalidates reference dependents incrementally", () => {

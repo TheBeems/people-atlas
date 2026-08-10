@@ -18,7 +18,7 @@ const alice: PersonRecord = {
 	organisations: ["Example Org"],
 	emails: [],
 	phones: [],
-	contacts: [{ raw: "[[Missing|Unknown]]", target: "Missing", label: "Unknown" }],
+	contacts: [{ raw: "[[Missing|Unknown]]", target: "Missing", kind: "wikilink", label: "Unknown" }],
 };
 
 const bob: PersonRecord = {

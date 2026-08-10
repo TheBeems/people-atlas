@@ -33,11 +33,13 @@ const relationship: RelationshipRecord = {
 	from: {
 		raw: "[[People/Alice]]",
 		target: "People/Alice",
+		kind: "wikilink",
 		resolvedPath: alice.filePath,
 	},
 	to: {
 		raw: "[[People/Bob]]",
 		target: "People/Bob",
+		kind: "wikilink",
 		resolvedPath: bob.filePath,
 	},
 	types: ["friend"],
@@ -50,12 +52,14 @@ const moment: ContactMomentRecord = {
 		{
 			raw: "[[People/Alice]]",
 			target: "People/Alice",
+			kind: "wikilink",
 			resolvedPath: alice.filePath,
 		},
 	],
 	relationship: {
 		raw: "[[People/Relationships/Alice - Bob]]",
 		target: "People/Relationships/Alice - Bob",
+		kind: "wikilink",
 		resolvedPath: relationship.filePath,
 	},
 	occurredOn: "2026-07-30",
@@ -260,7 +264,7 @@ describe("contact-moment entrypoints", () => {
 	it("fails visibly instead of throwing when an indexed invalid moment has non-canonical people", () => {
 		const invalidMoment: ContactMomentRecord = {
 			...moment,
-			people: [{ raw: "[[People/Missing]]", target: "People/Missing" }],
+			people: [{ raw: "[[People/Missing]]", target: "People/Missing", kind: "wikilink" }],
 			personIds: [],
 			actionable: false,
 		};

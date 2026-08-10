@@ -63,7 +63,9 @@ export class SeededGenerator {
 }
 
 export function reference(target: string, label?: string): PersonReference {
-	return label ? { raw: `[[${target}|${label}]]`, target, label } : { raw: `[[${target}]]`, target };
+	if (label) return { raw: `[[${target}|${label}]]`, target, label, kind: "wikilink" };
+	const kind = target.includes("/") || target.toLowerCase().endsWith(".md") ? "path" : "id";
+	return { raw: target, target, kind };
 }
 
 export function person(

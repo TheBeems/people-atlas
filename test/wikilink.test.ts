@@ -6,6 +6,7 @@ describe("parsePersonReference", () => {
 		expect(parsePersonReference("[[People/Alice]]")).toEqual({
 			raw: "[[People/Alice]]",
 			target: "People/Alice",
+			kind: "wikilink",
 		});
 	});
 
@@ -14,10 +15,15 @@ describe("parsePersonReference", () => {
 			raw: "[[People/Alice|Alice]]",
 			target: "People/Alice",
 			label: "Alice",
+			kind: "wikilink",
 		});
 	});
 
-	it("accepts an explicit person ID", () => {
-		expect(parsePersonReference("alice-1")?.target).toBe("alice-1");
+	it.each([
+		["alice-1", "id"],
+		["People/Alice", "path"],
+		["People/Alice.md", "path"],
+	] as const)("classifies an unwrapped reference %j as %s", (raw, kind) => {
+		expect(parsePersonReference(raw)).toMatchObject({ raw, target: raw, kind });
 	});
 });

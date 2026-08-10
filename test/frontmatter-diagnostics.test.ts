@@ -358,6 +358,33 @@ describe("frontmatter diagnostics", () => {
 		expect(other.relationship).toBeUndefined();
 	});
 
+	it("stores the resolved path and reference kind for ordinary person contacts", () => {
+		const parsed = parseAtlasFile(
+			appWithLinks({ "People/Bob": "People/Bob.md" }),
+			file("People/Alice.md"),
+			{
+				frontmatter: {
+					type: "person",
+					person_id: "person-alice",
+					name: "Alice",
+					contacts: ["[[People/Bob|Bob]]", "person-carol"],
+				},
+			} as CachedMetadata,
+			DEFAULT_SETTINGS,
+		);
+
+		expect(parsed.person?.contacts).toEqual([
+			{
+				raw: "[[People/Bob|Bob]]",
+				target: "People/Bob",
+				label: "Bob",
+				kind: "wikilink",
+				resolvedPath: "People/Bob.md",
+			},
+			{ raw: "person-carol", target: "person-carol", kind: "id" },
+		]);
+	});
+
 	it("parses a first-class contact moment with explicit identity and configured references", () => {
 		const parsed = parseAtlasFile(
 			appWithLinks({

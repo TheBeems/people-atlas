@@ -25,7 +25,7 @@ function person(
 		organisations: [],
 		emails: [],
 		phones: [],
-		contacts: contacts.map((target) => ({ raw: `[[${target}]]`, target })),
+		contacts: contacts.map((target) => ({ raw: `[[${target}]]`, target, kind: "wikilink" })),
 		...overrides,
 	};
 }
@@ -34,7 +34,7 @@ function contactMoment(id: string, filePath: string, personIds: string[]): Conta
 	return {
 		id,
 		filePath,
-		people: personIds.map((personId) => ({ raw: personId, target: personId })),
+		people: personIds.map((personId) => ({ raw: personId, target: personId, kind: "id" })),
 		occurredOn: "2026-07-30",
 		personIds,
 		actionable: true,
@@ -57,6 +57,27 @@ function comparable(snapshot: AtlasSnapshot) {
 			(left, right) => left.id.localeCompare(right.id) || left.filePath.localeCompare(right.filePath),
 		),
 		hiddenContactMomentCount: snapshot.hiddenContactMomentCount,
+	};
+}
+
+function personContactDelta(person: PersonRecord): IndexDelta {
+	return {
+		revision: 1,
+		changedPaths: [person.filePath],
+		removedPaths: [],
+		affectedPersonIds: [person.id],
+		affectedRelationshipIds: [],
+		addedPeople: [],
+		updatedPeople: [person],
+		removedPeople: [],
+		addedRelationships: [],
+		updatedRelationships: [],
+		removedRelationships: [],
+		affectedPeople: [person],
+		affectedRelationships: [],
+		diagnostics: [],
+		duplicatePersonIds: [],
+		duplicateRelationshipIds: [],
 	};
 }
 
@@ -114,6 +135,76 @@ describe("applyGraphDelta", () => {
 			phones: ["+31 6 1234"],
 			jobTitle: "Engineer",
 		});
+	});
+
+	it("matches a full rebuild and fails closed for a wikilink ID/path collision", () => {
+		const source = person("source", "People/Source.md", [], {
+			contacts: [
+				{
+					raw: "[[Bob]]",
+					target: "Bob",
+					kind: "wikilink",
+					resolvedPath: "People/Bob.md",
+				},
+			],
+		});
+		const idOwned = person("Bob", "People/A.md");
+		const pathOwned = person("person-bob", "People/Bob.md");
+		const relationship: RelationshipRecord = {
+			id: "relationship-source-bob",
+			filePath: "Relationships/Source-Bob.md",
+			from: { raw: "source", target: "source", kind: "id" },
+			to: {
+				raw: "[[Bob]]",
+				target: "Bob",
+				kind: "wikilink",
+				resolvedPath: "People/Bob.md",
+			},
+			types: ["friend"],
+		};
+		const before: RawIndexSnapshot = {
+			people: [person("source", "People/Source.md"), idOwned, pathOwned],
+			relationships: [],
+		};
+		const after: RawIndexSnapshot = { people: [source, idOwned, pathOwned], relationships: [relationship] };
+		const previous = buildAtlasSnapshot(before, resolve);
+		const delta: IndexDelta = {
+			revision: 1,
+			changedPaths: [source.filePath, relationship.filePath],
+			removedPaths: [],
+			affectedPersonIds: [source.id],
+			affectedRelationshipIds: [relationship.id],
+			addedPeople: [],
+			updatedPeople: [source],
+			removedPeople: [],
+			addedRelationships: [relationship],
+			updatedRelationships: [],
+			removedRelationships: [],
+			affectedPeople: [source],
+			affectedRelationships: [relationship],
+			diagnostics: [],
+			duplicatePersonIds: [],
+			duplicateRelationshipIds: [],
+		};
+
+		const incremental = applyGraphDelta(previous, delta, resolve, { resolutionPeople: after.people });
+		const rebuilt = buildAtlasSnapshot(after, resolve);
+
+		expect(comparable(incremental)).toEqual(comparable(rebuilt));
+		expect(incremental.edges).toEqual([]);
+		expect(incremental.nodes.some((node) => node.kind === "ghost")).toBe(false);
+		expect(incremental.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "ambiguous-person-reference",
+					filePaths: ["People/Source.md", "People/A.md", "People/Bob.md"],
+				}),
+				expect.objectContaining({
+					code: "ambiguous-person-reference",
+					filePaths: ["Relationships/Source-Bob.md", "People/A.md", "People/Bob.md"],
+				}),
+			]),
+		);
 	});
 
 	it("matches filtered-contact counts and diagnostics for multiple contacts from one note", () => {
@@ -225,8 +316,8 @@ describe("applyGraphDelta", () => {
 		const relationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
 			filePath: "Relationships/alice-bob.md",
-			from: { raw: "alice", target: "alice" },
-			to: { raw: "bob", target: "bob" },
+			from: { raw: "alice", target: "alice", kind: "id" },
+			to: { raw: "bob", target: "bob", kind: "id" },
 			presetId: "friend-mentor",
 			fromRole: "Friend",
 			toRole: "Friend",
@@ -285,14 +376,14 @@ describe("applyGraphDelta", () => {
 		const relationship: RelationshipRecord = {
 			id: "rel-alice-bob",
 			filePath: "Relationships/Alice-Bob.md",
-			from: { raw: "alice", target: "alice" },
-			to: { raw: "bob", target: "bob" },
+			from: { raw: "alice", target: "alice", kind: "id" },
+			to: { raw: "bob", target: "bob", kind: "id" },
 			types: ["friend"],
 		};
 		const beforeMoment: ContactMomentRecord = {
 			id: "moment-1",
 			filePath: "Moments/One.md",
-			people: [{ raw: "alice", target: "alice" }],
+			people: [{ raw: "alice", target: "alice", kind: "id" }],
 			occurredOn: "2026-07-30",
 			personIds: ["alice"],
 			actionable: true,
@@ -301,11 +392,11 @@ describe("applyGraphDelta", () => {
 		const afterMoment: ContactMomentRecord = {
 			...beforeMoment,
 			people: [
-				{ raw: "alice", target: "alice" },
-				{ raw: "bob", target: "bob" },
+				{ raw: "alice", target: "alice", kind: "id" },
+				{ raw: "bob", target: "bob", kind: "id" },
 			],
 			personIds: ["alice", "bob"],
-			relationship: { raw: "rel-alice-bob", target: "rel-alice-bob" },
+			relationship: { raw: "rel-alice-bob", target: "rel-alice-bob", kind: "id" },
 			relationshipId: "rel-alice-bob",
 			followUpOn: "2026-02-30",
 			followUpActionable: false,
@@ -459,6 +550,129 @@ describe("applyGraphDelta", () => {
 		expect(incremental.diagnostics).toContainEqual(diagnostic);
 		expect(incremental.contactMoments).toEqual(previous.contactMoments);
 		expect(incremental.hiddenContactMomentCount).toBe(previous.hiddenContactMomentCount);
+	});
+
+	it("keeps duplicate ordinary-contact ambiguity diagnostics in full/delta parity", () => {
+		const beforeSource = person("source", "People/Source.md");
+		const ambiguousContact = { raw: "duplicate", target: "duplicate", kind: "id" as const };
+		const afterSource = { ...beforeSource, contacts: [ambiguousContact, ambiguousContact] };
+		const firstDuplicate = person("duplicate", "People/A.md");
+		const secondDuplicate = person("duplicate", "People/B.md");
+		const beforePeople = [beforeSource, firstDuplicate, secondDuplicate];
+		const afterPeople = [afterSource, firstDuplicate, secondDuplicate];
+		const previous = buildAtlasSnapshot({ people: beforePeople, relationships: [] }, resolve);
+		const delta: IndexDelta = {
+			revision: 1,
+			changedPaths: [beforeSource.filePath],
+			removedPaths: [],
+			affectedPersonIds: [beforeSource.id],
+			affectedRelationshipIds: [],
+			addedPeople: [],
+			updatedPeople: [afterSource],
+			removedPeople: [],
+			addedRelationships: [],
+			updatedRelationships: [],
+			removedRelationships: [],
+			affectedPeople: [afterSource],
+			affectedRelationships: [],
+			diagnostics: [],
+			duplicatePersonIds: ["duplicate"],
+			duplicateRelationshipIds: [],
+		};
+
+		const incremental = applyGraphDelta(previous, delta, resolve, { resolutionPeople: afterPeople });
+		const rebuilt = buildAtlasSnapshot({ people: afterPeople, relationships: [] }, resolve);
+		const incrementalAmbiguous = incremental.diagnostics.filter(
+			(diagnostic) => diagnostic.code === "ambiguous-person-reference",
+		);
+		const rebuiltAmbiguous = rebuilt.diagnostics.filter(
+			(diagnostic) => diagnostic.code === "ambiguous-person-reference",
+		);
+
+		expect(incrementalAmbiguous).toEqual(rebuiltAmbiguous);
+		expect(rebuiltAmbiguous).toHaveLength(1);
+		expect(incremental.edges).toEqual(rebuilt.edges);
+	});
+
+	it("keeps unresolved contacts from changed hidden people in full/delta parity", () => {
+		const visible = person("visible", "People/Visible.md");
+		const beforeHidden = person("hidden", "People/Hidden.md");
+		const afterHidden = {
+			...beforeHidden,
+			contacts: [{ raw: "missing", target: "missing", kind: "id" as const }],
+		};
+		const beforePeople = [visible, beforeHidden];
+		const afterPeople = [visible, afterHidden];
+		const visiblePaths = new Set([visible.filePath]);
+		const previous = buildAtlasSnapshot({ people: [visible], relationships: [] }, resolve, {
+			resolutionPeople: beforePeople,
+		});
+		const delta: IndexDelta = {
+			revision: 1,
+			changedPaths: [afterHidden.filePath],
+			removedPaths: [],
+			affectedPersonIds: [afterHidden.id],
+			affectedRelationshipIds: [],
+			addedPeople: [],
+			updatedPeople: [afterHidden],
+			removedPeople: [],
+			addedRelationships: [],
+			updatedRelationships: [],
+			removedRelationships: [],
+			affectedPeople: [afterHidden],
+			affectedRelationships: [],
+			diagnostics: [],
+			duplicatePersonIds: [],
+			duplicateRelationshipIds: [],
+		};
+
+		const incremental = applyGraphDelta(previous, delta, resolve, {
+			resolutionPeople: afterPeople,
+			visiblePaths,
+		});
+		const rebuilt = buildAtlasSnapshot({ people: [visible], relationships: [] }, resolve, {
+			resolutionPeople: afterPeople,
+		});
+		const incrementalUnresolved = incremental.diagnostics.filter(
+			(diagnostic) => diagnostic.code === "unresolved-contact",
+		);
+		const rebuiltUnresolved = rebuilt.diagnostics.filter((diagnostic) => diagnostic.code === "unresolved-contact");
+
+		expect(incrementalUnresolved).toEqual(rebuiltUnresolved);
+		expect(rebuiltUnresolved).toHaveLength(1);
+		expect(incremental.edges).toEqual(rebuilt.edges);
+	});
+
+	it("deduplicates repeated resolved ordinary-contact edges in full/delta parity", () => {
+		const beforeSource = person("source", "People/Source.md");
+		const bob = person("bob", "People/bob.md");
+		const contact = { raw: "bob", target: "bob", kind: "id" as const };
+		const afterSource = { ...beforeSource, contacts: [contact, contact] };
+		const previous = buildAtlasSnapshot({ people: [beforeSource, bob], relationships: [] }, resolve);
+		const delta = personContactDelta(afterSource);
+		const incremental = applyGraphDelta(previous, delta, resolve, {
+			resolutionPeople: [afterSource, bob],
+		});
+		const rebuilt = buildAtlasSnapshot({ people: [afterSource, bob], relationships: [] }, resolve);
+
+		expect(comparable(incremental)).toEqual(comparable(rebuilt));
+		expect(rebuilt.edges.filter((edge) => edge.inferred)).toHaveLength(1);
+	});
+
+	it("deduplicates repeated unresolved ordinary-contact ghosts in full/delta parity", () => {
+		const beforeSource = person("source", "People/Source.md");
+		const contact = { raw: "missing", target: "missing", kind: "id" as const };
+		const afterSource = { ...beforeSource, contacts: [contact, contact] };
+		const previous = buildAtlasSnapshot({ people: [beforeSource], relationships: [] }, resolve);
+		const delta = personContactDelta(afterSource);
+		const incremental = applyGraphDelta(previous, delta, resolve, {
+			resolutionPeople: [afterSource],
+		});
+		const rebuilt = buildAtlasSnapshot({ people: [afterSource], relationships: [] }, resolve);
+
+		expect(comparable(incremental)).toEqual(comparable(rebuilt));
+		expect(rebuilt.edges.filter((edge) => edge.inferred)).toHaveLength(1);
+		expect(rebuilt.diagnostics.filter((diagnostic) => diagnostic.code === "unresolved-contact")).toHaveLength(1);
 	});
 
 	it.each([

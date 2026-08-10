@@ -37,8 +37,8 @@ const alice: PersonRecord = {
 	phones: ["+31 (0)20 123 45 67"],
 	jobTitle: "Engineer",
 	contacts: [
-		{ raw: "[[People/Bob]]", target: "People/Bob" },
-		{ raw: "[[Missing|Unknown]]", target: "Missing", label: "Unknown" },
+		{ raw: "[[People/Bob]]", target: "People/Bob", kind: "wikilink" },
+		{ raw: "[[Missing|Unknown]]", target: "Missing", kind: "wikilink", label: "Unknown" },
 	],
 };
 

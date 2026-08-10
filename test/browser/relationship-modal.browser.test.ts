@@ -535,8 +535,8 @@ describe("relationship modal", () => {
 		const templateRelationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
 			filePath: "People/Relationships/Alice - Bob.md",
-			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
-			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			from: { raw: "person-alice", target: "person-alice", kind: "id", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", kind: "id", label: "Bob" },
 			types: ["friend"],
 			fromRole: "friend",
 			toRole: "friend",
@@ -569,8 +569,8 @@ describe("relationship modal", () => {
 		const missingRelationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
 			filePath: "People/Relationships/Alice - Bob.md",
-			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
-			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			from: { raw: "person-alice", target: "person-alice", kind: "id", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", kind: "id", label: "Bob" },
 			types: ["friend"],
 			fromRole: "friend",
 			toRole: "friend",
@@ -1192,8 +1192,8 @@ describe("relationship modal", () => {
 		const relationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
 			filePath: "People/Relationships/Alice - Bob.md",
-			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
-			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			from: { raw: "person-alice", target: "person-alice", kind: "id", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", kind: "id", label: "Bob" },
 			types: ["friend"],
 			fromRole: "parent",
 			toRole: "child",
@@ -1222,8 +1222,8 @@ describe("relationship modal", () => {
 		const relationship: RelationshipRecord = {
 			id: "relationship-alice-bob",
 			filePath: "People/Relationships/Alice - Bob.md",
-			from: { raw: "person-alice", target: "person-alice", label: "Alice" },
-			to: { raw: "person-bob", target: "person-bob", label: "Bob" },
+			from: { raw: "person-alice", target: "person-alice", kind: "id", label: "Alice" },
+			to: { raw: "person-bob", target: "person-bob", kind: "id", label: "Bob" },
 			types: ["friend"],
 		};
 		const file = relationshipFile(relationship.filePath);

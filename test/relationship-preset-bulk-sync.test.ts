@@ -18,8 +18,8 @@ function relationship(filePath: string): RelationshipRecord {
 	return {
 		id: filePath,
 		filePath,
-		from: { raw: "[[A]]", target: "A" },
-		to: { raw: "[[B]]", target: "B" },
+		from: { raw: "[[A]]", target: "A", kind: "wikilink" },
+		to: { raw: "[[B]]", target: "B", kind: "wikilink" },
 		presetId: preset.id,
 		types: ["family"],
 		fromRole: "Sibling",

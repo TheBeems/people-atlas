@@ -48,15 +48,15 @@ const charlie: PersonRecord = {
 const aliceBob: RelationshipRecord = {
 	id: "relationship-alice-bob",
 	filePath: "People/Relationships/Alice - Bob.md",
-	from: { raw: "[[People/Alice]]", target: "People/Alice", resolvedPath: alice.filePath },
-	to: { raw: "[[People/Bob]]", target: "People/Bob", resolvedPath: bob.filePath },
+	from: { raw: "[[People/Alice]]", target: "People/Alice", kind: "wikilink", resolvedPath: alice.filePath },
+	to: { raw: "[[People/Bob]]", target: "People/Bob", kind: "wikilink", resolvedPath: bob.filePath },
 	types: ["friend"],
 };
 const bobCharlie: RelationshipRecord = {
 	id: "relationship-bob-charlie",
 	filePath: "People/Relationships/Bob - Charlie.md",
-	from: { raw: "[[People/Bob]]", target: "People/Bob", resolvedPath: bob.filePath },
-	to: { raw: "[[People/Charlie]]", target: "People/Charlie", resolvedPath: charlie.filePath },
+	from: { raw: "[[People/Bob]]", target: "People/Bob", kind: "wikilink", resolvedPath: bob.filePath },
+	to: { raw: "[[People/Charlie]]", target: "People/Charlie", kind: "wikilink", resolvedPath: charlie.filePath },
 	types: ["colleague"],
 };
 
@@ -79,7 +79,7 @@ function moment(overrides: Partial<ContactMomentRecord> = {}): ContactMomentReco
 	return {
 		id: "moment-one",
 		filePath: "People/Contact moments/2026-07-31 - Alice - mentone.md",
-		people: [{ raw: "[[People/Alice]]", target: "People/Alice", resolvedPath: alice.filePath }],
+		people: [{ raw: "[[People/Alice]]", target: "People/Alice", kind: "wikilink", resolvedPath: alice.filePath }],
 		occurredOn: "2026-07-31",
 		personIds: [alice.id],
 		actionable: true,
@@ -115,6 +115,7 @@ describe("contact-moment form mapping", () => {
 			from: {
 				raw: `[[${alice.id}]]`,
 				target: alice.id,
+				kind: "wikilink",
 				resolvedPath: bob.filePath,
 			},
 		};
@@ -147,6 +148,7 @@ describe("contact-moment form mapping", () => {
 			relationship: {
 				raw: "[[People/Relationships/Archived]]",
 				target: "People/Relationships/Archived",
+				kind: "wikilink",
 			},
 		});
 		expect(() => editContactMomentFormValues(record, context())).toThrow("not currently canonical");

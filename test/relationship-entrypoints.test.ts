@@ -31,8 +31,8 @@ const mathijs: PersonRecord = {
 const relationship: RelationshipRecord = {
 	id: "explicit-1",
 	filePath: "People/Relationships/Alice - Bob.md",
-	from: { raw: "[[People/Alice]]", target: "People/Alice" },
-	to: { raw: "[[People/Bob]]", target: "People/Bob" },
+	from: { raw: "[[People/Alice]]", target: "People/Alice", kind: "wikilink" },
+	to: { raw: "[[People/Bob]]", target: "People/Bob", kind: "wikilink" },
 	types: [],
 };
 
@@ -288,7 +288,7 @@ describe("relationship editor entrypoints", () => {
 	it("does not reorder stored edit endpoints when My person is second", () => {
 		const selfSecond: RelationshipRecord = {
 			...relationship,
-			to: { raw: "person-mathijs", target: "person-mathijs" },
+			to: { raw: "person-mathijs", target: "person-mathijs", kind: "id" },
 			fromRole: "manager",
 			toRole: "colleague",
 		};

@@ -26,8 +26,8 @@ function relationship(overrides: Partial<RelationshipRecord> = {}): Relationship
 	return {
 		id: "relationship-1",
 		filePath: "Relationships/Mathijs-Cor.md",
-		from: { raw: "[[Mathijs]]", target: "Mathijs" },
-		to: { raw: "[[Cor]]", target: "Cor" },
+		from: { raw: "[[Mathijs]]", target: "Mathijs", kind: "wikilink" },
+		to: { raw: "[[Cor]]", target: "Cor", kind: "wikilink" },
 		presetId: preset.id,
 		types: ["parent-child"],
 		fromRole: "Child",

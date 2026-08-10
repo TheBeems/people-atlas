@@ -533,7 +533,7 @@ export function parseAtlasFile(
 		);
 		if (!id) return { filePath: file.path, diagnostics };
 		const contacts = readStringList(frontmatter, settings.contactsProperty)
-			.map(parsePersonReference)
+			.map((raw) => resolveReference(app, raw, file.path))
 			.filter((value): value is NonNullable<typeof value> => value !== undefined);
 
 		return {

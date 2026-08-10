@@ -62,8 +62,8 @@ const people: PersonRecord[] = [
 const relationship: RelationshipRecord = {
 	id: "relationship-1",
 	filePath: "People/Relationships/Alice - Bob.md",
-	from: { raw: "[[People/Alice]]", target: "People/Alice" },
-	to: { raw: "person-bob", target: "person-bob" },
+	from: { raw: "[[People/Alice]]", target: "People/Alice", kind: "wikilink" },
+	to: { raw: "person-bob", target: "person-bob", kind: "id" },
 	types: ["friend"],
 	closeness: 4,
 	since: "2020-01-02",
@@ -355,7 +355,7 @@ describe("relationship form contract", () => {
 		const ambiguousPeople = [...people, { ...alice, filePath: "People/Alice duplicate.md" }];
 		const stored: RelationshipRecord = {
 			...relationship,
-			from: { raw: "person-alice", target: "person-alice" },
+			from: { raw: "person-alice", target: "person-alice", kind: "id" },
 		};
 
 		const values = editRelationshipFormValues(stored, ambiguousPeople, () => "People/Alice.md");
@@ -366,8 +366,8 @@ describe("relationship form contract", () => {
 	it("preserves stored endpoint and role order while My person is second", () => {
 		const stored: RelationshipRecord = {
 			...relationship,
-			from: { raw: "person-alice", target: "person-alice" },
-			to: { raw: "person-mathijs", target: "person-mathijs" },
+			from: { raw: "person-alice", target: "person-alice", kind: "id" },
+			to: { raw: "person-mathijs", target: "person-mathijs", kind: "id" },
 			fromRole: "manager",
 			toRole: "colleague",
 		};

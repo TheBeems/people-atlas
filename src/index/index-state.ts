@@ -1,4 +1,5 @@
 import { normalizePathIdentity } from "../domain/identity";
+import { createReferenceIndex, resolveReference, type ReferenceResolution } from "../domain/person-reference-resolver";
 import { referenceKey } from "../domain/wikilink";
 import type {
 	AtlasDiagnostic,
@@ -65,10 +66,7 @@ function referenceKeys(target: string): string[] {
 }
 
 function recordReferenceKeys(reference: { target: string; resolvedPath?: string | undefined }): string[] {
-	const keys = new Set([
-		`ref:${referenceKey({ raw: reference.target, target: reference.target })}`,
-		...pathReferenceKeys(reference.target),
-	]);
+	const keys = new Set([`ref:${referenceKey({ target: reference.target })}`, ...pathReferenceKeys(reference.target)]);
 	if (reference.resolvedPath) {
 		for (const key of pathReferenceKeys(reference.resolvedPath)) keys.add(key);
 	}
@@ -419,8 +417,8 @@ export class IndexState {
 			const sourceReferenceKey = referenceKey(reference);
 			const repeatedSourceReference = seenReferenceKeys.has(sourceReferenceKey);
 			seenReferenceKeys.add(sourceReferenceKey);
-			const candidates = this.resolvePersonReferencePaths(reference);
-			if (candidates.length === 0) {
+			const resolution = this.resolvePersonReference(reference);
+			if (resolution.status === "unresolved") {
 				diagnostics.push({
 					id: `unresolved-contact-moment-person:${source.filePath}:${sourceReferenceKey}`,
 					severity: "error",
@@ -432,16 +430,8 @@ export class IndexState {
 				actionable = false;
 				continue;
 			}
-
-			const candidateRecords = candidates.flatMap((path) => {
-				const person = this.filesByPath.get(path)?.person;
-				return person ? [{ path, person }] : [];
-			});
-			const duplicateIdentityPaths = sortedUnique(
-				candidateRecords.flatMap(({ person }) => this.getPersonPathsForId(person.id)),
-			);
-			if (candidates.length !== 1 || candidateRecords.length !== 1 || duplicateIdentityPaths.length > 1) {
-				const filePaths = sortedUnique([source.filePath, ...candidates, ...duplicateIdentityPaths]);
+			if (resolution.status === "ambiguous") {
+				const filePaths = sortedUnique([source.filePath, ...resolution.candidatePaths]);
 				diagnostics.push({
 					id: `ambiguous-contact-moment-person:${source.filePath}:${sourceReferenceKey}`,
 					severity: "error",
@@ -454,36 +444,29 @@ export class IndexState {
 				continue;
 			}
 
-			const resolved = candidateRecords[0];
+			const resolved = resolution.resolved;
 			if (!resolved) continue;
-			if (personIds.includes(resolved.person.id)) {
-				const duplicateKey = repeatedSourceReference ? sourceReferenceKey : resolved.person.id;
+			if (personIds.includes(resolved.id)) {
+				const duplicateKey = repeatedSourceReference ? sourceReferenceKey : resolved.id;
 				diagnostics.push({
 					id: `duplicate-contact-moment-person:${source.filePath}:${duplicateKey}`,
 					severity: "error",
 					code: "duplicate-contact-moment-person",
-					message: `Contact moment “${source.filePath}” resolves more than one reference to person “${resolved.person.id}”.`,
-					filePaths: sortedUnique([source.filePath, resolved.path]),
-					targetPath: resolved.path,
+					message: `Contact moment “${source.filePath}” resolves more than one reference to person “${resolved.id}”.`,
+					filePaths: sortedUnique([source.filePath, resolved.filePath]),
+					targetPath: resolved.filePath,
 				});
 				actionable = false;
 				continue;
 			}
-			personIds.push(resolved.person.id);
-			personPaths.add(resolved.path);
+			personIds.push(resolved.id);
+			personPaths.add(resolved.filePath);
 		}
 
 		let relationshipId: string | undefined;
 		if (source.relationship) {
-			const candidates = this.resolveRelationshipReferencePaths(source.relationship);
-			const candidateRecords = candidates.flatMap((path) => {
-				const relationship = this.filesByPath.get(path)?.relationship;
-				return relationship ? [{ path, relationship }] : [];
-			});
-			const duplicateIdentityPaths = sortedUnique(
-				candidateRecords.flatMap(({ relationship }) => this.getRelationshipPathsForId(relationship.id)),
-			);
-			if (candidates.length === 0 || candidateRecords.length === 0) {
+			const resolution = this.resolveRelationshipReference(source.relationship);
+			if (resolution.status === "unresolved") {
 				diagnostics.push({
 					id: `unresolved-contact-moment-relationship:${source.filePath}:${referenceKey(source.relationship)}`,
 					severity: "error",
@@ -493,41 +476,41 @@ export class IndexState {
 					targetPath: source.relationship.resolvedPath ?? source.relationship.target,
 				});
 				actionable = false;
-			} else if (candidates.length !== 1 || candidateRecords.length !== 1 || duplicateIdentityPaths.length > 1) {
+			} else if (resolution.status === "ambiguous") {
 				diagnostics.push({
 					id: `ambiguous-contact-moment-relationship:${source.filePath}:${referenceKey(source.relationship)}`,
 					severity: "error",
 					code: "ambiguous-contact-moment-relationship",
 					message: `Contact moment “${source.filePath}” references ambiguous relationship identity “${source.relationship.target}”.`,
-					filePaths: sortedUnique([source.filePath, ...candidates, ...duplicateIdentityPaths]),
+					filePaths: sortedUnique([source.filePath, ...resolution.candidatePaths]),
 					targetPath: source.relationship.resolvedPath ?? source.relationship.target,
 				});
 				actionable = false;
 			} else {
-				const resolved = candidateRecords[0];
+				const resolved = resolution.resolved;
 				if (resolved) {
-					relationshipId = resolved.relationship.id;
-					const endpointPaths = [resolved.relationship.from, resolved.relationship.to].map((endpoint) =>
+					relationshipId = resolved.id;
+					const endpointPaths = [resolved.from, resolved.to].map((endpoint) =>
 						this.resolveCanonicalPersonPath(endpoint),
 					);
 					if (endpointPaths.some((path) => path === undefined)) {
 						diagnostics.push({
-							id: `unresolved-contact-moment-relationship:${source.filePath}:${resolved.relationship.id}:endpoints`,
+							id: `unresolved-contact-moment-relationship:${source.filePath}:${resolved.id}:endpoints`,
 							severity: "error",
 							code: "unresolved-contact-moment-relationship",
-							message: `Contact moment “${source.filePath}” references relationship “${resolved.relationship.id}”, whose endpoints are not canonical.`,
-							filePaths: sortedUnique([source.filePath, resolved.path]),
-							targetPath: resolved.path,
+							message: `Contact moment “${source.filePath}” references relationship “${resolved.id}”, whose endpoints are not canonical.`,
+							filePaths: sortedUnique([source.filePath, resolved.filePath]),
+							targetPath: resolved.filePath,
 						});
 						actionable = false;
 					} else if (!endpointPaths.some((path) => path !== undefined && personPaths.has(path))) {
 						diagnostics.push({
-							id: `contact-moment-relationship-person-mismatch:${source.filePath}:${resolved.relationship.id}`,
+							id: `contact-moment-relationship-person-mismatch:${source.filePath}:${resolved.id}`,
 							severity: "error",
 							code: "contact-moment-relationship-person-mismatch",
-							message: `Contact moment “${source.filePath}” does not share a canonical person with relationship “${resolved.relationship.id}”.`,
-							filePaths: sortedUnique([source.filePath, resolved.path]),
-							targetPath: resolved.path,
+							message: `Contact moment “${source.filePath}” does not share a canonical person with relationship “${resolved.id}”.`,
+							filePaths: sortedUnique([source.filePath, resolved.filePath]),
+							targetPath: resolved.filePath,
 						});
 						actionable = false;
 					}
@@ -547,38 +530,27 @@ export class IndexState {
 		};
 	}
 
-	private resolvePersonReferencePaths(reference: PersonReference): string[] {
-		return this.resolveReferencePaths(reference, this.peopleById, this.peopleByPath);
+	private resolvePersonReference(reference: PersonReference): ReferenceResolution<PersonRecord> {
+		return resolveReference(reference, "", createReferenceIndex(this.getPeopleRecords()));
 	}
 
-	private resolveRelationshipReferencePaths(reference: RelationshipReference): string[] {
-		return this.resolveReferencePaths(reference, this.relationshipsById, this.relationshipsByPath);
+	private resolveRelationshipReference(reference: RelationshipReference): ReferenceResolution<RelationshipRecord> {
+		return resolveReference(reference, "", createReferenceIndex(this.getRelationshipRecords()));
 	}
 
-	private resolveReferencePaths(
-		reference: { target: string; resolvedPath?: string | undefined },
-		byId: Map<string, Set<string>>,
-		byPath: Map<string, Set<string>>,
-	): string[] {
-		const candidatePaths = new Set(byId.get(reference.target) ?? []);
-		const candidateIdentities = new Set(normalizedPathIdentities(reference.target));
-		if (reference.resolvedPath) {
-			for (const identity of normalizedPathIdentities(reference.resolvedPath)) {
-				candidateIdentities.add(identity);
-			}
-		}
-		for (const identity of candidateIdentities) {
-			for (const path of byPath.get(identity) ?? []) candidatePaths.add(path);
-		}
-		return [...candidatePaths].sort();
+	private getPeopleRecords(): PersonRecord[] {
+		return [...this.filesByPath.values()].flatMap((file) => (file.person ? [file.person] : []));
+	}
+
+	private getRelationshipRecords(): RelationshipRecord[] {
+		return [...this.filesByPath.values()].flatMap((file) => (file.relationship ? [file.relationship] : []));
 	}
 
 	private resolveCanonicalPersonPath(reference: PersonReference): string | undefined {
-		const paths = this.resolvePersonReferencePaths(reference);
-		if (paths.length !== 1) return undefined;
-		const person = this.filesByPath.get(paths[0] ?? "")?.person;
-		if (!person || this.getPersonPathsForId(person.id).length !== 1) return undefined;
-		return paths[0];
+		const resolution = this.resolvePersonReference(reference);
+		if (resolution.status !== "resolved" || !resolution.resolved) return undefined;
+		if (this.getPersonPathsForId(resolution.resolved.id).length !== 1) return undefined;
+		return resolution.resolved.filePath;
 	}
 }
 

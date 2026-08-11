@@ -1,4 +1,4 @@
-import type { App, TFile } from "obsidian";
+import { parseYaml, type App, type TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 import { AtlasMutationService, MutationError } from "../src/mutations/atlas-mutation-service";
 import {
@@ -6,6 +6,8 @@ import {
 	type ContactMomentMutationInput,
 } from "../src/mutations/contact-moment";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
+import type { PeopleAtlasSettings } from "../src/settings/types";
+import { serializedPropertyOccurrences, unicodePropertySettings } from "./yaml-property-roundtrip-fixtures";
 
 interface HarnessNote {
 	path: string;
@@ -20,7 +22,7 @@ interface HarnessFolder {
 	children: unknown[];
 }
 
-function createHarness() {
+function createHarness(settings: PeopleAtlasSettings = DEFAULT_SETTINGS) {
 	const entries = new Map<string, HarnessNote | HarnessFolder>();
 	const peopleById = new Map<string, string[]>();
 	const relationshipsById = new Map<string, string[]>();
@@ -30,6 +32,7 @@ function createHarness() {
 	const committedFrontmatterWrites: string[] = [];
 	let relationshipWriteFailure = false;
 	let beforeFrontmatterCallback: ((note: HarnessNote) => void) | undefined;
+	let beforeCreateFolderResolve: ((path: string) => void | Promise<void>) | undefined;
 	let clock = 1;
 
 	const isNote = (entry: HarnessNote | HarnessFolder | undefined): entry is HarnessNote =>
@@ -66,7 +69,9 @@ function createHarness() {
 			},
 			createFolder: async (path: string) => {
 				operations.push(`folder:${path}`);
-				return addFolder(path);
+				const folder = addFolder(path);
+				await beforeCreateFolderResolve?.(path);
+				return folder;
 			},
 			create: async (path: string, source: string) => {
 				operations.push(`create:${path}`);
@@ -121,7 +126,7 @@ function createHarness() {
 	};
 	const service = new AtlasMutationService(
 		app,
-		() => DEFAULT_SETTINGS,
+		() => settings,
 		() => true,
 		index,
 		() => "unused-person-id",
@@ -131,21 +136,33 @@ function createHarness() {
 		addFolder("People");
 		addFolder("People/Relationships");
 		addFolder("People/Contact moments");
-		addNote("People/Alice.md", { type: "person", person_id: "person-alice", name: "Alice" });
-		addNote("People/Bob.md", { type: "person", person_id: "person-bob", name: "Bob" });
-		addNote("People/Charlie.md", { type: "person", person_id: "person-charlie", name: "Charlie" });
+		addNote("People/Alice.md", {
+			[settings.typeProperty]: settings.personTypeValue,
+			[settings.personIdProperty]: "person-alice",
+			[settings.nameProperty]: "Alice",
+		});
+		addNote("People/Bob.md", {
+			[settings.typeProperty]: settings.personTypeValue,
+			[settings.personIdProperty]: "person-bob",
+			[settings.nameProperty]: "Bob",
+		});
+		addNote("People/Charlie.md", {
+			[settings.typeProperty]: settings.personTypeValue,
+			[settings.personIdProperty]: "person-charlie",
+			[settings.nameProperty]: "Charlie",
+		});
 		peopleById.set("person-alice", ["People/Alice.md"]);
 		peopleById.set("person-bob", ["People/Bob.md"]);
 		peopleById.set("person-charlie", ["People/Charlie.md"]);
 		addNote("People/Relationships/Alice - Bob.md", {
-			type: "relationship",
-			relationship_id: "relationship-alice-bob",
-			from: "[[People/Alice]]",
-			to: "[[People/Bob]]",
-			relationship_types: ["friend"],
-			status: "active",
+			[settings.typeProperty]: settings.relationshipTypeValue,
+			[settings.relationshipIdProperty]: "relationship-alice-bob",
+			[settings.relationshipFromProperty]: "[[People/Alice]]",
+			[settings.relationshipToProperty]: "[[People/Bob]]",
+			[settings.relationshipTypesProperty]: ["friend"],
+			[settings.statusProperty]: "active",
 			custom: "keep",
-			...(lastContact ? { last_contact: lastContact } : {}),
+			...(lastContact ? { [settings.lastContactProperty]: lastContact } : {}),
 		});
 		relationshipsById.set("relationship-alice-bob", ["People/Relationships/Alice - Bob.md"]);
 	};
@@ -170,6 +187,12 @@ function createHarness() {
 		},
 		set beforeFrontmatterCallback(value: ((note: HarnessNote) => void) | undefined) {
 			beforeFrontmatterCallback = value;
+		},
+		get beforeCreateFolderResolve() {
+			return beforeCreateFolderResolve;
+		},
+		set beforeCreateFolderResolve(value: ((path: string) => void | Promise<void>) | undefined) {
+			beforeCreateFolderResolve = value;
 		},
 		committedFrontmatterWrites,
 		contactMomentsById,
@@ -212,6 +235,61 @@ describe("AtlasMutationService contact moments", () => {
 		const created = harness.entries.get(harness.createInput().path) as HarnessNote;
 		expect(created.source).toContain('contact_moment_id: "moment-generated"');
 		expect(created.source).toContain('people: ["[[People/Alice]]"]');
+	});
+
+	it("roundtrips configured contact-moment property names through generated YAML", async () => {
+		const settings = unicodePropertySettings();
+		const harness = createHarness(settings);
+		harness.addCanonicalPeopleAndRelationship();
+		const input = {
+			...harness.createInput(),
+			contactMomentId: "moment-unicode",
+			channel: "meeting",
+			summary: "Discussed next steps",
+			followUpOn: "2026-08-02",
+			followUpStatus: "open" as const,
+		};
+
+		const result = await harness.service.createContactMoment(input, { advanceRelationshipLastContact: false });
+		expect(result.status).toBe("success");
+		const created = harness.entries.get(input.path);
+		if (!created || !("source" in created)) throw new Error("Created moment fixture is missing.");
+		const source = created.source;
+		const parsed = parseYaml(source);
+		const expected = {
+			[settings.typeProperty]: settings.contactMomentTypeValue,
+			[settings.contactMomentIdProperty]: "moment-unicode",
+			[settings.contactMomentPeopleProperty]: ["[[People/Alice]]"],
+			[settings.contactMomentRelationshipProperty]: "[[People/Relationships/Alice - Bob]]",
+			[settings.contactMomentOccurredOnProperty]: "2026-07-31",
+			[settings.contactMomentChannelProperty]: "meeting",
+			[settings.contactMomentSummaryProperty]: "Discussed next steps",
+			[settings.contactMomentFollowUpOnProperty]: "2026-08-02",
+			[settings.contactMomentFollowUpStatusProperty]: "open",
+		};
+
+		expect(Object.keys(parsed).sort()).toEqual(Object.keys(expected).sort());
+		expect(parsed).toEqual(expected);
+		for (const key of Object.keys(expected)) expect(serializedPropertyOccurrences(source, key)).toBe(1);
+	});
+
+	it("keeps contact-moment serialization on the validated settings snapshot after folder creation", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const harness = createHarness(settings);
+		harness.addCanonicalPeopleAndRelationship();
+		harness.beforeCreateFolderResolve = (path) => {
+			if (path === "People/Contact moments") settings.contactMomentSummaryProperty = "summary:unsafe";
+		};
+
+		const input = { ...harness.createInput(), summary: "Snapshot-safe" };
+		await expect(
+			harness.service.createContactMoment(input, { advanceRelationshipLastContact: false }),
+		).resolves.toMatchObject({ status: "success" });
+
+		const created = harness.entries.get(input.path) as HarnessNote;
+		const parsed = parseYaml(created.source);
+		expect(parsed).toHaveProperty("summary", "Snapshot-safe");
+		expect(parsed).not.toHaveProperty("summary:unsafe");
 	});
 
 	it("preserves an equal or later relationship date without invoking a relationship write", async () => {
@@ -396,6 +474,42 @@ describe("AtlasMutationService contact moments", () => {
 			custom: { nested: "keep" },
 		});
 		expect(file.body).toBe(bodyBefore);
+	});
+
+	it("keeps contact-moment edits on the validated settings snapshot inside the host callback", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const harness = createHarness(settings);
+		harness.addCanonicalPeopleAndRelationship();
+		const file = harness.addNote("People/Contact moments/snapshot.md", {
+			type: "contact_moment",
+			contact_moment_id: "moment-snapshot",
+			people: ["[[People/Alice]]"],
+			occurred_on: "2026-07-30",
+			summary: "Before",
+		});
+		harness.contactMomentsById.set("moment-snapshot", [file.path]);
+		const sourceBaseline = captureContactMomentEditSourceBaseline(file.frontmatter, settings);
+		harness.beforeFrontmatterCallback = () => {
+			settings.contactMomentSummaryProperty = "summary:unsafe";
+		};
+
+		await expect(
+			harness.service.updateContactMoment(
+				file as unknown as TFile,
+				{
+					path: file.path,
+					contactMomentId: "moment-snapshot",
+					people: [{ id: "person-alice", filePath: "People/Alice.md" }],
+					occurredOn: "2026-07-30",
+					summary: "After",
+				},
+				{ summary: "After" },
+				{ advanceRelationshipLastContact: false, expectedContactMomentId: "moment-snapshot", sourceBaseline },
+			),
+		).resolves.toMatchObject({ status: "success" });
+
+		expect(file.frontmatter).toHaveProperty("summary", "After");
+		expect(file.frontmatter).not.toHaveProperty("summary:unsafe");
 	});
 
 	it("rejects stale owned contact-moment fields before an edit or relationship write", async () => {

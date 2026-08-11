@@ -1,4 +1,4 @@
-import { TFile, type App } from "obsidian";
+import { parseYaml, TFile, type App } from "obsidian";
 import { describe, expect, it } from "vitest";
 import type { PersonRecord } from "../src/domain/types";
 import { personProfilePath } from "../src/domain/people-paths";
@@ -13,6 +13,7 @@ import { capturePersonEditSourceBaseline } from "../src/mutations/person-source-
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { PeopleAtlasSettings } from "../src/settings/types";
 import { UNSAFE_PEOPLE_ROOT_CASES } from "./people-root-fixtures";
+import { serializedPropertyOccurrences, unicodePropertySettings } from "./yaml-property-roundtrip-fixtures";
 
 function createHarness(
 	options: {
@@ -308,6 +309,182 @@ describe("AtlasMutationService", () => {
 		expect(files.get(file.path)?.content).toContain('emails: ["Jan@Example.com"]');
 		expect(files.get(file.path)?.content).toContain('phones: ["+31 (0)20 123-45-67"]');
 		expect(files.get(file.path)?.content).toContain('job_title: "Staff Engineer"');
+	});
+
+	it("roundtrips configured person property names through generated YAML", async () => {
+		const settings = unicodePropertySettings();
+		const { files, service } = createHarness({ settings });
+		const personId = "person-12345678-90ab-4cde-8f01-23456789abcd";
+		const file = await service.createPerson({
+			name: "Jan Jansen",
+			personId,
+			reviewedPath: "People/Profiles/Jan Jansen/Jan Jansen.md",
+			aliases: ["JJ"],
+			organisations: ["Atlas"],
+			contacts: ["Signal"],
+			birthDate: "1990-07-30",
+			pronouns: "they/them",
+			gender: "non-binary",
+			emails: ["jan@example.com"],
+			phones: ["+31 20 123 45 67"],
+			jobTitle: "Engineer",
+		});
+		const source = files.get(file.path)?.content ?? "";
+		const parsed = parseYaml(source);
+		const expected = {
+			[settings.typeProperty]: settings.personTypeValue,
+			[settings.personIdProperty]: personId,
+			[settings.nameProperty]: "Jan Jansen",
+			[settings.aliasesProperty]: ["JJ"],
+			[settings.organisationsProperty]: ["Atlas"],
+			[settings.contactsProperty]: ["Signal"],
+			[settings.birthDateProperty]: "1990-07-30",
+			[settings.pronounsProperty]: "they/them",
+			[settings.genderProperty]: "non-binary",
+			[settings.emailsProperty]: ["jan@example.com"],
+			[settings.phonesProperty]: ["+31 20 123 45 67"],
+			[settings.jobTitleProperty]: "Engineer",
+		};
+
+		expect(Object.keys(parsed).sort()).toEqual(Object.keys(expected).sort());
+		expect(parsed).toEqual(expected);
+		for (const key of Object.keys(expected)) expect(serializedPropertyOccurrences(source, key)).toBe(1);
+		expect(parsed).not.toHaveProperty(settings.photoProperty);
+		expect(serializedPropertyOccurrences(source, settings.photoProperty)).toBe(0);
+	});
+
+	it("roundtrips configured relationship property names through generated YAML", async () => {
+		const settings = unicodePropertySettings();
+		const { files, service } = createHarness({ settings });
+		const file = await service.createRelationship({
+			path: "People/Relationships/Alice - Bob.md",
+			relationshipId: "relationship-12345678",
+			from: "[[People/Alice]]",
+			to: "[[People/Bob]]",
+			types: ["friend", "colleague"],
+			presetId: "friendship",
+			fromRole: "Ouder",
+			toRole: "Kind",
+			closeness: 4,
+			since: "2020-01-02",
+			lastContact: "2026-08-01",
+			status: "active",
+		});
+		const source = files.get(file.path)?.content ?? "";
+		const parsed = parseYaml(source);
+		const expected = {
+			[settings.typeProperty]: settings.relationshipTypeValue,
+			[settings.relationshipIdProperty]: "relationship-12345678",
+			[settings.relationshipFromProperty]: "[[People/Alice]]",
+			[settings.relationshipToProperty]: "[[People/Bob]]",
+			[settings.relationshipTypesProperty]: ["friend", "colleague"],
+			[settings.relationshipPresetProperty]: "friendship",
+			[settings.relationshipFromRoleProperty]: "Ouder",
+			[settings.relationshipToRoleProperty]: "Kind",
+			[settings.closenessProperty]: 4,
+			[settings.sinceProperty]: "2020-01-02",
+			[settings.lastContactProperty]: "2026-08-01",
+			[settings.statusProperty]: "active",
+		};
+
+		expect(Object.keys(parsed).sort()).toEqual(Object.keys(expected).sort());
+		expect(parsed).toEqual(expected);
+		for (const key of Object.keys(expected)) expect(serializedPropertyOccurrences(source, key)).toBe(1);
+	});
+
+	it("rejects unsafe programmatic property settings before relationship YAML or folder writes", async () => {
+		const settings = { ...DEFAULT_SETTINGS, relationshipIdProperty: "relationship:id" };
+		const { files, service } = createHarness({ settings });
+
+		await expect(
+			service.createRelationship({
+				path: "People/Relationships/Alice - Bob.md",
+				relationshipId: "relationship-unsafe-settings",
+				from: "[[People/Alice]]",
+				to: "[[People/Bob]]",
+			}),
+		).rejects.toThrow("relationshipIdProperty is invalid");
+		expect(files.size).toBe(0);
+	});
+
+	it("rejects property settings that become unsafe while person folders are being created", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const { beforeCreateFolderResolve, files, noteCreateCalls, service } = createHarness({ settings });
+		beforeCreateFolderResolve.current = (path) => {
+			if (path === "People/Profiles/Alice") settings.nameProperty = "name:unsafe";
+		};
+
+		await expect(
+			service.createPerson({
+				name: "Alice",
+				personId: "person-11112222-3333-4444-aaaa-bbbbbbbbbbbb",
+				reviewedPath: "People/Profiles/Alice/Alice.md",
+			}),
+		).rejects.toThrow("nameProperty is invalid");
+		expect(noteCreateCalls).toEqual([]);
+		expect(files.has("People/Profiles/Alice/Alice.md")).toBe(false);
+	});
+
+	it("keeps relationship serialization on the validated settings snapshot after folder creation", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const { beforeCreateFolderResolve, files, service } = createHarness({ settings });
+		beforeCreateFolderResolve.current = (path) => {
+			if (path === "People/Relationships") settings.relationshipIdProperty = "relationship:id";
+		};
+
+		await expect(
+			service.createRelationship({
+				path: "People/Relationships/Alice - Bob.md",
+				relationshipId: "relationship-snapshot",
+				from: "[[People/Alice]]",
+				to: "[[People/Bob]]",
+			}),
+		).resolves.toBeDefined();
+
+		expect(files.get("People/Relationships/Alice - Bob.md")?.content).toContain(
+			'relationship_id: "relationship-snapshot"',
+		);
+		expect(files.get("People/Relationships/Alice - Bob.md")?.content).not.toContain("relationship:id");
+	});
+
+	it("keeps person edits on the validated settings snapshot inside the host callback", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const { beforeProcessFrontMatterCallback, files, service } = createHarness({ settings });
+		const file = { path: "People/Jan.md" } as TFile;
+		files.set(file.path, {
+			path: file.path,
+			frontmatter: { type: "person", person_id: "person-jan", name: "Jan" },
+		});
+		beforeProcessFrontMatterCallback.current = () => {
+			settings.nameProperty = "name:unsafe";
+		};
+
+		await expect(service.updatePerson(file, { name: "Jan Jansen" })).resolves.toMatchObject({ renamed: false });
+		expect(files.get(file.path)?.frontmatter).toHaveProperty("name", "Jan Jansen");
+		expect(files.get(file.path)?.frontmatter).not.toHaveProperty("name:unsafe");
+	});
+
+	it("keeps relationship edits on the validated settings snapshot inside the host callback", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const { beforeProcessFrontMatterCallback, files, service } = createHarness({ settings });
+		const file = { path: "People/Relationships/Alice - Bob.md" } as TFile;
+		files.set(file.path, {
+			path: file.path,
+			frontmatter: {
+				type: "relationship",
+				relationship_id: "relationship-existing",
+				from: "[[People/Alice]]",
+				to: "[[People/Bob]]",
+				status: "active",
+			},
+		});
+		beforeProcessFrontMatterCallback.current = () => {
+			settings.statusProperty = "status:unsafe";
+		};
+
+		await expect(service.updateRelationship(file, { status: "dormant" })).resolves.toBeUndefined();
+		expect(files.get(file.path)?.frontmatter).toHaveProperty("status", "dormant");
+		expect(files.get(file.path)?.frontmatter).not.toHaveProperty("status:unsafe");
 	});
 
 	it("rejects person create without an explicit UUID-backed person ID before writing", async () => {

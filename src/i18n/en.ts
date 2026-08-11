@@ -103,6 +103,7 @@ export const englishCatalog = {
 	noticeInvalidRelationshipRoleFormat: ({ error }: NoticeErrorParameters) =>
 		`Relationship role format is invalid: ${error}`,
 	noticeInvalidPeopleRootFolder: ({ error }: NoticeErrorParameters) => `People root folder is invalid: ${error}`,
+	noticeInvalidPropertyNames: ({ error }: NoticeErrorParameters) => `Property names are invalid: ${error}`,
 	noticeInvalidPersonProperties: ({ error }: NoticeErrorParameters) => `Person property mappings are invalid: ${error}`,
 	noticeInvalidContactMomentProperties: ({ error }: NoticeErrorParameters) =>
 		`Contact-moment property mappings are invalid: ${error}`,

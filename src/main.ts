@@ -23,11 +23,13 @@ import { loadPluginSettings } from "./settings/load";
 import { PeopleAtlasSettingTab } from "./settings/settings-tab";
 import type { PeopleAtlasSettings } from "./settings/types";
 import {
+	validateConfiguredPropertyNames,
 	validateContactMomentPropertyMappings,
 	validateNoteTypeValues,
 	validatePeopleRootFolder,
 	validatePersonPropertyMappings,
 	validateSettings,
+	YAML_PROPERTY_NAME_SETTING_KEYS,
 } from "./settings/validate";
 import { PeopleAtlasView } from "./view/people-atlas-view";
 import { cloneViewState, DEFAULT_VIEW_STATE, type AtlasViewState } from "./settings/view-state";
@@ -205,6 +207,14 @@ export default class PeopleAtlasPlugin extends Plugin {
 			new Notice(this.t.noticeSettingsReadOnly);
 			return false;
 		}
+		if ((YAML_PROPERTY_NAME_SETTING_KEYS as readonly string[]).includes(key) && typeof value !== "string") {
+			new Notice(
+				this.t.noticeInvalidPropertyNames({
+					error: `${key} must be a text property name.`,
+				}),
+			);
+			return false;
+		}
 		if (key === "relationshipPresets") {
 			const presetError = validateStoredRelationshipPresets(value);
 			if (presetError) {
@@ -229,6 +239,11 @@ export default class PeopleAtlasPlugin extends Plugin {
 			const peopleRootFolderError = validatePeopleRootFolder(next.peopleRootFolder);
 			if (peopleRootFolderError) {
 				new Notice(this.t.noticeInvalidPeopleRootFolder({ error: peopleRootFolderError }));
+				return false;
+			}
+			const configuredPropertyNameError = validateConfiguredPropertyNames(next);
+			if (configuredPropertyNameError) {
+				new Notice(this.t.noticeInvalidPropertyNames({ error: configuredPropertyNameError }));
 				return false;
 			}
 			const personPropertyError = validatePersonPropertyMappings(next);

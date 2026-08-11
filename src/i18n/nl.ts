@@ -89,6 +89,7 @@ export const dutchCatalog: Translator = {
 	noticeInvalidRelationshipTemplates: ({ error }) => `Relatiesjablonen zijn ongeldig: ${error}`,
 	noticeInvalidRelationshipRoleFormat: ({ error }) => `De opmaak voor relatierollen is ongeldig: ${error}`,
 	noticeInvalidPeopleRootFolder: ({ error }) => `De hoofdmap voor personen is ongeldig: ${error}`,
+	noticeInvalidPropertyNames: ({ error }) => `Property-namen zijn ongeldig: ${error}`,
 	noticeInvalidPersonProperties: ({ error }) => `Persoonseigenschappen zijn ongeldig: ${error}`,
 	noticeInvalidContactMomentProperties: ({ error }) => `Contactmomenteigenschappen zijn ongeldig: ${error}`,
 	noticeInvalidNoteTypeValues: ({ error }) => `Notitietypewaarden zijn ongeldig: ${error}`,

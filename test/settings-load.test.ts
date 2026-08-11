@@ -4,6 +4,7 @@ import { personProfilePath } from "../src/domain/people-paths";
 import { parsePersonReference } from "../src/domain/wikilink";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import { loadPluginSettings } from "../src/settings/load";
+import { validatePropertyName } from "../src/settings/validate";
 
 describe("plugin settings loading", () => {
 	it("uses current defaults for a fresh installation", () => {
@@ -216,6 +217,109 @@ describe("plugin settings loading", () => {
 		expect(withDirection.error).toContain("Template direction is not supported");
 		expect(malformed.writeEnabled).toBe(false);
 		expect(malformed.error).toContain("relationshipPresets[0]");
+	});
+
+	it.each([
+		"naïve_关系-2",
+		"_private-2",
+		"Ångström9-β",
+		"𐐀name",
+	])("accepts Unicode property names with the configured grammar: %s", (propertyName) => {
+		expect(validatePropertyName(propertyName)).toBeUndefined();
+		const result = loadPluginSettings({
+			...structuredClone(DEFAULT_SETTINGS),
+			nameProperty: propertyName,
+		});
+		expect(result.writeEnabled).toBe(true);
+		expect(result.settings.nameProperty).toBe(propertyName);
+	});
+
+	it("accepts a Unicode decimal digit after the first code point and has no length cap", () => {
+		const propertyName = `a${"x".repeat(1024)}\u0661`;
+		expect(validatePropertyName(propertyName)).toBeUndefined();
+		expect(loadPluginSettings({ ...structuredClone(DEFAULT_SETTINGS), nameProperty: propertyName }).writeEnabled).toBe(
+			true,
+		);
+	});
+
+	it.each([
+		"bad:key",
+		"name#comment",
+		"{nested}",
+		"[list]",
+		"-name",
+		"9lives",
+		"?name",
+		":name",
+		"e\u0301",
+		"name value",
+		"nul\u0000key",
+	])("rejects unsafe property name %j", (propertyName) => {
+		expect(validatePropertyName(propertyName)).toContain("Property names");
+	});
+
+	it.each([
+		"typeProperty",
+		"personIdProperty",
+		"nameProperty",
+		"aliasesProperty",
+		"organisationsProperty",
+		"photoProperty",
+		"contactsProperty",
+		"birthDateProperty",
+		"pronounsProperty",
+		"genderProperty",
+		"emailsProperty",
+		"phonesProperty",
+		"jobTitleProperty",
+		"relationshipIdProperty",
+		"relationshipFromProperty",
+		"relationshipToProperty",
+		"relationshipTypesProperty",
+		"relationshipPresetProperty",
+		"relationshipFromRoleProperty",
+		"relationshipToRoleProperty",
+		"closenessProperty",
+		"sinceProperty",
+		"lastContactProperty",
+		"statusProperty",
+		"contactMomentIdProperty",
+		"contactMomentPeopleProperty",
+		"contactMomentRelationshipProperty",
+		"contactMomentOccurredOnProperty",
+		"contactMomentChannelProperty",
+		"contactMomentSummaryProperty",
+		"contactMomentFollowUpOnProperty",
+		"contactMomentFollowUpStatusProperty",
+	] as const)("keeps unsafe persisted property %s read-only", (key) => {
+		const result = loadPluginSettings({
+			...structuredClone(DEFAULT_SETTINGS),
+			[key]: "bad:key",
+		});
+
+		expect(result.writeEnabled, key).toBe(false);
+		expect(result.error, key).toContain(`${key} is invalid`);
+	});
+
+	it("rejects a Unicode-safe property name only when its existing mapping collides", () => {
+		const result = loadPluginSettings({
+			...structuredClone(DEFAULT_SETTINGS),
+			nameProperty: "naïve_关系-2",
+			aliasesProperty: "naïve_关系-2",
+		});
+
+		expect(result.writeEnabled).toBe(false);
+		expect(result.error).toContain("nameProperty and aliasesProperty");
+	});
+
+	it("rejects unsafe relationship properties before enabling stored writes", () => {
+		const result = loadPluginSettings({
+			...structuredClone(DEFAULT_SETTINGS),
+			relationshipIdProperty: "[relationship]",
+		});
+
+		expect(result.writeEnabled).toBe(false);
+		expect(result.error).toContain("relationshipIdProperty is invalid");
 	});
 
 	it("rejects malformed view state without enabling writes", () => {

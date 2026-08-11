@@ -81,6 +81,41 @@ export const CONTACT_MOMENT_OWNED_PROPERTY_SETTING_KEYS = [
 	"contactMomentFollowUpStatusProperty",
 ] as const satisfies ReadonlyArray<keyof PeopleAtlasSettings>;
 
+export const YAML_PROPERTY_NAME_SETTING_KEYS = [
+	"typeProperty",
+	"personIdProperty",
+	"nameProperty",
+	"aliasesProperty",
+	"organisationsProperty",
+	"photoProperty",
+	"contactsProperty",
+	"birthDateProperty",
+	"pronounsProperty",
+	"genderProperty",
+	"emailsProperty",
+	"phonesProperty",
+	"jobTitleProperty",
+	"relationshipIdProperty",
+	"relationshipFromProperty",
+	"relationshipToProperty",
+	"relationshipTypesProperty",
+	"relationshipPresetProperty",
+	"relationshipFromRoleProperty",
+	"relationshipToRoleProperty",
+	"closenessProperty",
+	"sinceProperty",
+	"lastContactProperty",
+	"statusProperty",
+	"contactMomentIdProperty",
+	"contactMomentPeopleProperty",
+	"contactMomentRelationshipProperty",
+	"contactMomentOccurredOnProperty",
+	"contactMomentChannelProperty",
+	"contactMomentSummaryProperty",
+	"contactMomentFollowUpOnProperty",
+	"contactMomentFollowUpStatusProperty",
+] as const satisfies ReadonlyArray<keyof PeopleAtlasSettings>;
+
 export const NOTE_TYPE_VALUE_SETTING_KEYS = [
 	"personTypeValue",
 	"relationshipTypeValue",
@@ -110,9 +145,22 @@ export function validateSettings(raw: unknown): PeopleAtlasSettings {
 	return result;
 }
 
+const PROPERTY_NAME_PATTERN = /^[\p{L}_][\p{L}\p{Nd}_-]*$/u;
+
 export function validatePropertyName(value: string): string | undefined {
 	if (!value.trim()) return "Enter a property name.";
 	if (/\s/.test(value)) return "Property names cannot contain whitespace.";
+	if (!PROPERTY_NAME_PATTERN.test(value)) {
+		return "Property names must start with a Unicode letter or underscore and contain only Unicode letters, decimal digits, underscores or hyphens.";
+	}
+	return undefined;
+}
+
+export function validateConfiguredPropertyNames(settings: PeopleAtlasSettings): string | undefined {
+	for (const key of YAML_PROPERTY_NAME_SETTING_KEYS) {
+		const propertyError = validatePropertyName(settings[key]);
+		if (propertyError) return `${key} is invalid: ${propertyError}`;
+	}
 	return undefined;
 }
 

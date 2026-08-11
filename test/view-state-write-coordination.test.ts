@@ -169,6 +169,11 @@ describe("view-state write coordination", () => {
 			value: "../People",
 			message: "must stay inside the vault",
 		},
+		{
+			key: "relationshipIdProperty" as const,
+			value: "relationship:id",
+			message: "Property names are invalid",
+		},
 	])("rejects unsafe contact-moment setting $key before persistence", async ({ key, value, message }) => {
 		const plugin = createPlugin();
 		plugin.saveData = vi.fn(async () => undefined);
@@ -179,5 +184,17 @@ describe("view-state write coordination", () => {
 		expect(plugin.settings[key]).toBe(originalValue);
 		expect(plugin.saveData).not.toHaveBeenCalled();
 		expect(notices.at(-1)).toContain(message);
+	});
+
+	it("rejects non-text property-setting input before persistence", async () => {
+		const plugin = createPlugin();
+		plugin.saveData = vi.fn(async () => undefined);
+		const originalValue = plugin.settings.relationshipIdProperty;
+
+		await expect(plugin.updateSetting("relationshipIdProperty", 42)).resolves.toBe(false);
+
+		expect(plugin.settings.relationshipIdProperty).toBe(originalValue);
+		expect(plugin.saveData).not.toHaveBeenCalled();
+		expect(notices.at(-1)).toContain("Property names are invalid");
 	});
 });

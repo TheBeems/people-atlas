@@ -2,6 +2,7 @@ import { PLUGIN_DATA_SCHEMA_VERSION } from "../constants";
 import { DEFAULT_SETTINGS } from "./defaults";
 import { validateStoredRelationshipPresets } from "./relationship-presets";
 import {
+	validateConfiguredPropertyNames,
 	validateContactMomentPropertyMappings,
 	validateNoteTypeValues,
 	validatePeopleRootFolder,
@@ -88,6 +89,8 @@ export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
 		const settings = validateSettings(raw);
 		const peopleRootFolderError = validatePeopleRootFolder(settings.peopleRootFolder);
 		if (peopleRootFolderError) throw new Error(`peopleRootFolder is invalid: ${peopleRootFolderError}`);
+		const configuredPropertyNameError = validateConfiguredPropertyNames(settings);
+		if (configuredPropertyNameError) throw new Error(configuredPropertyNameError);
 		const personPropertyError = validatePersonPropertyMappings(settings);
 		if (personPropertyError) throw new Error(personPropertyError);
 		const contactMomentPropertyError = validateContactMomentPropertyMappings(settings);

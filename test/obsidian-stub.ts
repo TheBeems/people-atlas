@@ -70,19 +70,27 @@ export function parseFrontMatterTags(frontmatter: unknown): string[] | null {
 export function parseYaml(yaml: string): Record<string, unknown> {
 	const frontmatter: Record<string, unknown> = {};
 	const lines = yaml.split(/\r?\n/);
+	const parseScalar = (raw: string): unknown => {
+		try {
+			return JSON.parse(raw);
+		} catch {
+			return raw.replace(/^['"]|['"]$/g, "");
+		}
+	};
+
 	for (let index = 0; index < lines.length; index += 1) {
-		const match = /^([A-Za-z0-9_-]+):(?:\s*(.*))?$/.exec(lines[index] ?? "");
+		const match = /^([\p{L}_][\p{L}\p{Nd}_-]*):(?:\s*(.*))?$/u.exec(lines[index] ?? "");
 		if (!match?.[1]) continue;
 		const key = match[1];
 		const raw = match[2]?.trim() ?? "";
 		if (raw) {
-			frontmatter[key] = raw.replace(/^['"]|['"]$/g, "");
+			frontmatter[key] = parseScalar(raw);
 			continue;
 		}
-		const values: string[] = [];
+		const values: unknown[] = [];
 		while (/^\s+-\s+/.test(lines[index + 1] ?? "")) {
 			index += 1;
-			values.push((lines[index] ?? "").replace(/^\s+-\s+/, "").replace(/^['"]|['"]$/g, ""));
+			values.push(parseScalar((lines[index] ?? "").replace(/^\s+-\s+/, "").trim()));
 		}
 		frontmatter[key] = values;
 	}

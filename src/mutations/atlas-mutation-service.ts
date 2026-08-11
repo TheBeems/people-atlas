@@ -12,6 +12,7 @@ import type { PersonRecord } from "../domain/types";
 import { parsePersonReference } from "../domain/wikilink";
 import type { RelationshipPresetValues } from "../settings/relationship-presets";
 import type { PeopleAtlasSettings } from "../settings/types";
+import { validateConfiguredPropertyNames } from "../settings/validate";
 import {
 	contactMomentWikilink,
 	contactMomentEditSourceMatches,
@@ -255,8 +256,7 @@ export class AtlasMutationService {
 	}
 
 	private async createPersonExclusive(input: PersonMutationInput): Promise<TFile> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const normalizedInput = this.normalizePersonInput(input);
 		const errors = validatePersonInput(normalizedInput, settings);
 		const reviewedPath = normalizedInput.reviewedPath?.trim() ?? "";
@@ -310,7 +310,7 @@ export class AtlasMutationService {
 			if (!createdDossier || this.app.vault.getAbstractFileByPath(dossierPath) !== createdDossier) {
 				throw new MutationError(`The dossier “${dossierPath}” was not created by this transaction.`);
 			}
-			const finalSettings = this.getSettings();
+			const finalSettings = this.assertWritable();
 			const finalPlan = planPersonDossier({
 				peopleRootFolder: finalSettings.peopleRootFolder,
 				displayName: normalizedInput.name,
@@ -353,8 +353,7 @@ export class AtlasMutationService {
 	}
 
 	private async createRelationshipExclusive(input: RelationshipMutationInput): Promise<TFile> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const path = normalizePath(input.path);
 		const errors = validateRelationshipInput({ ...input, path }, settings);
 		const relationshipsFolder = peopleCollectionPaths(settings.peopleRootFolder).relationships;
@@ -383,8 +382,7 @@ export class AtlasMutationService {
 		input: ContactMomentMutationInput,
 		options: ContactMomentSaveOptions,
 	): Promise<ContactMomentMutationResult> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const contactSettings: ContactMomentSettings = settings;
 		const generatedId = input.contactMomentId?.trim() || this.generateContactMomentId();
 		const normalizedInput = normalizeContactMomentMutationInput({
@@ -438,8 +436,7 @@ export class AtlasMutationService {
 		updates: ContactMomentUpdates,
 		options: ContactMomentUpdateOptions,
 	): Promise<ContactMomentMutationResult> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const contactSettings: ContactMomentSettings = settings;
 		const normalizedInput = normalizeContactMomentMutationInput(input);
 		const errors = validateContactMomentMutationInput(normalizedInput, contactSettings);
@@ -519,8 +516,7 @@ export class AtlasMutationService {
 	private async updateContactMomentFollowUpStatusExclusive(
 		rawInput: ContactMomentFollowUpStatusMutationInput,
 	): Promise<ContactMomentFollowUpStatusMutationResult> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const contactSettings: ContactMomentSettings = settings;
 		const input = normalizeContactMomentFollowUpStatusMutationInput(rawInput);
 		const errors = validateContactMomentFollowUpStatusMutationInput(input);
@@ -628,7 +624,8 @@ export class AtlasMutationService {
 	private async retryContactMomentRelationshipExclusive(
 		retry: ContactMomentRelationshipRetryToken,
 	): Promise<ContactMomentRelationshipRetryResult> {
-		this.assertWritable();
+		const settings = this.assertWritable();
+		const contactSettings: ContactMomentSettings = settings;
 		const state = this.contactMomentRetries.get(retry);
 		if (!state) {
 			return {
@@ -647,8 +644,6 @@ export class AtlasMutationService {
 			};
 		}
 
-		const settings = this.getSettings();
-		const contactSettings: ContactMomentSettings = settings;
 		try {
 			await this.assertContactMomentBaseline(state.momentBaseline, state.momentFile, "contact moment");
 			await this.assertContactMomentBaseline(state.relationshipBaseline, state.relationshipFile, "relationship");
@@ -692,8 +687,7 @@ export class AtlasMutationService {
 		updates: PersonUpdates,
 		options: PersonEditOptions,
 	): Promise<PersonEditResult> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const cache = this.app.metadataCache.getFileCache(file);
 		const current = cache?.frontmatter ?? {};
 		const targetPath = options.targetPath ? normalizePath(options.targetPath) : undefined;
@@ -783,11 +777,10 @@ export class AtlasMutationService {
 						throw new MutationError(STALE_PERSON_EDIT_MESSAGE);
 					}
 					if (writeUpdates.photo !== undefined && writeUpdates.photo !== null) {
-						const liveSettings = this.getSettings();
-						const livePhotoPersonId = normalizeStoredId(this.readString(frontmatter, liveSettings.personIdProperty));
+						const livePhotoPersonId = normalizeStoredId(this.readString(frontmatter, settings.personIdProperty));
 						const photoError = this.explicitPersonPhotoError(
 							writeUpdates.photo,
-							liveSettings,
+							settings,
 							file.path,
 							livePhotoPersonId,
 						);
@@ -887,8 +880,7 @@ export class AtlasMutationService {
 	}
 
 	private async updateRelationshipExclusive(file: TFile, updates: RelationshipUpdates): Promise<void> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
 		const value = <T>(key: string, update: T | null | undefined): T | undefined =>
 			update === null ? undefined : (update ?? (current[key] as T | undefined));
@@ -1585,8 +1577,7 @@ export class AtlasMutationService {
 		approvedBefore: RelationshipPresetValues,
 		updates: RelationshipPresetSyncUpdates,
 	): Promise<RelationshipPresetSyncMutationResult> {
-		this.assertWritable();
-		const settings = this.getSettings();
+		const settings = this.assertWritable();
 		let writtenRelationshipId: string | undefined;
 		try {
 			await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
@@ -1834,8 +1825,12 @@ export class AtlasMutationService {
 		return Number.isFinite(parsed) ? parsed : undefined;
 	}
 
-	private assertWritable(): void {
+	private assertWritable(): PeopleAtlasSettings {
 		if (!this.canWrite()) throw new MutationError("People Atlas writes are disabled until plugin data is repaired.");
+		const settings = structuredClone(this.getSettings());
+		const propertyNameError = validateConfiguredPropertyNames(settings);
+		if (propertyNameError) throw new MutationError(`People Atlas writes are disabled: ${propertyNameError}`);
+		return settings;
 	}
 
 	private async ensureFolder(folder: string): Promise<Map<string, TAbstractFile>> {

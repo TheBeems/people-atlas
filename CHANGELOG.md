@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.3 (Alpha)
+
+- Replaced the native relationship picker with an in-plugin picker and hid
+  filesystem paths from person mentions.
+- Rejected conflicting person references before resolving a canonical person.
+- Kept YAML settings property names Unicode-safe and hardened the release
+  supply chain.
+
 ## 0.12.2 (Alpha)
 
 - Fixed PersonIndex readiness races on mobile and incomplete metadata-cache

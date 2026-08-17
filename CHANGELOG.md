@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.4 (Alpha)
+
+- Simplified the primary People Atlas navigation to **Network**, **People**,
+  and **Follow-up**.
+- Added clearer network scopes and a more accessible people search.
+- Reduced permanent graph controls and moved zoom actions behind progressive
+  disclosure.
+- Made relationship meaning easier to discover through contextual details,
+  while keeping the graph visually calm.
+- Unified person details across views, prioritized **Log contact**, and made
+  latest contact and follow-up information easier to scan.
+
 ## 0.12.3 (Alpha)
 
 - Replaced the native relationship picker with an in-plugin picker and hid

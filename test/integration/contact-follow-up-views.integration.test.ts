@@ -115,9 +115,9 @@ describe("controlled contact-history and follow-up view integration", () => {
 			"Alice and Bob",
 		);
 
-		buttonWithText(standalone.leaf.contentEl, "Follow-ups").click();
-		buttonWithText(partialBases.parent, "Follow-ups").click();
-		buttonWithText(fullBases.parent, "Follow-ups").click();
+		buttonWithText(standalone.leaf.contentEl, "Follow-up").click();
+		buttonWithText(partialBases.parent, "Follow-up").click();
+		buttonWithText(fullBases.parent, "Follow-up").click();
 
 		expect(standalone.leaf.contentEl.textContent).toContain("Private shared conversation");
 		expect(fullBases.parent.textContent).toContain("Private shared conversation");
@@ -127,14 +127,14 @@ describe("controlled contact-history and follow-up view integration", () => {
 		expect(fullSnapshot(partialBases.view).hiddenContactMomentCount).toBe(1);
 		expect(fullSnapshot(fullBases.view).contactMoments).toHaveLength(1);
 
-		buttonWithText(standalone.leaf.contentEl, "Graph").click();
+		buttonWithText(standalone.leaf.contentEl, "Network").click();
 		runtime.commands.get("open-follow-ups")?.callback?.();
 		await waitForObservation(
-			() => buttonWithText(standalone.leaf.contentEl, "Follow-ups").getAttribute("aria-pressed") === "true",
+			() => buttonWithText(standalone.leaf.contentEl, "Follow-up").getAttribute("aria-pressed") === "true",
 			"Open follow-ups did not activate the existing standalone view.",
 		);
 
-		buttonWithText(standalone.leaf.contentEl, "List").click();
+		buttonWithText(standalone.leaf.contentEl, "People").click();
 		const aliceButton = standalone.leaf.contentEl.querySelector<HTMLButtonElement>(
 			'button[data-node-id="person-alice"]',
 		);
@@ -262,7 +262,7 @@ describe("controlled contact-history and follow-up view integration", () => {
 			"Follow-up moments were not indexed.",
 		);
 		const standalone = await runtime.openStandaloneView(VIEW_TYPE_PEOPLE_ATLAS);
-		buttonWithText(standalone.leaf.contentEl, "Follow-ups").click();
+		buttonWithText(standalone.leaf.contentEl, "Follow-up").click();
 		const processFrontMatter = vi.spyOn(runtime.app.fileManager, "processFrontMatter");
 
 		const unavailableBefore = structuredClone(runtime.metadataCache.getFileCache(unavailable)?.frontmatter ?? {});

@@ -323,18 +323,22 @@ export const dutchCatalog: Translator = {
 	},
 	atlasRenderer: {
 		view: "Weergave",
-		graph: "Grafiek",
-		list: "Lijst",
-		followUps: "Opvolgingen",
+		graph: "Netwerk",
+		list: "Personen",
+		followUps: "Opvolging",
 		interactiveAtlas: "Interactieve personen- en relatieatlas",
-		graphControls: "Grafiekbediening",
+		graphControls: "Netwerkbediening",
+		zoom: "Zoomen",
 		zoomOut: "Uitzoomen",
 		zoomIn: "Inzoomen",
 		fit: "Passend maken",
 		details: "Details",
-		listView: "Lijstweergave van Personenatlas",
-		noPeople: "Geen personen in de huidige atlas",
-		peopleInAtlas: "Personen in de huidige atlas",
+		listView: "Personenweergave van People Atlas",
+		noPeople: "Geen personen in deze weergave",
+		searchPeople: "Personen zoeken",
+		searchPeoplePlaceholder: "Zoek op naam, functie of organisatie",
+		noSearchResults: "Geen personen gevonden",
+		peopleInAtlas: "Personen in deze weergave",
 		selectedPersonDetails: "Details van geselecteerde persoon",
 		contactFollowUps: "Contactopvolgingen",
 		selection: "Selectie",
@@ -343,17 +347,8 @@ export const dutchCatalog: Translator = {
 		unresolvedPerson: "Onopgeloste persoon",
 		ambiguousPersonListLabel: "ambigue persoon",
 		unresolvedPersonListLabel: "onopgeloste persoon",
-		semanticListSummary: ({
-			people,
-			peopleCount,
-			connections,
-			connectionsCount,
-			hiddenContactMoments,
-			hiddenContactMomentCount,
-		}) =>
-			`${people} ${peopleCount === 1 ? "persoon" : "personen"} · ${connections} ${
-				connectionsCount === 1 ? "verbinding" : "verbindingen"
-			}${
+		semanticListSummary: ({ people, peopleCount, searchActive, hiddenContactMoments, hiddenContactMomentCount }) =>
+			`${people} ${peopleCount === 1 ? "persoon" : "personen"} ${searchActive ? "gevonden" : "zichtbaar"}${
 				hiddenContactMomentCount > 0
 					? ` · ${hiddenContactMoments} verborgen contact${hiddenContactMomentCount === 1 ? "moment" : "momenten"}`
 					: ""
@@ -378,6 +373,7 @@ export const dutchCatalog: Translator = {
 		unresolvedNoActions: "Deze onopgeloste persoon heeft geen beschikbare acties.",
 		noNoteNoActions: "Deze persoon heeft geen notitie of beschikbare acties.",
 		contactMoments: "Contactmomenten",
+		lastContact: "Laatste contact",
 		diagnosticsHeading: ({ count }) => `Diagnostiek (${count})`,
 		diagnosticMessage: ({ code, message }) => `${dutchDiagnosticLabels[code] ?? "Diagnostiek"}: ${message}`,
 		openDiagnosticSource: "Bronnotitie openen",
@@ -450,24 +446,20 @@ export const dutchCatalog: Translator = {
 		actionAccessibleName: ({ action, context }) => `${action} met ${context}`,
 	},
 	peopleAtlasView: {
-		center: "Middelpunt",
-		configuredCenter: "Ingesteld middelpunt",
-		activeNote: "Actieve notitie",
-		selectedNode: "Geselecteerd knooppunt",
-		noCenter: "Geen middelpunt",
-		projection: "Projectie",
-		egoNetwork: "Egonetwerk",
-		freeNetwork: "Vrij netwerk",
-		contactHealth: "Contactgezondheid",
-		allPeople: "Alle personen",
+		center: "Netwerk rond",
+		configuredCenter: "Netwerk rond: gekozen persoon",
+		networkAround: ({ name }) => `Netwerk rond: ${name}`,
+		activeNote: "Netwerk rond: actieve notitie",
+		selectedNode: "Netwerk rond: geselecteerde persoon",
+		noCenter: "Hele netwerk",
+		projection: "Bereik",
+		egoNetwork: "Directe relaties",
+		freeNetwork: "Alles",
+		contactHealth: "Contact eerst",
 		selectNodeHint:
 			"Selecteer een knooppunt. Dubbelklik om het te centreren; Shift-dubbelklik om de notitie te openen.",
 		personNoteUnavailable: "Persoonsnotitie niet beschikbaar",
 		open: "Openen",
-		stats: ({ people, peopleCount, connections, connectionsCount }) =>
-			`${people} ${peopleCount === 1 ? "persoon" : "personen"} · ${connections} ${
-				connectionsCount === 1 ? "verbinding" : "verbindingen"
-			}`,
 	},
 	basesView: {
 		edit: ({ name }) => `${name} bewerken`,

@@ -54,6 +54,7 @@ export class GraphCanvasSurface {
 	readonly graphSurface: HTMLDivElement;
 	readonly canvas: HTMLCanvasElement;
 	readonly graphActions: HTMLDivElement;
+	readonly zoomControls: HTMLDetailsElement;
 	readonly zoomOutButton: HTMLButtonElement;
 	readonly zoomInButton: HTMLButtonElement;
 	readonly fitButton: HTMLButtonElement;
@@ -110,12 +111,18 @@ export class GraphCanvasSurface {
 		this.graphActions = this.doc.createElement("div");
 		this.graphActions.className = "people-atlas-graph-actions";
 		this.graphActions.setAttribute("aria-label", this.t.atlasRenderer.graphControls);
+		this.zoomControls = this.doc.createElement("details");
+		this.zoomControls.className = "people-atlas-graph-zoom";
+		const zoomSummary = this.doc.createElement("summary");
+		zoomSummary.textContent = this.t.atlasRenderer.zoom;
+		zoomSummary.setAttribute("aria-label", this.t.atlasRenderer.zoom);
 		this.zoomOutButton = this.createActionButton(this.t.atlasRenderer.zoomOut);
 		this.zoomInButton = this.createActionButton(this.t.atlasRenderer.zoomIn);
 		this.fitButton = this.createActionButton(this.t.atlasRenderer.fit);
 		this.detailsButton = this.createActionButton(this.t.atlasRenderer.details);
 		this.detailsButton.disabled = true;
-		this.graphActions.append(this.zoomOutButton, this.zoomInButton, this.fitButton, this.detailsButton);
+		this.zoomControls.append(zoomSummary, this.zoomOutButton, this.zoomInButton);
+		this.graphActions.append(this.zoomControls, this.fitButton, this.detailsButton);
 		this.graphSurface.append(this.canvas, this.graphActions);
 
 		const context = this.canvas.getContext("2d");

@@ -42,6 +42,13 @@ export function buildSelectedPersonContactMomentPresentation(
 	return earliestOpenFollowUp ? { recentMoments, earliestOpenFollowUp } : { recentMoments };
 }
 
+export function getLatestSelectedPersonContactMoment(
+	moments: readonly ContactMomentPresentationSource[],
+	personId: string,
+): ContactMomentPresentationSource | undefined {
+	return buildSelectedPersonContactMomentPresentation(moments, personId, 1).recentMoments[0];
+}
+
 export function groupContactMomentFollowUps(
 	moments: readonly ContactMomentPresentationSource[],
 	today: string,

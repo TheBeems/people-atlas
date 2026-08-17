@@ -24,7 +24,7 @@ function buttonWithText(container: ParentNode, text: string): HTMLButtonElement 
 }
 
 function selectPersonInList(container: ParentNode, nodeId: string): void {
-	buttonWithText(container, "List").click();
+	buttonWithText(container, "People").click();
 	const person = container.querySelector<HTMLButtonElement>(`button[data-node-id="${nodeId}"]`);
 	if (!person) throw new Error(`No semantic person button exists for ${nodeId}.`);
 	person.click();
@@ -103,7 +103,7 @@ describe("controlled contact-moment entrypoint integration", () => {
 		});
 		const bases = await runtime.openBasesView(BASES_VIEW_TYPE_PEOPLE_ATLAS, [basesEntry], "People");
 		selectPersonInList(bases.parent, "person-alice");
-		buttonWithText(bases.parent, "Log contact with Alice").click();
+		buttonWithText(bases.parent, "Log contact").click();
 		modal = open.mock.instances.at(-1) as unknown as typeof modal;
 		expect(modal.values.peoplePaths).toEqual([alice.path]);
 

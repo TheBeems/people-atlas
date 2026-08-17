@@ -1,16 +1,23 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { afterEach, describe, expect, test } from "vitest";
 import { RELEASE_ASSETS, validateReleaseContract } from "../scripts/release-contract.mjs";
 import { compareBuildDigests } from "../scripts/verify-reproducible-build.mjs";
 import { resolveReleaseChannel } from "../scripts/release-channel.mjs";
 
-const execFileAsync = promisify(execFile);
-
 const fixtureDirectories: string[] = [];
+
+function runBashScript(script: string, cwd: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const child = execFile("bash", ["-euo", "pipefail", "-s"], { cwd, env: { ...process.env } }, (error) => {
+			if (error) reject(error);
+			else resolve();
+		});
+		child.stdin?.end(script);
+	});
+}
 
 async function writeJson(rootDir: string, relativePath: string, value: unknown): Promise<void> {
 	await writeFile(path.join(rootDir, relativePath), `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -36,7 +43,7 @@ async function createReleaseFixture(): Promise<string> {
 }
 
 async function readPublishScript(): Promise<string> {
-	const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "release.yml"), "utf8");
+	const workflow = await readWorkflow("release.yml");
 	const publishIndex = workflow.indexOf("- name: Publish GitHub release");
 	const runIndex = workflow.indexOf("run: |", publishIndex);
 	const nextStepIndex = workflow.indexOf("\n      - ", runIndex);
@@ -48,7 +55,11 @@ async function readPublishScript(): Promise<string> {
 }
 
 afterEach(async () => {
-	await Promise.all(fixtureDirectories.splice(0).map((rootDir) => rm(rootDir, { force: true, recursive: true })));
+	await Promise.all(
+		fixtureDirectories
+			.splice(0)
+			.map((rootDir) => rm(rootDir, { force: true, maxRetries: 5, recursive: true, retryDelay: 50 })),
+	);
 });
 
 describe("release contract", () => {
@@ -241,29 +252,21 @@ describe("release workflow tag guard", () => {
 		const rootDir = await mkdtemp(path.join(tmpdir(), "people-atlas-publish-"));
 		fixtureDirectories.push(rootDir);
 		const notesDir = path.join(rootDir, ".github", "release-notes");
-		const binDir = path.join(rootDir, "bin");
 		const argsPath = path.join(rootDir, "gh-args.txt");
 		await mkdir(notesDir, { recursive: true });
-		await mkdir(binDir, { recursive: true });
 		await writeFile(path.join(notesDir, "0.12.1.md"), notes, "utf8");
-		const ghPath = path.join(binDir, "gh");
-		await writeFile(ghPath, '#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_ARGS_FILE"\n', "utf8");
-		await chmod(ghPath, 0o755);
 
 		const channel = resolveReleaseChannel(notes, "0.12.1");
-		await execFileAsync("bash", ["-euo", "pipefail", "-c", await readPublishScript()], {
-			cwd: rootDir,
-			env: {
-				...process.env,
-				PATH: `${binDir}:${process.env.PATH ?? ""}`,
-				GH_ARGS_FILE: argsPath,
-				GITHUB_TOKEN: "[REDACTED]",
-				TAG: "0.12.1",
-				RELEASE_CHANNEL: channel.channel,
-				RELEASE_TITLE: channel.title,
-				RELEASE_PRERELEASE: String(channel.prerelease),
-			},
-		});
+		const publishScript = [
+			'gh() { printf "%s\\n" "$@" > "$GH_ARGS_FILE"; }',
+			`GH_ARGS_FILE=${shellQuote("gh-args.txt")}`,
+			`TAG=${shellQuote("0.12.1")}`,
+			`RELEASE_CHANNEL=${shellQuote(channel.channel)}`,
+			`RELEASE_TITLE=${shellQuote(channel.title)}`,
+			`RELEASE_PRERELEASE=${shellQuote(String(channel.prerelease))}`,
+			await readPublishScript(),
+		].join("\n");
+		await runBashScript(publishScript, rootDir);
 
 		const args = (await readFile(argsPath, "utf8")).trim().split("\n");
 		expect(args.slice(-3)).toEqual([
@@ -319,7 +322,11 @@ function extractJob(workflow: string, jobName: string): string {
 }
 
 async function readWorkflow(name: "ci.yml" | "release.yml"): Promise<string> {
-	return readFile(path.join(process.cwd(), ".github", "workflows", name), "utf8");
+	return (await readFile(path.join(process.cwd(), ".github", "workflows", name), "utf8")).replace(/\r\n/g, "\n");
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\\"'\\\"'")}'`;
 }
 
 describe("supply-chain hardening contract", () => {

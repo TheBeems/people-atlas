@@ -97,7 +97,10 @@ describe("GraphCanvasSurface", () => {
 		const semantic = new SemanticPeopleList(document, {
 			panelLabel: "List",
 			peopleLabel: "People",
+			searchLabel: "Search people",
+			searchPlaceholder: "Search by name",
 			noPeopleLabel: "No people",
+			noSearchResultsLabel: "No people found",
 			translator: createTranslator("en"),
 			getSnapshot: () => emptySnapshot,
 			getSelectedId: () => undefined,

@@ -33,7 +33,6 @@ export class PeopleAtlasBasesView extends BasesView {
 	private selectedPath: string | undefined;
 	private selectedCenterPath: string | undefined;
 	private activePath: string | undefined;
-	private selectionActionsEl: HTMLElement | undefined;
 	private readonly initialMyPersonSettingId: string;
 	private initialMyPersonFilePath: string | undefined;
 	private initialMyPersonCenterId: string | undefined;
@@ -113,10 +112,6 @@ export class PeopleAtlasBasesView extends BasesView {
 			},
 			this.plugin.t,
 		);
-		this.selectionActionsEl = this.root.ownerDocument.createElement("div");
-		this.selectionActionsEl.className = "people-atlas-selection-actions";
-		this.selectionActionsEl.hidden = true;
-		this.root.append(this.selectionActionsEl);
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
 				this.activePath = this.app.workspace.getActiveFile()?.path;
@@ -145,7 +140,6 @@ export class PeopleAtlasBasesView extends BasesView {
 	private handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
 		const previousSelectedPath = this.selectedPath;
 		this.selectedPath = node?.filePath;
-		this.renderSelectionActions(node);
 		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
 		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath)
 			this.selectedCenterPath = undefined;
@@ -444,29 +438,6 @@ export class PeopleAtlasBasesView extends BasesView {
 	private editRelationship(edge: AtlasEdge, invoker: HTMLButtonElement): void {
 		if (edge.inferred || !edge.filePath) return;
 		this.plugin.openEditRelationship(edge.filePath, () => this.renderer?.restoreRelationshipActionFocus(invoker));
-	}
-
-	private renderSelectionActions(node: AtlasNode | undefined): void {
-		if (!this.selectionActionsEl) return;
-		this.selectionActionsEl.replaceChildren();
-		if (!this.canEditPerson(node)) {
-			this.selectionActionsEl.hidden = true;
-			return;
-		}
-		const editButton = this.selectionActionsEl.ownerDocument.createElement("button");
-		editButton.type = "button";
-		editButton.textContent = this.plugin.t.basesView.edit({ name: node.label });
-		editButton.addEventListener("click", () => this.plugin.openEditPerson(node.filePath));
-		const relationshipButton = this.selectionActionsEl.ownerDocument.createElement("button");
-		relationshipButton.type = "button";
-		relationshipButton.textContent = this.plugin.t.basesView.createRelationshipWith({ name: node.label });
-		relationshipButton.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
-		const logContactButton = this.selectionActionsEl.ownerDocument.createElement("button");
-		logContactButton.type = "button";
-		logContactButton.textContent = this.plugin.t.basesView.logContactWith({ name: node.label });
-		logContactButton.addEventListener("click", () => this.plugin.openLogContact(node.filePath));
-		this.selectionActionsEl.append(editButton, relationshipButton, logContactButton);
-		this.selectionActionsEl.hidden = false;
 	}
 }
 

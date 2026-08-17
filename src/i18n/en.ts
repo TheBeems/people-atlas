@@ -364,18 +364,22 @@ export const englishCatalog = {
 	},
 	atlasRenderer: {
 		view: "View",
-		graph: "Graph",
-		list: "List",
-		followUps: "Follow-ups",
+		graph: "Network",
+		list: "People",
+		followUps: "Follow-up",
 		interactiveAtlas: "Interactive people and relationship atlas",
-		graphControls: "Graph controls",
+		graphControls: "Network controls",
+		zoom: "Zoom",
 		zoomOut: "Zoom out",
 		zoomIn: "Zoom in",
 		fit: "Fit",
 		details: "Details",
-		listView: "People atlas list view",
-		noPeople: "No people in the current atlas",
-		peopleInAtlas: "People in the current atlas",
+		listView: "People Atlas people view",
+		noPeople: "No people in this view",
+		searchPeople: "Search people",
+		searchPeoplePlaceholder: "Search by name, role or organisation",
+		noSearchResults: "No people found",
+		peopleInAtlas: "People in this view",
 		selectedPersonDetails: "Selected person details",
 		contactFollowUps: "Contact follow-ups",
 		selection: "Selection",
@@ -387,21 +391,17 @@ export const englishCatalog = {
 		semanticListSummary: ({
 			people,
 			peopleCount,
-			connections,
-			connectionsCount,
+			searchActive,
 			hiddenContactMoments,
 			hiddenContactMomentCount,
 		}: {
 			people: string;
 			peopleCount: number;
-			connections: string;
-			connectionsCount: number;
+			searchActive: boolean;
 			hiddenContactMoments: string;
 			hiddenContactMomentCount: number;
 		}) =>
-			`${people} ${peopleCount === 1 ? "person" : "people"} · ${connections} ${
-				connectionsCount === 1 ? "connection" : "connections"
-			}${
+			`${people} ${peopleCount === 1 ? "person" : "people"} ${searchActive ? "found" : "visible"}${
 				hiddenContactMomentCount > 0
 					? ` · ${hiddenContactMoments} contact ${hiddenContactMomentCount === 1 ? "moment" : "moments"} hidden`
 					: ""
@@ -426,6 +426,7 @@ export const englishCatalog = {
 		unresolvedNoActions: "This unresolved person has no available actions.",
 		noNoteNoActions: "This person has no note or available actions.",
 		contactMoments: "Contact moments",
+		lastContact: "Last contact",
 		diagnosticsHeading: ({ count }: { count: number }) => `Diagnostics (${count})`,
 		diagnosticMessage: ({ message }: DiagnosticMessageParameters) => message,
 		openDiagnosticSource: "Open source note",
@@ -519,31 +520,19 @@ export const englishCatalog = {
 		actionAccessibleName: ({ action, context }: { action: string; context: string }) => `${action} with ${context}`,
 	},
 	peopleAtlasView: {
-		center: "Center",
-		configuredCenter: "Configured center",
-		activeNote: "Active note",
-		selectedNode: "Selected node",
-		noCenter: "No center",
-		projection: "Projection",
-		egoNetwork: "Ego network",
-		freeNetwork: "Free network",
-		contactHealth: "Contact health",
-		allPeople: "All people",
+		center: "Network around",
+		configuredCenter: "Network around: chosen person",
+		networkAround: ({ name }: { name: string }) => `Network around: ${name}`,
+		activeNote: "Network around: active note",
+		selectedNode: "Network around: selected person",
+		noCenter: "Whole network",
+		projection: "Scope",
+		egoNetwork: "Direct relationships",
+		freeNetwork: "Everything",
+		contactHealth: "Contact first",
 		selectNodeHint: "Select a node. Double-click to center it; Shift-double-click to open its note.",
 		personNoteUnavailable: "Person note unavailable",
 		open: "Open",
-		stats: ({
-			people,
-			peopleCount,
-			connections,
-			connectionsCount,
-		}: {
-			people: string;
-			peopleCount: number;
-			connections: string;
-			connectionsCount: number;
-		}) =>
-			`${people} ${peopleCount === 1 ? "person" : "people"} · ${connections} ${connectionsCount === 1 ? "connection" : "connections"}`,
 	},
 	basesView: {
 		edit: ({ name }: { name: string }) => `Edit ${name}`,

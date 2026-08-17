@@ -16,7 +16,7 @@ import {
 import { createDeterministicLayout, type LayoutPoint } from "./layout";
 import type { LayoutSnapshot } from "./layout-state";
 import { GraphCanvasSurface, type AtlasRendererPhotoCacheStats } from "./graph-canvas-surface";
-import { renderPersonProfile, type PersonPhotoResourceResolver } from "./person-profile";
+import type { PersonPhotoResourceResolver } from "./person-profile";
 import { buildIncidentRelationshipRows, type IncidentRelationshipRow } from "./relationship-rows";
 import { GraphInteractionController } from "./graph-interaction-controller";
 import { FollowUpPanel } from "./follow-up-panel";
@@ -67,7 +67,7 @@ export interface AtlasRendererCallbacks {
 export type AtlasSelectionSource = "canvas" | "list" | "graph-update";
 
 export type RendererMode = "graph" | "list" | "follow-ups";
-type SelectedAction = "open" | "center" | "log-contact";
+type SelectedAction = "open" | "center" | "edit" | "create" | "log-contact";
 type SheetAction = "close" | "open" | "center" | "edit" | "create" | "log-contact";
 type SheetInvoker = "details" | "canvas";
 type RelationshipAction = "open" | "edit";
@@ -98,6 +98,7 @@ export class AtlasRenderer {
 	private readonly graphCanvas: GraphCanvasSurface;
 	private readonly semanticPeopleList: SemanticPeopleList;
 	private readonly personDetailsPanel: PersonDetailsPanel;
+	private readonly sheetPersonDetailsPanel: PersonDetailsPanel;
 	private readonly relationshipDetailsPanel: RelationshipDetailsPanel;
 	private readonly relationshipSheetPanel: RelationshipDetailsPanel;
 	private readonly followUpPanel: FollowUpPanel;
@@ -188,7 +189,10 @@ export class AtlasRenderer {
 		this.semanticPeopleList = new SemanticPeopleList(this.doc, {
 			panelLabel: this.t.atlasRenderer.listView,
 			peopleLabel: this.t.atlasRenderer.peopleInAtlas,
+			searchLabel: this.t.atlasRenderer.searchPeople,
+			searchPlaceholder: this.t.atlasRenderer.searchPeoplePlaceholder,
 			noPeopleLabel: this.t.atlasRenderer.noPeople,
+			noSearchResultsLabel: this.t.atlasRenderer.noSearchResults,
 			translator: this.t,
 			getSnapshot: () => this.snapshot,
 			getSelectedId: () => this.selectedId,
@@ -196,12 +200,11 @@ export class AtlasRenderer {
 			setFocusedId: (id) => {
 				this.focusedId = id;
 			},
-			getSummary: (snapshot) =>
+			getSummary: (snapshot, visibleCount, searchActive) =>
 				this.t.atlasRenderer.semanticListSummary({
-					people: this.t.formatInteger(snapshot.nodes.length),
-					peopleCount: snapshot.nodes.length,
-					connections: this.t.formatInteger(snapshot.edges.length),
-					connectionsCount: snapshot.edges.length,
+					people: this.t.formatInteger(visibleCount),
+					peopleCount: visibleCount,
+					searchActive,
 					hiddenContactMoments: this.t.formatInteger(Math.max(0, snapshot.hiddenContactMomentCount)),
 					hiddenContactMomentCount: Math.max(0, snapshot.hiddenContactMomentCount),
 				}),
@@ -223,10 +226,44 @@ export class AtlasRenderer {
 				buildIncidentRelationshipRows(this.snapshot, selected, this.getSettings().relationshipRoleFormat, this.t),
 			renderRelationshipGroups: (rows, selected, headingLevel) =>
 				this.renderRelationshipGroups(rows, selected, headingLevel),
+			canEditPerson: (selected) =>
+				Boolean(this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true),
+			canCreateRelationship: (selected) =>
+				Boolean(this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true),
 			canLogContact: (selected) =>
 				Boolean(this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true),
+			headingLevel: 3,
+			sectionHeadingLevel: 4,
+			surface: "details",
+			actionDataAttribute: "action",
 		});
 		this.details = this.personDetailsPanel.element;
+		this.sheetPersonDetailsPanel = new PersonDetailsPanel(this.doc, {
+			label: this.t.atlasRenderer.selectedPersonDetails,
+			translator: this.t,
+			getSnapshot: () => this.snapshot,
+			getSelectedId: () => this.sheetNodeId,
+			getSettings: this.getSettings,
+			...(this.callbacks.resolvePersonPhoto ? { resolvePersonPhoto: this.callbacks.resolvePersonPhoto } : {}),
+			renderContactMoments: (selected, headingLevel, surface) =>
+				this.renderSelectedContactMoments(selected, headingLevel, surface),
+			getRelationshipRows: (selected) =>
+				buildIncidentRelationshipRows(this.snapshot, selected, this.getSettings().relationshipRoleFormat, this.t),
+			renderRelationshipGroups: (rows, selected, headingLevel) =>
+				this.renderRelationshipGroups(rows, selected, headingLevel),
+			getUnavailableMessage: (selected) => this.capabilityExplanation(selected),
+			canEditPerson: (selected) =>
+				Boolean(this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true),
+			canCreateRelationship: (selected) =>
+				Boolean(this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true),
+			canLogContact: (selected) =>
+				Boolean(this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true),
+			headingLevel: 3,
+			sectionHeadingLevel: 3,
+			includeHeading: false,
+			surface: "sheet",
+			actionDataAttribute: "sheet-action",
+		});
 		this.relationshipDetailsPanel = new RelationshipDetailsPanel(this.doc, {
 			translator: this.t,
 			...(this.callbacks.onOpenRelationship ? { onOpenRelationship: this.callbacks.onOpenRelationship } : {}),
@@ -445,6 +482,7 @@ export class AtlasRenderer {
 		this.sheet.removeEventListener("cancel", this.onSheetCancel);
 		this.sheet.removeEventListener("keydown", this.onSheetKeyDown);
 		this.personDetailsPanel.destroy();
+		this.sheetPersonDetailsPanel.destroy();
 		this.semanticPeopleList.destroy();
 		this.followUpPanel.destroy();
 		this.relationshipDetailsPanel.destroy();
@@ -530,6 +568,13 @@ export class AtlasRenderer {
 		return panel.render(rows, selected, headingLevel);
 	}
 
+	private capabilityExplanation(node: AtlasNode): string | undefined {
+		if (isAmbiguousAtlasNode(node)) return this.t.atlasRenderer.ambiguousNoActions;
+		if (node.kind === "ghost") return this.t.atlasRenderer.unresolvedNoActions;
+		if (!node.filePath) return this.t.atlasRenderer.noNoteNoActions;
+		return undefined;
+	}
+
 	private selectNode(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
 		if (this.sheet.open && node?.id !== this.sheetNodeId) this.closeSheet(false);
 		const previous = this.selectedId ? this.nodeById(this.selectedId) : undefined;
@@ -556,64 +601,8 @@ export class AtlasRenderer {
 		const close = this.createSheetActionButton(this.t.atlasRenderer.close, "close");
 		header.append(heading, close);
 		this.sheetContent.append(header);
-
-		if (isResolvedAtlasPersonNode(selected)) {
-			const profile = renderPersonProfile(this.doc, selected, {
-				contactHeadingLevel: 3,
-				resolvePhotoResource: this.callbacks.resolvePersonPhoto,
-				translator: this.t,
-			});
-			if (profile) this.sheetContent.append(profile);
-			const contactMoments = this.renderSelectedContactMoments(selected, 3, "sheet");
-			if (contactMoments) this.sheetContent.append(contactMoments);
-		}
-
-		const unavailable = this.capabilityExplanation(selected);
-		if (unavailable) {
-			const explanation = this.doc.createElement("p");
-			explanation.textContent = unavailable;
-			this.sheetContent.append(explanation);
-		}
-
-		const relationshipRows = buildIncidentRelationshipRows(
-			this.snapshot,
-			selected,
-			this.getSettings().relationshipRoleFormat,
-			this.t,
-		);
-		if (relationshipRows.length === 0) {
-			const empty = this.doc.createElement("p");
-			empty.textContent = this.t.atlasRenderer.noVisibleConnections;
-			this.sheetContent.append(empty);
-		} else {
-			this.sheetContent.append(this.renderRelationshipGroups(relationshipRows, selected, 3));
-		}
-
-		if (isResolvedAtlasPersonNode(selected)) {
-			const actions = this.doc.createElement("div");
-			actions.className = "people-atlas-details-sheet-actions";
-			actions.append(
-				this.createSheetActionButton(this.t.atlasRenderer.openNote, "open"),
-				this.createSheetActionButton(this.t.atlasRenderer.useAsCenter, "center"),
-			);
-			if (this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true) {
-				actions.append(this.createSheetActionButton(this.t.atlasRenderer.editPerson, "edit"));
-			}
-			if (this.callbacks.onCreateRelationship && this.callbacks.canCreateRelationship?.(selected) === true) {
-				actions.append(this.createSheetActionButton(this.t.atlasRenderer.createRelationship, "create"));
-			}
-			if (this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
-				actions.append(this.createSheetActionButton(this.t.atlasRenderer.logContact, "log-contact"));
-			}
-			this.sheetContent.append(actions);
-		}
-	}
-
-	private capabilityExplanation(node: AtlasNode): string | undefined {
-		if (isAmbiguousAtlasNode(node)) return this.t.atlasRenderer.ambiguousNoActions;
-		if (node.kind === "ghost") return this.t.atlasRenderer.unresolvedNoActions;
-		if (!node.filePath) return this.t.atlasRenderer.noNoteNoActions;
-		return undefined;
+		this.sheetPersonDetailsPanel.render();
+		this.sheetContent.append(this.sheetPersonDetailsPanel.element);
 	}
 
 	private createSheetActionButton(label: string, action: SheetAction): HTMLButtonElement {
@@ -630,6 +619,7 @@ export class AtlasRenderer {
 		if (!selected.personId) return undefined;
 		const moments = this.contactMoments();
 		const bounded = buildSelectedPersonContactMomentPresentation(moments, selected.personId);
+		if (!bounded.earliestOpenFollowUp && bounded.recentMoments.length === 0) return undefined;
 		const all = buildSelectedPersonContactMomentPresentation(moments, selected.personId, moments.length).recentMoments;
 		const expanded = this.expandedContactHistoryPersonId === selected.personId;
 		const visibleMoments = expanded ? all : bounded.recentMoments;
@@ -1248,10 +1238,21 @@ export class AtlasRenderer {
 		const selected = this.selectedId ? this.nodeById(this.selectedId) : undefined;
 		if (!isResolvedAtlasPersonNode(selected)) return;
 		if (action === "open") this.callbacks.onOpenNode(selected);
-		if (action === "center") this.callbacks.onCenterNode(selected);
-		if (action === "log-contact" && this.callbacks.onLogContact && this.callbacks.canLogContact?.(selected) === true) {
+		else if (action === "center") this.callbacks.onCenterNode(selected);
+		else if (action === "edit" && this.callbacks.onEditPerson && this.callbacks.canEditPerson?.(selected) === true)
+			this.callbacks.onEditPerson(selected);
+		else if (
+			action === "create" &&
+			this.callbacks.onCreateRelationship &&
+			this.callbacks.canCreateRelationship?.(selected) === true
+		)
+			this.callbacks.onCreateRelationship(selected);
+		else if (
+			action === "log-contact" &&
+			this.callbacks.onLogContact &&
+			this.callbacks.canLogContact?.(selected) === true
+		)
 			this.callbacks.onLogContact(selected);
-		}
 	};
 
 	private readonly onSheetClick = (event: MouseEvent): void => {

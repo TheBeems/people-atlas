@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildSelectedPersonContactMomentPresentation,
 	groupContactMomentFollowUps,
+	getLatestSelectedPersonContactMoment,
 	type ContactMomentPresentationSource,
 } from "../src/render/contact-moment-presentation";
 
@@ -44,6 +45,22 @@ describe("contact-moment presentation", () => {
 		expect(
 			buildSelectedPersonContactMomentPresentation(moments, "person-alice", 1).recentMoments.map(({ id }) => id),
 		).toEqual(["moment-a"]);
+	});
+
+	it("derives the latest explicit contact only from valid moments for the selected person", () => {
+		const latest = moment("moment-latest", "2026-08-01");
+		expect(
+			getLatestSelectedPersonContactMoment(
+				[latest, moment("moment-old", "2026-07-31"), moment("invalid", "2026-02-30")],
+				"person-alice",
+			),
+		).toEqual(latest);
+		expect(
+			getLatestSelectedPersonContactMoment(
+				[moment("other", "2026-08-02", { personIds: ["person-bob"] })],
+				"person-alice",
+			),
+		).toBeUndefined();
 	});
 
 	it("selects the earliest effective-open follow-up for the selected person", () => {

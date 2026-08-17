@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
-import { PeopleAtlasBasesView } from "../../src/bases/people-atlas-bases-view";
 import { createTranslator, type Translator } from "../../src/i18n";
 import type { AtlasEdge, AtlasNode, AtlasSnapshot, ContactMomentSummary } from "../../src/domain/types";
 import { AtlasRenderer, type AtlasRendererCallbacks } from "../../src/render/atlas-renderer";
+import { buildIncidentRelationshipRows } from "../../src/render/relationship-rows";
 import { renderPersonProfile } from "../../src/render/person-profile";
+import { PersonDetailsPanel } from "../../src/render/person-details-panel";
+import { RelationshipDetailsPanel } from "../../src/render/relationship-details-panel";
 import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
 import { DEFAULT_VIEW_STATE } from "../../src/settings/view-state";
 import type { PeopleAtlasSettings } from "../../src/settings/types";
@@ -166,6 +168,25 @@ function snapshot(
 	};
 }
 
+function standalonePersonDetailsPanel(
+	document: Document,
+	graph: AtlasSnapshot,
+	relationshipPanel: RelationshipDetailsPanel,
+): PersonDetailsPanel {
+	const translator = createTranslator("en");
+	return new PersonDetailsPanel(document, {
+		label: translator.atlasRenderer.selectedPersonDetails,
+		translator,
+		getSnapshot: () => graph,
+		getSelectedId: () => undefined,
+		getSettings: () => DEFAULT_SETTINGS,
+		renderContactMoments: () => undefined,
+		getRelationshipRows: (selected) =>
+			buildIncidentRelationshipRows(graph, selected, DEFAULT_SETTINGS.relationshipRoleFormat, translator),
+		renderRelationshipGroups: (rows, selected, headingLevel) => relationshipPanel.render(rows, selected, headingLevel),
+	});
+}
+
 function localDay(offset: number, from = new Date()): string {
 	const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() + offset);
 	return [
@@ -243,23 +264,27 @@ describe("accessible atlas renderer", () => {
 		mount(snapshot([alice], [], [moment]), DEFAULT_SETTINGS, {}, createTranslator("nl-BE"));
 
 		expect(document.querySelector("legend")?.textContent).toBe("Weergave");
-		expect(page.getByRole("button", { name: "Grafiek" }).element()).toBeInstanceOf(HTMLButtonElement);
-		expect(page.getByRole("button", { name: "Lijst" }).element()).toBeInstanceOf(HTMLButtonElement);
-		expect(page.getByRole("button", { name: "Opvolgingen" }).element()).toBeInstanceOf(HTMLButtonElement);
+		expect(page.getByRole("button", { name: "Netwerk" }).element()).toBeInstanceOf(HTMLButtonElement);
+		expect(page.getByRole("button", { name: "Personen" }).element()).toBeInstanceOf(HTMLButtonElement);
+		expect(page.getByRole("button", { name: "Opvolging" }).element()).toBeInstanceOf(HTMLButtonElement);
 		expect(page.getByRole("application", { name: "Interactieve personen- en relatieatlas" }).element()).toBeInstanceOf(
 			HTMLCanvasElement,
 		);
+		const zoomSummary = document.querySelector<HTMLElement>(".people-atlas-graph-zoom > summary");
+		if (!zoomSummary) throw new Error("The graph zoom disclosure is unavailable.");
+		expect(zoomSummary.textContent).toBe("Zoomen");
+		zoomSummary.click();
 		expect(page.getByRole("button", { name: "Uitzoomen" }).element()).toBeInstanceOf(HTMLButtonElement);
 
-		await page.getByRole("button", { name: "Lijst" }).click();
+		await page.getByRole("button", { name: "Personen" }).click();
 		expect(document.querySelector(".people-atlas-semantic-panel")?.getAttribute("aria-label")).toBe(
-			"Lijstweergave van Personenatlas",
+			"Personenweergave van People Atlas",
 		);
 		expect(page.getByRole("button", { name: "Alice, Example Org", exact: true }).element().textContent).toContain(
 			"Alice",
 		);
 
-		await page.getByRole("button", { name: "Opvolgingen" }).click();
+		await page.getByRole("button", { name: "Opvolging" }).click();
 		expect(page.getByRole("heading", { name: "Contactopvolgingen" }).element()).toBeInstanceOf(HTMLHeadingElement);
 		expect(document.querySelector(".people-atlas-follow-ups-panel")?.textContent).toContain("Private note");
 		expect(document.querySelector(".people-atlas-follow-ups-summary")?.textContent).toBe("1 openstaande opvolging");
@@ -295,18 +320,50 @@ describe("accessible atlas renderer", () => {
 	it("localizes semantic-list live summaries including hidden contact moments", async () => {
 		mount(snapshot([alice], [], [], 1), DEFAULT_SETTINGS, {}, createTranslator("nl"));
 
-		await page.getByRole("button", { name: "Lijst" }).click();
+		await page.getByRole("button", { name: "Personen" }).click();
 
 		expect(document.querySelector(".people-atlas-semantic-summary")?.getAttribute("aria-live")).toBe("polite");
 		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe(
-			"1 persoon · 0 verbindingen · 1 verborgen contactmoment",
+			"1 persoon zichtbaar · 1 verborgen contactmoment",
 		);
+	});
+
+	it("searches visible person fields without changing selection or projection state", async () => {
+		const { callbacks } = mount(snapshot([profileAlice, bob]));
+		await page.getByRole("button", { name: "People", exact: true }).click();
+
+		const search = document.querySelector<HTMLInputElement>('.people-atlas-people-search input[type="search"]');
+		if (!search) throw new Error("The people search control is unavailable.");
+		expect(search.getAttribute("aria-label")).toBe("Search people");
+		expect(search.placeholder).toBe("Search by name, role or organisation");
+
+		search.value = "principal";
+		search.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(document.querySelector('[data-node-id="person-alice"]')).not.toBeNull();
+		expect(document.querySelector('[data-node-id="person-bob"]')).toBeNull();
+		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe("1 person found");
+		expect(callbacks.onSelectNode).not.toHaveBeenCalled();
+
+		const aliceButton = document.querySelector<HTMLButtonElement>('[data-node-id="person-alice"]');
+		if (!aliceButton) throw new Error("The filtered Alice result is unavailable.");
+		aliceButton.click();
+		expect(callbacks.onSelectNode).toHaveBeenLastCalledWith(profileAlice, "list");
+
+		search.value = "nobody";
+		search.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(document.querySelector(".people-atlas-empty-message")?.textContent).toBe("No people found");
+		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe("0 people found");
+
+		search.value = "";
+		search.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(document.querySelectorAll(".people-atlas-person-button")).toHaveLength(2);
+		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe("2 people visible");
 	});
 
 	it("localizes noncanonical list metadata and accessible names without changing node labels", async () => {
 		mount(snapshot([ghost, ambiguous]), DEFAULT_SETTINGS, {}, createTranslator("nl"));
 
-		await page.getByRole("button", { name: "Lijst" }).click();
+		await page.getByRole("button", { name: "Personen" }).click();
 
 		const ghostButton = document.querySelector<HTMLButtonElement>("[data-node-id='ghost:Missing']");
 		const ambiguousButton = document.querySelector<HTMLButtonElement>("[data-node-id='ambiguous:duplicate-alice']");
@@ -316,44 +373,44 @@ describe("accessible atlas renderer", () => {
 		expect(ambiguousButton?.textContent).toBe("Ambiguous AliceAmbigue persoon");
 	});
 
-	it("localizes selected Bases actions while preserving the canonical person path", () => {
-		const actions = document.createElement("div");
-		const openEditPerson = vi.fn();
-		const openCreateRelationship = vi.fn();
-		const openLogContact = vi.fn();
-		const view = Object.create(PeopleAtlasBasesView.prototype) as {
-			selectionActionsEl: HTMLElement;
-			plugin: {
-				t: Translator;
-				openEditPerson: (path: string) => void;
-				openCreateRelationship: (path: string) => void;
-				openLogContact: (path: string) => void;
-			};
-			canEditPerson: (node: AtlasNode | undefined) => boolean;
-		};
-		Object.assign(view, {
-			selectionActionsEl: actions,
-			plugin: { t: createTranslator("nl"), openEditPerson, openCreateRelationship, openLogContact },
-			canEditPerson: () => true,
-		});
+	it("localizes the people search control and empty state", async () => {
+		mount(snapshot([alice, bob]), DEFAULT_SETTINGS, {}, createTranslator("nl"));
+		await page.getByRole("button", { name: "Personen" }).click();
 
-		(view as unknown as { renderSelectionActions: (node: AtlasNode | undefined) => void }).renderSelectionActions(
-			alice,
-		);
-
-		expect(Array.from(actions.querySelectorAll("button")).map((button) => button.textContent)).toEqual([
-			"Alice bewerken",
-			"Relatie met Alice aanmaken",
-			"Contact met Alice vastleggen",
-		]);
-		for (const button of Array.from(actions.querySelectorAll("button"))) button.click();
-		expect(openEditPerson).toHaveBeenCalledExactlyOnceWith("People/Alice.md");
-		expect(openCreateRelationship).toHaveBeenCalledExactlyOnceWith("People/Alice.md");
-		expect(openLogContact).toHaveBeenCalledExactlyOnceWith("People/Alice.md");
+		const search = document.querySelector<HTMLInputElement>('.people-atlas-people-search input[type="search"]');
+		if (!search) throw new Error("The people search control is unavailable.");
+		expect(search.getAttribute("aria-label")).toBe("Personen zoeken");
+		expect(search.placeholder).toBe("Zoek op naam, functie of organisatie");
+		search.value = "niemand";
+		search.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(document.querySelector(".people-atlas-empty-message")?.textContent).toBe("Geen personen gevonden");
+		expect(document.querySelector(".people-atlas-semantic-summary")?.textContent).toBe("0 personen gevonden");
 	});
 
-	it("localizes standalone-view graph statistics without changing the graph snapshot", () => {
-		const statsEl = document.createElement("span");
+	it("localizes selected shared actions while preserving the canonical person path", async () => {
+		const { callbacks } = mount(snapshot([alice]), DEFAULT_SETTINGS, {}, createTranslator("nl"));
+		await page.getByRole("button", { name: "Personen" }).click();
+		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
+
+		expect(
+			Array.from(document.querySelectorAll(".people-atlas-semantic-details .people-atlas-semantic-actions button")).map(
+				(button) => button.textContent,
+			),
+		).toEqual([
+			"Contact vastleggen",
+			"Notitie openen",
+			"Als middelpunt gebruiken",
+			"Persoon bewerken",
+			"Relatie aanmaken",
+		]);
+		const logContact = document.querySelector<HTMLButtonElement>(
+			".people-atlas-semantic-details button[data-action='log-contact']",
+		);
+		logContact?.click();
+		expect(callbacks.onLogContact).toHaveBeenCalledWith(alice);
+	});
+
+	it("keeps standalone projection data independent from the removed global count", () => {
 		const renderer = { setGraph: vi.fn() };
 		const view = Object.create(PeopleAtlasView.prototype) as {
 			selectedPath: string | undefined;
@@ -366,7 +423,6 @@ describe("accessible atlas renderer", () => {
 			viewConfigurationKey: string;
 			fullSnapshot: AtlasSnapshot;
 			renderer: typeof renderer;
-			statsEl: HTMLElement;
 			plugin: { t: Translator };
 			renderDiagnostics: (snapshot: AtlasSnapshot) => void;
 		};
@@ -381,21 +437,98 @@ describe("accessible atlas renderer", () => {
 			viewConfigurationKey: "localized-stats",
 			fullSnapshot: snapshot([alice], []),
 			renderer,
-			statsEl,
 			plugin: { t: createTranslator("nl") },
 			renderDiagnostics: vi.fn(),
 		});
 
 		(view as unknown as { renderSnapshot: () => void }).renderSnapshot();
 
-		expect(statsEl.textContent).toBe("1 persoon · 0 verbindingen");
 		expect(renderer.setGraph.mock.calls[0]?.[0]).toMatchObject({ nodes: [{ id: "person-alice" }], edges: [] });
+	});
+
+	it("projects standalone direct relationships as one hop while preserving stored view state", () => {
+		const dave: AtlasNode = {
+			...charlie,
+			id: "person-dave",
+			personId: "person-dave",
+			label: "Dave",
+			filePath: "People/Dave.md",
+		};
+		const chain: AtlasEdge[] = [
+			{ ...(edges[0] as AtlasEdge), id: "chain-alice-bob", sourceId: alice.id, targetId: bob.id },
+			{ ...(edges[0] as AtlasEdge), id: "chain-bob-charlie", sourceId: bob.id, targetId: charlie.id },
+			{ ...(edges[0] as AtlasEdge), id: "chain-charlie-dave", sourceId: charlie.id, targetId: dave.id },
+		];
+		const renderer = { setGraph: vi.fn() };
+		const view = Object.create(PeopleAtlasView.prototype) as {
+			selectedPath: string | undefined;
+			selectedCenterPath: string | undefined;
+			centerMode: "configured";
+			projectionMode: "ego";
+			centerId: string | undefined;
+			activePath: string | undefined;
+			viewState: typeof DEFAULT_VIEW_STATE;
+			viewConfigurationKey: string;
+			fullSnapshot: AtlasSnapshot;
+			renderer: typeof renderer;
+			centerModeSelect: HTMLSelectElement | undefined;
+			plugin: { t: Translator };
+			renderDiagnostics: (snapshot: AtlasSnapshot) => void;
+		};
+		Object.assign(view, {
+			selectedPath: undefined,
+			selectedCenterPath: undefined,
+			centerMode: "configured",
+			projectionMode: "ego",
+			centerId: alice.personId,
+			activePath: undefined,
+			viewState: structuredClone(DEFAULT_VIEW_STATE),
+			viewConfigurationKey: "direct-relationships",
+			fullSnapshot: snapshot([alice, bob, charlie, dave], chain),
+			renderer,
+			centerModeSelect: undefined,
+			plugin: { t: createTranslator("en") },
+			renderDiagnostics: vi.fn(),
+		});
+
+		(view as unknown as { renderSnapshot: () => void }).renderSnapshot();
+
+		expect(renderer.setGraph.mock.calls[0]?.[0].nodes.map((node: AtlasNode) => node.id)).toEqual([
+			"person-alice",
+			"person-bob",
+		]);
+		expect(view.viewState.hops).toBe(2);
+	});
+
+	it("uses the resolved person label in the readable network-around center option", () => {
+		const select = document.createElement("select");
+		const configured = document.createElement("option");
+		configured.value = "configured";
+		select.append(configured);
+		const view = Object.create(PeopleAtlasView.prototype) as {
+			centerModeSelect: HTMLSelectElement;
+			centerId: string | undefined;
+			plugin: { t: Translator };
+			updateCenterModeLabels(snapshot: AtlasSnapshot): void;
+		};
+		Object.assign(view, {
+			centerModeSelect: select,
+			centerId: alice.personId,
+			plugin: { t: createTranslator("en") },
+		});
+
+		view.updateCenterModeLabels(snapshot([alice], []));
+		expect(configured.textContent).toBe("Network around: Alice");
+
+		view.centerId = "person-missing";
+		view.updateCenterModeLabels(snapshot([alice], []));
+		expect(configured.textContent).toBe("Network around: chosen person");
 	});
 
 	it("switches one surface without layout persistence and synchronizes canvas/list selection", async () => {
 		const { renderer, callbacks } = mount();
-		const graphMode = page.getByRole("button", { name: "Graph" });
-		const listMode = page.getByRole("button", { name: "List" });
+		const graphMode = page.getByRole("button", { name: "Network" });
+		const listMode = page.getByRole("button", { name: "People", exact: true });
 		const canvas = page.getByRole("application", { name: "Interactive people and relationship atlas" });
 		const canvasElement = canvas.element() as HTMLCanvasElement;
 
@@ -442,7 +575,7 @@ describe("accessible atlas renderer", () => {
 		expect(drawnText).not.toContain("private-bob@example.com");
 		expect(drawnText).not.toContain("+1 555 0100");
 
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		const aliceButton = page.getByRole("button", { name: "Alice, Example Org", exact: true });
 		const bobButton = page.getByRole("button", { name: "Bob", exact: true });
 		expect((aliceButton.element() as HTMLButtonElement).getAttribute("aria-label")).not.toContain("alice@");
@@ -490,7 +623,7 @@ describe("accessible atlas renderer", () => {
 			"+1 555 0100",
 		);
 
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 		await page.getByRole("button", { name: "Details" }).click();
 		const dialog = page.getByRole("dialog", { name: "Selected person details" }).element() as HTMLDialogElement;
 		expect(Array.from(dialog.querySelectorAll(".people-atlas-profile dt")).map((term) => term.textContent)).toEqual([
@@ -518,7 +651,7 @@ describe("accessible atlas renderer", () => {
 		}));
 		mount(snapshot([photographedAlice]), DEFAULT_SETTINGS, { resolvePersonPhoto });
 
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice Example, Example Org", exact: true }).click();
 		const semanticDetails = document.querySelector<HTMLElement>(".people-atlas-semantic-details");
 		const listPhoto = semanticDetails?.querySelector<HTMLElement>(".people-atlas-profile-photo");
@@ -538,7 +671,7 @@ describe("accessible atlas renderer", () => {
 		expect(getComputedStyle(listImage).objectPosition).toBe("50% 50%");
 		expect(semanticDetails?.textContent).not.toContain(photographedAlice.photoPath as string);
 
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 		await page.getByRole("button", { name: "Details" }).click();
 		const dialog = page.getByRole("dialog", { name: "Selected person details" }).element() as HTMLDialogElement;
 		const sheetPhoto = dialog.querySelector<HTMLElement>(".people-atlas-profile-photo");
@@ -783,27 +916,15 @@ describe("accessible atlas renderer", () => {
 		const frameDocument = frame.contentDocument as Document;
 		const details = frameDocument.createElement("section");
 		frameDocument.body.append(details);
+		const graph = snapshot([profileAlice, bob]);
+		const relationshipPanel = new RelationshipDetailsPanel(frameDocument, { translator: createTranslator("en") });
 		const view = Object.create(PeopleAtlasView.prototype) as {
 			detailsEl: HTMLElement;
-			plugin: {
-				t: Translator;
-				index: {
-					getSnapshot(): { people: Array<{ id: string; filePath: string }> };
-				};
-				openEditPerson(path: string): void;
-				openCreateRelationship(path: string): void;
-			};
+			personDetailsPanel: PersonDetailsPanel;
 			renderDetails(node: AtlasNode | undefined): void;
 		};
 		view.detailsEl = details;
-		view.plugin = {
-			t: createTranslator("en"),
-			index: {
-				getSnapshot: () => ({ people: [{ id: profileAlice.id, filePath: profileAlice.filePath as string }] }),
-			},
-			openEditPerson: vi.fn(),
-			openCreateRelationship: vi.fn(),
-		};
+		view.personDetailsPanel = standalonePersonDetailsPanel(frameDocument, graph, relationshipPanel);
 
 		view.renderDetails(profileAlice);
 
@@ -831,9 +952,72 @@ describe("accessible atlas renderer", () => {
 		expect(details.textContent).not.toContain("Contact details");
 	});
 
+	it("reuses the relationship groups in standalone details and preserves parallel action focus", () => {
+		const frame = document.createElement("iframe");
+		document.body.append(frame);
+		const frameDocument = frame.contentDocument as Document;
+		const details = frameDocument.createElement("section");
+		frameDocument.body.append(details);
+		const relationshipDetailsPanel = new RelationshipDetailsPanel(frameDocument, {
+			translator: createTranslator("en"),
+			onOpenRelationship: vi.fn(),
+			canOpenRelationship: (edge) => Boolean(edge.filePath),
+			onEditRelationship: vi.fn(),
+			canEditRelationship: (edge) => Boolean(edge.filePath),
+		});
+		const graph = snapshot([profileAlice, bob, charlie, ghost], edges);
+		const view = Object.create(PeopleAtlasView.prototype) as {
+			detailsEl: HTMLElement;
+			personDetailsPanel: PersonDetailsPanel;
+			renderDetails(node: AtlasNode | undefined): void;
+		};
+		view.detailsEl = details;
+		view.personDetailsPanel = standalonePersonDetailsPanel(frameDocument, graph, relationshipDetailsPanel);
+
+		view.renderDetails(profileAlice);
+
+		expect(
+			Array.from(details.querySelectorAll(".people-atlas-connection-group > h4")).map((heading) => heading.textContent),
+		).toEqual(["Relationships", "Linked people"]);
+		expect(
+			Array.from(
+				details.querySelectorAll<HTMLElement>(
+					"[data-connection-group='relationships'] .people-atlas-relationship-list > li",
+				),
+			).map((item) => item.dataset.edgeId),
+		).toEqual(["relationship-friends", "relationship-mentor", "relationship-parallel"]);
+		expect(
+			Array.from(
+				details.querySelectorAll<HTMLElement>(
+					"[data-connection-group='linked-people'] .people-atlas-relationship-list > li",
+				),
+			).map((item) => item.dataset.edgeId),
+		).toEqual(["contact-missing"]);
+		expect(details.textContent).toContain(
+			"Connected to Bob. Types: friend, colleague. Status: active. Since: January 2, 2020. Last contact: July 20, 2026.",
+		);
+		expect(details.textContent).toContain("Connected to Bob. Types: neighbour. Status: ended.");
+		expect(details.querySelector("[data-connection-group='linked-people'] button")).toBeNull();
+		expect(
+			details.querySelector(
+				"[data-edge-id='relationship-friends'][data-relationship-path='People/Relationships/Alice - Bob.md']",
+			),
+		).not.toBeNull();
+
+		const parallelEdit = details.querySelector<HTMLButtonElement>(
+			"button[data-relationship-action='edit'][data-edge-id='relationship-parallel']",
+		);
+		if (!parallelEdit) throw new Error("Expected the parallel relationship edit action.");
+		parallelEdit.focus();
+		view.renderDetails(profileAlice);
+		expect(frameDocument.activeElement).toBe(
+			details.querySelector("button[data-relationship-action='edit'][data-edge-id='relationship-parallel']"),
+		);
+	});
+
 	it("uses one roving tab stop and implements every specified list key", async () => {
 		const { callbacks } = mount();
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		const aliceButton = page.getByRole("button", { name: "Alice, Example Org", exact: true });
 		const ghostButton = page.getByRole("button", { name: "Missing, unresolved person", exact: true });
 		const charlieButton = page.getByRole("button", { name: "Charlie", exact: true });
@@ -872,7 +1056,7 @@ describe("accessible atlas renderer", () => {
 
 	it("describes parallel and inferred relationships without inventing direction metadata", async () => {
 		const { callbacks } = mount(snapshot([alice, bob, charlie, ghost], edges));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 
 		const relationshipRows = Array.from(
@@ -916,7 +1100,7 @@ describe("accessible atlas renderer", () => {
 		expect(callbacks.onEditRelationship).toHaveBeenCalledWith(edges[3], parallelEdit.element());
 		await expect.element(parallelEdit).toHaveFocus();
 
-		await expect.element(page.getByText("4 people · 4 connections")).toBeInTheDocument();
+		await expect.element(page.getByText("4 people visible")).toBeInTheDocument();
 		await expect.element(page.getByRole("button", { name: "Open note" })).toBeInTheDocument();
 		await expect.element(page.getByRole("button", { name: "Use as center" })).toBeInTheDocument();
 	});
@@ -931,7 +1115,7 @@ describe("accessible atlas renderer", () => {
 			inferred: false,
 		};
 		const { callbacks } = mount(snapshot([alice, ambiguous], [relationship]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 
 		await expect
@@ -959,7 +1143,7 @@ describe("accessible atlas renderer", () => {
 			...DEFAULT_SETTINGS,
 			relationshipRoleFormat: "{role} van {person}",
 		});
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 		await expect.element(page.getByText("Kind van Bob. Types: parent-child. Status: active.")).toBeInTheDocument();
 		expect(document.body.textContent).not.toContain("Outgoing to Bob");
@@ -973,7 +1157,7 @@ describe("accessible atlas renderer", () => {
 
 	it("delegates resolved actions and keeps ghosts selectable without capabilities", async () => {
 		const { callbacks } = mount(snapshot([alice, ghost, nonOpenable]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 		const openAction = page.getByRole("button", { name: "Open note" });
 		const centerAction = page.getByRole("button", { name: "Use as center" });
@@ -998,7 +1182,7 @@ describe("accessible atlas renderer", () => {
 
 	it("denies every ambiguous capability while retaining stable Base-only Open and Center", async () => {
 		const { callbacks } = mount(snapshot([ambiguous, baseOnly]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		const ambiguousButton = document.querySelector<HTMLButtonElement>("[data-node-id='ambiguous:duplicate-alice']");
 		expect(ambiguousButton).not.toBeNull();
 		await userEvent.click(ambiguousButton as HTMLButtonElement);
@@ -1010,7 +1194,7 @@ describe("accessible atlas renderer", () => {
 			.element(page.getByText("This person record is ambiguous and cannot be opened or centered."))
 			.toBeInTheDocument();
 
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 		const canvas = page.getByRole("application", { name: "Interactive people and relationship atlas" });
 		const box = (canvas.element() as HTMLCanvasElement).getBoundingClientRect();
 		const center = { x: box.width / 2, y: box.height / 2 };
@@ -1019,7 +1203,7 @@ describe("accessible atlas renderer", () => {
 		expect(callbacks.onCenterNode).not.toHaveBeenCalled();
 		expect(callbacks.onOpenNode).not.toHaveBeenCalled();
 
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Base-only person" }).click();
 		await page.getByRole("button", { name: "Open note" }).click();
 		await page.getByRole("button", { name: "Use as center" }).click();
@@ -1037,8 +1221,8 @@ describe("accessible atlas renderer", () => {
 		const restoredCamera = { x: restored.camera.x, y: restored.camera.y, scale: restored.camera.scale };
 		expect(restoredCamera).toEqual({ x: 0, y: 0, scale: 2 });
 
-		await page.getByRole("button", { name: "List" }).click();
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 
 		const afterRoundTrip = renderer.getLayoutSnapshot();
 		expect({
@@ -1049,7 +1233,7 @@ describe("accessible atlas renderer", () => {
 
 	it("preserves stable focus through updates and recovers without label guessing", async () => {
 		const { renderer, callbacks } = mount(snapshot([alice, bob, charlie]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		const bobButton = page.getByRole("button", { name: "Bob", exact: true });
 		await bobButton.click();
 		await expect.element(bobButton).toHaveFocus();
@@ -1064,13 +1248,13 @@ describe("accessible atlas renderer", () => {
 		await expect.element(page.getByRole("button", { name: "Bob renamed, Example Org", exact: true })).toHaveFocus();
 
 		renderer.setGraph(snapshot([]));
-		await expect.element(page.getByText("No people in the current atlas")).toBeInTheDocument();
-		await expect.element(page.getByRole("button", { name: "List" })).toHaveFocus();
+		await expect.element(page.getByText("No people in this view")).toBeInTheDocument();
+		await expect.element(page.getByRole("button", { name: "People", exact: true })).toHaveFocus();
 	});
 
 	it("preserves equivalent selected action focus through graph updates", async () => {
 		const { renderer } = mount(snapshot([alice, bob]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 		const open = page.getByRole("button", { name: "Open note" });
 		await open.click();
@@ -1089,7 +1273,7 @@ describe("accessible atlas renderer", () => {
 
 	it("preserves relationship action focus and falls back to the selected heading when capability changes", async () => {
 		const { renderer, callbacks } = mount(snapshot([alice, bob], [edges[0] as AtlasEdge]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 
 		const accessibleName = "Edit relationship with Bob, friend, colleague, People/Relationships/Alice - Bob.md";
@@ -1120,9 +1304,9 @@ describe("accessible atlas renderer", () => {
 	it("preserves sheet relationship focus by stable row identity and removes stale capabilities", async () => {
 		const relationship = edges[0] as AtlasEdge;
 		const { renderer, callbacks } = mount(snapshot([alice, bob], [relationship]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 		await page.getByRole("button", { name: "Details" }).click();
 
 		const accessibleName = "Edit relationship with Bob, friend, colleague, People/Relationships/Alice - Bob.md";
@@ -1141,7 +1325,7 @@ describe("accessible atlas renderer", () => {
 
 	it("cleans delegated relationship actions and focus restoration on destroy", async () => {
 		const { renderer, callbacks } = mount(snapshot([alice, bob], [edges[0] as AtlasEdge]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 		const open = page.getByRole("button", {
 			name: "Open relationship note with Bob, friend, colleague, People/Relationships/Alice - Bob.md",
@@ -1176,11 +1360,15 @@ describe("accessible atlas renderer", () => {
 		);
 		const details = page.getByRole("button", { name: "Details" });
 		await expect.element(details).toBeDisabled();
+		const zoomSummary = document.querySelector<HTMLElement>(".people-atlas-graph-zoom > summary");
+		if (!zoomSummary) throw new Error("The graph zoom disclosure is unavailable.");
+		zoomSummary.click();
+		expect(zoomSummary.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
 		for (const name of ["Zoom out", "Zoom in", "Fit", "Details"]) {
 			await expect.element(page.getByRole("button", { name })).toBeInTheDocument();
 		}
 
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 		const contactMomentActions = Array.from(
 			document.querySelectorAll<HTMLButtonElement>(
@@ -1193,9 +1381,11 @@ describe("accessible atlas renderer", () => {
 			expect(box.width).toBeGreaterThanOrEqual(44);
 			expect(box.height).toBeGreaterThanOrEqual(44);
 		}
-		await page.getByRole("button", { name: "Graph" }).click();
+		await expect.element(page.getByRole("heading", { name: "Last contact" })).toBeInTheDocument();
+		expect(document.querySelector(".people-atlas-last-contact time")?.getAttribute("datetime")).toBe("2026-07-30");
+		await page.getByRole("button", { name: "Network" }).click();
 		await expect.element(details).not.toBeDisabled();
-		for (const name of ["Graph", "List", "Zoom out", "Zoom in", "Fit", "Details"]) {
+		for (const name of ["Network", "People", "Zoom out", "Zoom in", "Fit", "Details"]) {
 			const box = (page.getByRole("button", { name }).element() as HTMLButtonElement).getBoundingClientRect();
 			expect(box.width).toBeGreaterThanOrEqual(44);
 			expect(box.height).toBeGreaterThanOrEqual(44);
@@ -1226,11 +1416,13 @@ describe("accessible atlas renderer", () => {
 			"Linked person: Missing (unresolved).",
 		]);
 		await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
-		await expect.element(page.getByRole("button", { name: "Log contact" })).toHaveFocus();
+		await expect.element(page.getByRole("button", { name: "Create relationship" })).toHaveFocus();
+		const sheetLogContact = page.getByRole("button", { name: "Log contact" });
+		(sheetLogContact.element() as HTMLButtonElement).focus();
 		renderer.setGraph(snapshot([{ ...alice, label: "Alice updated" }, bob, ghost, ambiguous], edges));
 		expect(dialogElement.open).toBe(true);
 		await expect.element(page.getByRole("heading", { name: "Alice updated" })).toBeInTheDocument();
-		await expect.element(page.getByRole("button", { name: "Log contact" })).toHaveFocus();
+		await expect.element(sheetLogContact).toHaveFocus();
 		await page.getByRole("button", { name: "Close" }).click();
 		await expect.element(details).toHaveFocus();
 
@@ -1307,10 +1499,10 @@ describe("accessible atlas renderer", () => {
 		);
 
 		await details.click();
-		(page.getByRole("button", { name: "List" }).element() as HTMLButtonElement).click();
+		(page.getByRole("button", { name: "People", exact: true }).element() as HTMLButtonElement).click();
 		expect(dialogElement.open).toBe(false);
 		await page.getByRole("button", { name: "Ambiguous Alice, ambiguous person" }).click();
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 		await details.click();
 		await expect
 			.element(page.getByText("This person record is ambiguous. No actions are available."))
@@ -1607,9 +1799,9 @@ describe("accessible atlas renderer", () => {
 
 	it("rolls back modal state when native showModal fails and remains operable", async () => {
 		const { renderer, callbacks } = mount(snapshot([alice]));
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
-		await page.getByRole("button", { name: "Graph" }).click();
+		await page.getByRole("button", { name: "Network" }).click();
 		const dialog = document.querySelector<HTMLDialogElement>(".people-atlas-details-sheet") as HTMLDialogElement;
 		const originalShowModal = dialog.showModal.bind(dialog);
 		Object.defineProperty(dialog, "showModal", {
@@ -1828,7 +2020,7 @@ describe("accessible atlas renderer", () => {
 			onUpdateFollowUp: () => true,
 		});
 
-		await page.getByRole("button", { name: "List" }).click();
+		await page.getByRole("button", { name: "People", exact: true }).click();
 		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
 		const recentRows = document.querySelectorAll(
 			".people-atlas-semantic-details .people-atlas-contact-moment-recent li",
@@ -1863,7 +2055,9 @@ describe("accessible atlas renderer", () => {
 		expect(onOpenContactMoment).toHaveBeenCalledWith(moments[0], historyOpen);
 
 		renderer.showFollowUps();
-		await expect.element(page.getByRole("button", { name: "Follow-ups" })).toHaveAttribute("aria-pressed", "true");
+		await expect
+			.element(page.getByRole("button", { name: "Follow-up", exact: true }))
+			.toHaveAttribute("aria-pressed", "true");
 		expect(document.querySelector<HTMLElement>(".people-atlas-follow-ups-panel")?.hidden).toBe(false);
 		expect(document.querySelector<HTMLElement>(".people-atlas-semantic-panel")?.hidden).toBe(true);
 		expect(document.querySelector(".people-atlas-follow-ups-summary")?.textContent).toContain(

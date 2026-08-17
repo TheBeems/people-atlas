@@ -213,7 +213,7 @@ describe("controlled People Atlas Obsidian integration", () => {
 		plugin.settings = { ...plugin.settings, myPersonId: "alice" };
 		const openRelationshipModal = vi.spyOn(RelationshipModal.prototype, "open").mockImplementation(() => undefined);
 		createRelationshipFromStableNode(standalone.leaf.contentEl, "bob", "Create relationship");
-		createRelationshipFromStableNode(bases.parent, "bob", "Create relationship with Different person");
+		createRelationshipFromStableNode(bases.parent, "bob", "Create relationship");
 		expect(openRelationshipModal).toHaveBeenCalledTimes(2);
 		for (const modal of openRelationshipModal.mock.instances as unknown as Array<{
 			values: { fromPath: string; toPath: string };

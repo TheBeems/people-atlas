@@ -9,22 +9,42 @@ import type {
 	ProjectionMode,
 	RawIndexSnapshot,
 } from "../domain/types";
-import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
+import { isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { buildGraphSnapshot } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
 import { buildLayoutKey, rememberCenter, type AtlasViewState } from "../settings/view-state";
 import type { LayoutSnapshot } from "../render/layout-state";
-import { renderPersonProfile } from "../render/person-profile";
 import type PeopleAtlasPlugin from "../main";
 import { resolvePersonPhotoResource } from "../person-photo-resource";
 import { AtlasRenderer, type AtlasSelectionSource } from "../render/atlas-renderer";
 import { buildSelectedPersonContactMomentPresentation } from "../render/contact-moment-presentation";
+import { PersonDetailsPanel } from "../render/person-details-panel";
+import { RelationshipDetailsPanel } from "../render/relationship-details-panel";
+import { buildIncidentRelationshipRows } from "../render/relationship-rows";
+
+type StandaloneRelationshipActionFocus = {
+	action: "open" | "edit";
+	edgeId: string;
+	filePath?: string | undefined;
+};
+
+type StandalonePersonActionFocus = "open" | "center" | "edit" | "create" | "log-contact";
+
+const EMPTY_ATLAS_SNAPSHOT: AtlasSnapshot = {
+	nodes: [],
+	edges: [],
+	contactMoments: [],
+	diagnostics: [],
+	hiddenNodeCount: 0,
+	hiddenEdgeCount: 0,
+	hiddenContactMomentCount: 0,
+	generatedAt: 0,
+};
 
 export class PeopleAtlasView extends ItemView {
 	private renderer: AtlasRenderer | undefined;
 	private unsubscribe: (() => void) | undefined;
-	private statsEl: HTMLElement | undefined;
 	private detailsEl: HTMLElement | undefined;
 	private diagnosticsEl: HTMLElement | undefined;
 	private rawSnapshot: RawIndexSnapshot = { people: [], relationships: [] };
@@ -39,6 +59,9 @@ export class PeopleAtlasView extends ItemView {
 	private selectedCenterPath: string | undefined;
 	private activePath: string | undefined;
 	private centerModeSelect: HTMLSelectElement | undefined;
+	private personDetailsPanel: PersonDetailsPanel | undefined;
+	private relationshipDetailsPanel: RelationshipDetailsPanel | undefined;
+	private selectedNodeId: string | undefined;
 	private readonly initialMyPersonSettingId: string;
 	private awaitingInitialMyPersonCenter: boolean;
 	private expandedContactHistoryPersonId: string | undefined;
@@ -81,8 +104,6 @@ export class PeopleAtlasView extends ItemView {
 		toolbar.className = "people-atlas-toolbar";
 		const title = this.contentEl.ownerDocument.createElement("strong");
 		title.textContent = "People Atlas";
-		this.statsEl = this.contentEl.ownerDocument.createElement("span");
-		this.statsEl.className = "people-atlas-stats";
 		const centerMode = this.createSelect(
 			this.plugin.t.peopleAtlasView.center,
 			[
@@ -114,21 +135,7 @@ export class PeopleAtlasView extends ItemView {
 				this.renderSnapshot();
 			},
 		);
-		const fitButton = this.contentEl.ownerDocument.createElement("button");
-		fitButton.type = "button";
-		fitButton.textContent = this.plugin.t.atlasRenderer.fit;
-		fitButton.addEventListener("click", () => this.renderer?.fitToContent());
-		const clearCenterButton = this.contentEl.ownerDocument.createElement("button");
-		clearCenterButton.type = "button";
-		clearCenterButton.textContent = this.plugin.t.peopleAtlasView.allPeople;
-		clearCenterButton.addEventListener("click", () => {
-			this.centerMode = "none";
-			this.awaitingInitialMyPersonCenter = false;
-			centerMode.value = "none";
-			this.persistViewState();
-			this.renderSnapshot();
-		});
-		toolbar.append(title, centerMode, projectionMode, this.statsEl, fitButton, clearCenterButton);
+		toolbar.append(title, centerMode, projectionMode);
 
 		const body = this.contentEl.ownerDocument.createElement("div");
 		body.className = "people-atlas-body";
@@ -139,6 +146,41 @@ export class PeopleAtlasView extends ItemView {
 		this.detailsEl = this.contentEl.ownerDocument.createElement("section");
 		this.detailsEl.className = "people-atlas-selected-details";
 		this.detailsEl.setAttribute("aria-label", this.plugin.t.atlasRenderer.selectedPersonDetails);
+		this.relationshipDetailsPanel = new RelationshipDetailsPanel(this.contentEl.ownerDocument, {
+			translator: this.plugin.t,
+			onOpenRelationship: (edge: AtlasEdge) => this.openRelationship(edge),
+			canOpenRelationship: (edge) => this.canOpenRelationship(edge),
+			onEditRelationship: (edge: AtlasEdge, invoker: HTMLButtonElement) => this.editRelationship(edge, invoker),
+			canEditRelationship: (edge) => this.canEditRelationship(edge),
+		});
+		this.personDetailsPanel = new PersonDetailsPanel(this.contentEl.ownerDocument, {
+			label: this.plugin.t.atlasRenderer.selectedPersonDetails,
+			translator: this.plugin.t,
+			getSnapshot: () => this.projectedSnapshot ?? EMPTY_ATLAS_SNAPSHOT,
+			getSelectedId: () => this.selectedNodeId,
+			getSettings: () => this.plugin.settings,
+			resolvePersonPhoto: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
+			renderContactMoments: (selected, headingLevel, surface) =>
+				this.renderContactMomentHistory(selected, headingLevel, surface),
+			getRelationshipRows: (selected) =>
+				buildIncidentRelationshipRows(
+					this.projectedSnapshot ?? EMPTY_ATLAS_SNAPSHOT,
+					selected,
+					this.plugin.settings.relationshipRoleFormat,
+					this.plugin.t,
+				),
+			renderRelationshipGroups: (rows, selected, headingLevel) =>
+				this.relationshipDetailsPanel?.render(rows, selected, headingLevel) ??
+				this.contentEl.ownerDocument.createElement("div"),
+			canEditPerson: (node) => this.canEditPerson(node),
+			canCreateRelationship: (node) => this.canCreateRelationship(node),
+			canLogContact: (node) => this.canLogContact(node),
+			headingLevel: 3,
+			sectionHeadingLevel: 4,
+			surface: "details",
+			actionDataAttribute: "action",
+		});
+		this.detailsEl.addEventListener("click", this.onDetailsClick);
 		this.diagnosticsEl = this.contentEl.ownerDocument.createElement("section");
 		this.diagnosticsEl.className = "people-atlas-diagnostics";
 		sidebar.append(this.detailsEl, this.diagnosticsEl);
@@ -150,17 +192,7 @@ export class PeopleAtlasView extends ItemView {
 			() => this.plugin.settings,
 			{
 				onOpenNode: (node) => this.openNode(node),
-				onCenterNode: (node) => {
-					if (!isResolvedAtlasPersonNode(node)) return;
-					this.awaitingInitialMyPersonCenter = false;
-					this.centerMode = "selected-node";
-					if (this.centerModeSelect) this.centerModeSelect.value = "selected-node";
-					this.selectedPath = node.filePath;
-					this.selectedCenterPath = node.filePath;
-					this.centerId = node.personId;
-					this.persistViewState(node.personId);
-					this.renderSnapshot();
-				},
+				onCenterNode: (node) => this.centerSelectedPerson(node),
 				onSelectNode: (node, source) => this.handleNodeSelection(node, source),
 				canEditPerson: (node) => this.canEditPerson(node),
 				onEditPerson: (node) => {
@@ -226,6 +258,11 @@ export class PeopleAtlasView extends ItemView {
 	override async onClose(): Promise<void> {
 		await this.persistLayout(undefined, true);
 		this.unsubscribe?.();
+		this.detailsEl?.removeEventListener("click", this.onDetailsClick);
+		this.personDetailsPanel?.destroy();
+		this.personDetailsPanel = undefined;
+		this.relationshipDetailsPanel?.destroy();
+		this.relationshipDetailsPanel = undefined;
 		this.renderer?.destroy();
 	}
 
@@ -260,6 +297,7 @@ export class PeopleAtlasView extends ItemView {
 
 	private handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
 		const previousSelectedPath = this.selectedPath;
+		this.selectedNodeId = node?.id;
 		this.selectedPath = node?.filePath;
 		this.renderDetails(node);
 		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
@@ -287,25 +325,40 @@ export class PeopleAtlasView extends ItemView {
 			projectionMode: this.projectionMode,
 			centerId: this.centerMode === "configured" ? this.centerId : undefined,
 			centerPath,
-			hops: this.viewState.hops,
+			hops: this.effectiveProjectionHops(),
 			maxNodes: this.viewState.maxNodes,
 		});
 		this.projectedSnapshot = projected;
-		const layoutKey = buildLayoutKey(this.viewConfigurationKey, this.viewState, this.centerId, centerPath);
+		this.updateCenterModeLabels(full);
+		const layoutKey = buildLayoutKey(
+			this.viewConfigurationKey,
+			this.viewStateForProjection(),
+			this.centerId,
+			centerPath,
+		);
 		this.renderer?.setGraph(projected, this.viewState.layouts[layoutKey]);
-		if (this.selectedPath) {
-			this.renderDetails(
-				projected.nodes.find((node) => isResolvedAtlasPersonNode(node) && node.filePath === this.selectedPath),
-			);
-		}
-		if (this.statsEl)
-			this.statsEl.textContent = this.plugin.t.peopleAtlasView.stats({
-				people: this.plugin.t.formatInteger(projected.nodes.length),
-				peopleCount: projected.nodes.length,
-				connections: this.plugin.t.formatInteger(projected.edges.length),
-				connectionsCount: projected.edges.length,
-			});
+		if (this.selectedNodeId) this.renderDetails(projected.nodes.find((node) => node.id === this.selectedNodeId));
 		this.renderDiagnostics(projected);
+	}
+
+	private effectiveProjectionHops(): number {
+		return this.projectionMode === "ego" ? 1 : this.viewState.hops;
+	}
+
+	private viewStateForProjection(): AtlasViewState {
+		return this.projectionMode === "ego" ? { ...this.viewState, hops: 1 } : this.viewState;
+	}
+
+	private updateCenterModeLabels(snapshot: AtlasSnapshot): void {
+		if (!this.centerModeSelect) return;
+		const configuredOption = this.centerModeSelect.querySelector<HTMLOptionElement>('option[value="configured"]');
+		if (!configuredOption) return;
+		const configuredNode = snapshot.nodes.find(
+			(node) => node.personId === this.centerId && isResolvedAtlasPersonNode(node),
+		);
+		configuredOption.textContent = configuredNode
+			? this.plugin.t.peopleAtlasView.networkAround({ name: configuredNode.label })
+			: this.plugin.t.peopleAtlasView.configuredCenter;
 	}
 
 	private createSelect(
@@ -347,7 +400,7 @@ export class PeopleAtlasView extends ItemView {
 				: this.centerMode === "selected-node"
 					? this.selectedCenterPath
 					: undefined;
-		const key = buildLayoutKey(this.viewConfigurationKey, this.viewState, this.centerId, centerPath);
+		const key = buildLayoutKey(this.viewConfigurationKey, this.viewStateForProjection(), this.centerId, centerPath);
 		this.viewState.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
 		const pending = this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
 		if (flush) await this.plugin.flushViewState(this.viewConfigurationKey);
@@ -357,63 +410,55 @@ export class PeopleAtlasView extends ItemView {
 	private renderDetails(node: AtlasNode | undefined): void {
 		if (!this.detailsEl) return;
 		const focusedContactMomentAction = this.captureFocusedContactMomentAction();
+		const focusedRelationshipAction = this.captureFocusedRelationshipAction();
+		const focusedPersonAction = this.captureFocusedPersonAction();
 		this.detailsEl.replaceChildren();
-		const heading = this.detailsEl.ownerDocument.createElement("h3");
-		heading.textContent = node?.label ?? this.plugin.t.atlasRenderer.selection;
-		this.detailsEl.append(heading);
-		if (!node) {
-			const hint = this.detailsEl.ownerDocument.createElement("p");
-			hint.textContent = this.plugin.t.peopleAtlasView.selectNodeHint;
-			this.detailsEl.append(hint);
-			this.restoreContactMomentActionFocus(focusedContactMomentAction);
-			return;
-		}
-		if (isResolvedAtlasPersonNode(node)) {
-			const profile = renderPersonProfile(this.detailsEl.ownerDocument, node, {
-				contactHeadingLevel: 4,
-				resolvePhotoResource: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
-				translator: this.plugin.t,
-			});
-			if (profile) this.detailsEl.append(profile);
-			const contactMoments = this.renderContactMomentHistory(node);
-			if (contactMoments) this.detailsEl.append(contactMoments);
-		} else {
-			const availability = this.detailsEl.ownerDocument.createElement("p");
-			availability.textContent = isAmbiguousAtlasNode(node)
-				? this.plugin.t.atlasRenderer.ambiguousPerson
-				: node.kind === "ghost"
-					? this.plugin.t.atlasRenderer.unresolvedPerson
-					: this.plugin.t.peopleAtlasView.personNoteUnavailable;
-			this.detailsEl.append(availability);
-		}
-		if (this.canEditPerson(node)) {
-			const editPersonButton = this.detailsEl.ownerDocument.createElement("button");
-			editPersonButton.type = "button";
-			editPersonButton.textContent = this.plugin.t.atlasRenderer.editPerson;
-			editPersonButton.addEventListener("click", () => this.plugin.openEditPerson(node.filePath));
-			this.detailsEl.append(editPersonButton);
-		}
-		if (this.canCreateRelationship(node)) {
-			const createRelationshipButton = this.detailsEl.ownerDocument.createElement("button");
-			createRelationshipButton.type = "button";
-			createRelationshipButton.textContent = this.plugin.t.atlasRenderer.createRelationship;
-			createRelationshipButton.addEventListener("click", () => this.plugin.openCreateRelationship(node.filePath));
-			this.detailsEl.append(createRelationshipButton);
-		}
-		if (this.canLogContact(node)) {
-			const logContactButton = this.detailsEl.ownerDocument.createElement("button");
-			logContactButton.type = "button";
-			logContactButton.textContent = this.plugin.t.atlasRenderer.logContact;
-			logContactButton.addEventListener("click", () => this.plugin.openLogContact(node.filePath));
-			this.detailsEl.append(logContactButton);
-		}
+		this.personDetailsPanel?.render(node);
+		if (this.personDetailsPanel) this.detailsEl.append(this.personDetailsPanel.element);
+		this.restoreStandalonePersonActionFocus(focusedPersonAction);
+		this.restoreStandaloneRelationshipActionFocus(focusedRelationshipAction);
 		this.restoreContactMomentActionFocus(focusedContactMomentAction);
 	}
 
-	private renderContactMomentHistory(node: AtlasNode & { personId?: string | undefined }): HTMLElement | undefined {
+	private readonly onDetailsClick = (event: MouseEvent): void => {
+		const details = this.detailsEl;
+		const ownerWindow = details?.ownerDocument.defaultView;
+		const target = event.target;
+		if (!details || !ownerWindow || !(target instanceof ownerWindow.Element)) return;
+		const relationshipButton = target.closest<HTMLButtonElement>("button[data-relationship-action]");
+		if (relationshipButton) {
+			const edge = this.relationshipDetailsPanel?.getEdge(relationshipButton);
+			if (!edge) return;
+			if (relationshipButton.dataset.relationshipAction === "open") {
+				void this.openRelationship(edge);
+			} else if (relationshipButton.dataset.relationshipAction === "edit") {
+				this.editRelationship(edge, relationshipButton);
+			}
+			return;
+		}
+		const action = target.closest<HTMLButtonElement>("button[data-action]")?.dataset.action as
+			| StandalonePersonActionFocus
+			| undefined;
+		if (!action) return;
+		const selected = this.projectedSnapshot?.nodes.find((node) => node.id === this.selectedNodeId);
+		if (!isResolvedAtlasPersonNode(selected)) return;
+		if (action === "open") this.openNode(selected);
+		else if (action === "center") this.centerSelectedPerson(selected);
+		else if (action === "edit" && this.canEditPerson(selected)) this.plugin.openEditPerson(selected.filePath);
+		else if (action === "create" && this.canCreateRelationship(selected))
+			this.plugin.openCreateRelationship(selected.filePath);
+		else if (action === "log-contact" && this.canLogContact(selected)) this.plugin.openLogContact(selected.filePath);
+	};
+
+	private renderContactMomentHistory(
+		node: AtlasNode & { personId?: string | undefined },
+		headingLevel: 3 | 4,
+		_surface: "details" | "sheet",
+	): HTMLElement | undefined {
 		const snapshot = this.projectedSnapshot;
 		if (!snapshot || !node.personId) return undefined;
 		const bounded = buildSelectedPersonContactMomentPresentation(snapshot.contactMoments, node.personId);
+		if (!bounded.earliestOpenFollowUp && bounded.recentMoments.length === 0) return undefined;
 		const all = buildSelectedPersonContactMomentPresentation(
 			snapshot.contactMoments,
 			node.personId,
@@ -425,7 +470,7 @@ export class PeopleAtlasView extends ItemView {
 		if (!section) return undefined;
 		section.className = "people-atlas-contact-moment-history";
 		section.dataset.contactMomentPersonId = node.personId;
-		const heading = section.ownerDocument.createElement("h4");
+		const heading = section.ownerDocument.createElement(`h${headingLevel}`);
 		heading.textContent = this.plugin.t.atlasRenderer.contactMoments;
 		section.append(heading);
 
@@ -617,6 +662,71 @@ export class PeopleAtlasView extends ItemView {
 		return action && id && path && placement ? { action, id, path, placement } : undefined;
 	}
 
+	private captureFocusedPersonAction(): StandalonePersonActionFocus | undefined {
+		if (!this.detailsEl) return undefined;
+		const active = this.detailsEl.ownerDocument.activeElement;
+		if (!active || !this.detailsEl.contains(active)) return undefined;
+		const action = (active as HTMLButtonElement).dataset.action;
+		return action === "open" ||
+			action === "center" ||
+			action === "edit" ||
+			action === "create" ||
+			action === "log-contact"
+			? action
+			: undefined;
+	}
+
+	private captureFocusedRelationshipAction(): StandaloneRelationshipActionFocus | undefined {
+		if (!this.detailsEl) return undefined;
+		const active = this.detailsEl.ownerDocument.activeElement;
+		if (!active || !this.detailsEl.contains(active)) return undefined;
+		const button = active as HTMLButtonElement;
+		const action = button.dataset.relationshipAction;
+		const edgeId = button.dataset.edgeId;
+		return action === "open" || action === "edit"
+			? edgeId
+				? { action, edgeId, filePath: button.dataset.relationshipPath }
+				: undefined
+			: undefined;
+	}
+
+	private restoreStandaloneRelationshipActionFocus(identity: StandaloneRelationshipActionFocus | undefined): boolean {
+		if (!identity || !this.detailsEl) return false;
+		const replacement = Array.from(
+			this.detailsEl.querySelectorAll<HTMLButtonElement>("button[data-relationship-action]"),
+		).find(
+			(candidate) =>
+				candidate.dataset.relationshipAction === identity.action &&
+				candidate.dataset.edgeId === identity.edgeId &&
+				candidate.dataset.relationshipPath === identity.filePath,
+		);
+		if (replacement) {
+			replacement.focus();
+			return true;
+		}
+		const heading = this.detailsEl.querySelector<HTMLElement>("[data-selected-person-heading]");
+		if (heading) {
+			heading.focus();
+			return true;
+		}
+		return false;
+	}
+
+	private restoreStandalonePersonActionFocus(identity: StandalonePersonActionFocus | undefined): boolean {
+		if (!identity || !this.detailsEl) return false;
+		const replacement = this.detailsEl.querySelector<HTMLButtonElement>(`button[data-action="${identity}"]`);
+		if (replacement) {
+			replacement.focus();
+			return true;
+		}
+		const heading = this.detailsEl.querySelector<HTMLElement>("[data-selected-person-heading]");
+		if (heading) {
+			heading.focus();
+			return true;
+		}
+		return false;
+	}
+
 	private restoreContactMomentActionFocus(
 		identity: { action: string; id: string; path: string; placement: string } | undefined,
 	): void {
@@ -719,6 +829,19 @@ export class PeopleAtlasView extends ItemView {
 		this.openPath(node.filePath);
 	}
 
+	private centerSelectedPerson(node: AtlasNode): void {
+		if (!isResolvedAtlasPersonNode(node)) return;
+		this.awaitingInitialMyPersonCenter = false;
+		this.centerMode = "selected-node";
+		if (this.centerModeSelect) this.centerModeSelect.value = "selected-node";
+		this.selectedNodeId = node.id;
+		this.selectedPath = node.filePath;
+		this.selectedCenterPath = node.filePath;
+		this.centerId = node.personId;
+		this.persistViewState(node.personId);
+		this.renderSnapshot();
+	}
+
 	private canCreateRelationship(node: AtlasNode | undefined): node is AtlasNode & { kind: "person"; filePath: string } {
 		return Boolean(
 			isResolvedAtlasPersonNode(node) &&
@@ -751,7 +874,13 @@ export class PeopleAtlasView extends ItemView {
 
 	private editRelationship(edge: AtlasEdge, invoker: HTMLButtonElement): void {
 		if (edge.inferred || !edge.filePath) return;
-		this.plugin.openEditRelationship(edge.filePath, () => this.renderer?.restoreRelationshipActionFocus(invoker));
+		const sidebarFocus = this.detailsEl?.contains(invoker)
+			? { action: "edit" as const, edgeId: edge.id, filePath: edge.filePath }
+			: undefined;
+		this.plugin.openEditRelationship(edge.filePath, () => {
+			if (sidebarFocus && this.restoreStandaloneRelationshipActionFocus(sidebarFocus)) return;
+			this.renderer?.restoreRelationshipActionFocus(invoker);
+		});
 	}
 
 	private openPath(path: string): void {

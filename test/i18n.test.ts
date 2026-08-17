@@ -15,28 +15,28 @@ describe("People Atlas i18n foundation", () => {
 		const dutch = createTranslator("nl-NL");
 		expect(english.commandOpenAtlas).toBe("Open atlas");
 		expect(dutch.commandOpenAtlas).toBe("Atlas openen");
+		expect(english.atlasRenderer.zoom).toBe("Zoom");
+		expect(dutch.atlasRenderer.zoom).toBe("Zoomen");
 		expect(dutch.personModal.save).toBe("Opslaan");
 		expect(english.relationshipModal.titleCreate).toBe("Create relationship");
 		expect(
 			dutch.atlasRenderer.semanticListSummary({
 				people: dutch.formatInteger(2),
 				peopleCount: 2,
-				connections: dutch.formatInteger(1),
-				connectionsCount: 1,
+				searchActive: false,
 				hiddenContactMoments: dutch.formatInteger(0),
 				hiddenContactMomentCount: 0,
 			}),
-		).toBe("2 personen · 1 verbinding");
+		).toBe("2 personen zichtbaar");
 		expect(
 			english.atlasRenderer.semanticListSummary({
 				people: english.formatInteger(1),
 				peopleCount: 1,
-				connections: english.formatInteger(1),
-				connectionsCount: 1,
+				searchActive: true,
 				hiddenContactMoments: english.formatInteger(0),
 				hiddenContactMomentCount: 0,
 			}),
-		).toBe("1 person · 1 connection");
+		).toBe("1 person found");
 		expect(
 			english.atlasRenderer.followUpsSummary({
 				openCount: english.formatInteger(1234),

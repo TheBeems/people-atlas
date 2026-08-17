@@ -5,13 +5,16 @@ import type { Translator } from "../i18n";
 export interface SemanticPeopleListOptions {
 	panelLabel: string;
 	peopleLabel: string;
+	searchLabel: string;
+	searchPlaceholder: string;
 	noPeopleLabel: string;
+	noSearchResultsLabel: string;
 	translator: Translator;
 	getSnapshot: () => AtlasSnapshot;
 	getSelectedId: () => NodeId | undefined;
 	getFocusedId: () => NodeId | undefined;
 	setFocusedId: (id: NodeId | undefined) => void;
-	getSummary: (snapshot: AtlasSnapshot) => string;
+	getSummary: (snapshot: AtlasSnapshot, visibleCount: number, searchActive: boolean) => string;
 	onSelectNode: (node: AtlasNode | undefined) => void;
 	onOpenNode: (node: AtlasNode) => void;
 	onRenderDetails: () => void;
@@ -20,6 +23,7 @@ export interface SemanticPeopleListOptions {
 /** Owns semantic people-list rendering, selection provenance, roving focus and keyboard lifecycle. */
 export class SemanticPeopleList {
 	readonly element: HTMLElement;
+	readonly searchInput: HTMLInputElement;
 	readonly summary: HTMLParagraphElement;
 	readonly emptyMessage: HTMLParagraphElement;
 	readonly peopleList: HTMLUListElement;
@@ -27,6 +31,7 @@ export class SemanticPeopleList {
 	private readonly win: Window & typeof globalThis;
 	private attached = false;
 	private destroyed = false;
+	private searchQuery = "";
 
 	constructor(document: Document, options: SemanticPeopleListOptions) {
 		this.options = options;
@@ -37,6 +42,17 @@ export class SemanticPeopleList {
 		this.element.className = "people-atlas-semantic-panel";
 		this.element.setAttribute("aria-label", options.panelLabel);
 		this.element.hidden = true;
+
+		const search = document.createElement("div");
+		search.className = "people-atlas-people-search";
+		const searchLabel = document.createElement("label");
+		searchLabel.textContent = options.searchLabel;
+		this.searchInput = document.createElement("input");
+		this.searchInput.type = "search";
+		this.searchInput.placeholder = options.searchPlaceholder;
+		this.searchInput.setAttribute("aria-label", options.searchLabel);
+		searchLabel.append(this.searchInput);
+		search.append(searchLabel);
 
 		this.summary = document.createElement("p");
 		this.summary.className = "people-atlas-semantic-summary";
@@ -51,12 +67,13 @@ export class SemanticPeopleList {
 		this.peopleList = document.createElement("ul");
 		this.peopleList.className = "people-atlas-people-list";
 		this.peopleList.setAttribute("aria-label", options.peopleLabel);
-		this.element.append(this.summary, this.emptyMessage, this.peopleList);
+		this.element.append(search, this.summary, this.emptyMessage, this.peopleList);
 	}
 
 	attach(): void {
 		if (this.attached || this.destroyed) return;
 		this.attached = true;
+		this.searchInput.addEventListener("input", this.onSearchInput);
 		this.peopleList.addEventListener("click", this.onPeopleListClick);
 		this.peopleList.addEventListener("keydown", this.onPeopleListKeyDown);
 		this.peopleList.addEventListener("focusin", this.onPeopleListFocusIn);
@@ -65,22 +82,26 @@ export class SemanticPeopleList {
 	update(): void {
 		if (this.destroyed) return;
 		const snapshot = this.options.getSnapshot();
-		this.summary.textContent = this.options.getSummary(snapshot);
-		this.emptyMessage.hidden = snapshot.nodes.length > 0;
-		this.peopleList.hidden = snapshot.nodes.length === 0;
+		const visibleNodes = this.filteredNodes(snapshot);
+		const searchActive = Boolean(normalizeSearchText(this.searchQuery));
+		this.summary.textContent = this.options.getSummary(snapshot, visibleNodes.length, searchActive);
+		this.emptyMessage.textContent =
+			visibleNodes.length === 0 && searchActive ? this.options.noSearchResultsLabel : this.options.noPeopleLabel;
+		this.emptyMessage.hidden = visibleNodes.length > 0;
+		this.peopleList.hidden = visibleNodes.length === 0;
 		this.peopleList.replaceChildren();
 
 		const selectedId = this.options.getSelectedId();
 		const focusedId = this.options.getFocusedId();
 		const rovingId =
-			selectedId && this.nodeById(selectedId)
+			selectedId && visibleNodes.some((node) => node.id === selectedId)
 				? selectedId
-				: focusedId && this.nodeById(focusedId)
+				: focusedId && visibleNodes.some((node) => node.id === focusedId)
 					? focusedId
-					: snapshot.nodes[0]?.id;
+					: visibleNodes[0]?.id;
 		this.options.setFocusedId(rovingId);
 
-		for (const node of snapshot.nodes) {
+		for (const node of visibleNodes) {
 			const item = this.peopleList.ownerDocument.createElement("li");
 			const button = this.peopleList.ownerDocument.createElement("button");
 			button.type = "button";
@@ -123,6 +144,7 @@ export class SemanticPeopleList {
 	destroy(): void {
 		if (this.destroyed) return;
 		this.destroyed = true;
+		this.searchInput.removeEventListener("input", this.onSearchInput);
 		this.peopleList.removeEventListener("click", this.onPeopleListClick);
 		this.peopleList.removeEventListener("keydown", this.onPeopleListKeyDown);
 		this.peopleList.removeEventListener("focusin", this.onPeopleListFocusIn);
@@ -133,6 +155,16 @@ export class SemanticPeopleList {
 	private nodeById(nodeId: NodeId | string): AtlasNode | undefined {
 		return this.options.getSnapshot().nodes.find((node) => node.id === nodeId);
 	}
+
+	private filteredNodes(snapshot: AtlasSnapshot): AtlasNode[] {
+		if (!normalizeSearchText(this.searchQuery)) return snapshot.nodes;
+		return snapshot.nodes.filter((node) => matchesPersonSearch(node, this.searchQuery));
+	}
+
+	private readonly onSearchInput = (): void => {
+		this.searchQuery = this.searchInput.value;
+		this.update();
+	};
 
 	private readonly onPeopleListClick = (event: MouseEvent): void => {
 		const button = this.personButtonFrom(event.target);
@@ -153,18 +185,19 @@ export class SemanticPeopleList {
 		const button = this.personButtonFrom(event.target);
 		if (!button?.dataset.nodeId) return;
 		const snapshot = this.options.getSnapshot();
-		const currentIndex = snapshot.nodes.findIndex((node) => node.id === button.dataset.nodeId);
+		const visibleNodes = this.filteredNodes(snapshot);
+		const currentIndex = visibleNodes.findIndex((node) => node.id === button.dataset.nodeId);
 		if (currentIndex < 0) return;
 
 		let nextIndex: number | undefined;
-		if (event.key === "ArrowDown" && currentIndex < snapshot.nodes.length - 1) nextIndex = currentIndex + 1;
+		if (event.key === "ArrowDown" && currentIndex < visibleNodes.length - 1) nextIndex = currentIndex + 1;
 		else if (event.key === "ArrowUp" && currentIndex > 0) nextIndex = currentIndex - 1;
 		else if (event.key === "Home") nextIndex = 0;
-		else if (event.key === "End") nextIndex = snapshot.nodes.length - 1;
+		else if (event.key === "End") nextIndex = visibleNodes.length - 1;
 
 		if (nextIndex !== undefined) {
 			event.preventDefault();
-			const node = snapshot.nodes[nextIndex];
+			const node = visibleNodes[nextIndex];
 			if (!node) return;
 			this.options.onSelectNode(node);
 			this.focusPersonButton(node.id);
@@ -173,14 +206,14 @@ export class SemanticPeopleList {
 
 		if (event.key === "Enter") {
 			event.preventDefault();
-			const node = snapshot.nodes[currentIndex];
+			const node = visibleNodes[currentIndex];
 			if (isResolvedAtlasPersonNode(node)) this.options.onOpenNode(node);
 			return;
 		}
 
 		if (event.key === "Escape") {
 			event.preventDefault();
-			const focusedId = snapshot.nodes[currentIndex]?.id;
+			const focusedId = visibleNodes[currentIndex]?.id;
 			this.options.onSelectNode(undefined);
 			if (focusedId) this.focusPersonButton(focusedId);
 		}
@@ -197,4 +230,20 @@ function personAccessibleName(node: AtlasNode, translator: Translator): string {
 	if (isAmbiguousAtlasNode(node)) return `${node.label}, ${translator.atlasRenderer.ambiguousPersonListLabel}`;
 	if (node.kind === "ghost") return `${node.label}, ${translator.atlasRenderer.unresolvedPersonListLabel}`;
 	return node.organisations.length > 0 ? `${node.label}, ${node.organisations.join(", ")}` : node.label;
+}
+
+export function matchesPersonSearch(node: AtlasNode, query: string): boolean {
+	const normalizedQuery = normalizeSearchText(query);
+	if (!normalizedQuery) return true;
+	return [node.label, node.jobTitle ?? "", ...node.organisations].some((value) =>
+		normalizeSearchText(value).includes(normalizedQuery),
+	);
+}
+
+export function normalizeSearchText(value: string): string {
+	return value
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toLocaleLowerCase()
+		.trim();
 }

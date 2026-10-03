@@ -5,6 +5,7 @@ import type { AtlasDiagnostic, PersonRecord, RawIndexSnapshot } from "../domain/
 
 export interface BasesFieldMapping {
 	name: BasesPropertyId | null;
+	aliases?: BasesPropertyId | null;
 	id: BasesPropertyId | null;
 	photo: BasesPropertyId | null;
 	organisations: BasesPropertyId | null;
@@ -178,7 +179,7 @@ export function adaptBasesEntries(app: App, entries: BasesEntry[], mapping: Base
 					id,
 					filePath: entry.file.path,
 					name: readString(entry, mapping.name) ?? entry.file.basename,
-					aliases: [],
+					aliases: readList(entry, mapping.aliases ?? null),
 					organisations: readList(entry, mapping.organisations),
 					photoPath: resolvedPhoto ?? photoTarget,
 					birthDate: readBirthDate(entry, mapping.birthDate, diagnostics),

@@ -13,7 +13,8 @@ import { isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { buildGraphSnapshot } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
-import { buildLayoutKey, rememberCenter, type AtlasViewState } from "../settings/view-state";
+import { buildLayoutKey, rememberCenter, type AtlasBrowseState, type AtlasViewState } from "../settings/view-state";
+import { filterRelationshipsAtDate } from "../graph/relationship-periods";
 import type { LayoutSnapshot } from "../render/layout-state";
 import type PeopleAtlasPlugin from "../main";
 import { resolvePersonPhotoResource } from "../person-photo-resource";
@@ -57,6 +58,7 @@ export class PeopleAtlasView extends ItemView {
 	private projectionMode: ProjectionMode;
 	private selectedPath: string | undefined;
 	private selectedCenterPath: string | undefined;
+	private selectedCenterId: string | undefined;
 	private activePath: string | undefined;
 	private centerModeSelect: HTMLSelectElement | undefined;
 	private personDetailsPanel: PersonDetailsPanel | undefined;
@@ -74,6 +76,10 @@ export class PeopleAtlasView extends ItemView {
 		this.viewState = plugin.getViewState(this.viewConfigurationKey);
 		this.centerMode = this.viewState.centerMode;
 		this.projectionMode = this.viewState.projectionMode;
+		this.selectedCenterId =
+			this.viewState.selectedCenterId === undefined && this.centerMode === "selected-node"
+				? this.viewState.centerHistory[0]
+				: (this.viewState.selectedCenterId ?? undefined);
 		this.initialMyPersonSettingId = plugin.settings.myPersonId.trim();
 		const navigationCenter = this.viewState.centerHistory[0] ?? (plugin.settings.defaultCenterPersonId || undefined);
 		const initialMyPersonCenter = navigationCenter ? undefined : plugin.resolveMyPerson()?.id;
@@ -156,7 +162,7 @@ export class PeopleAtlasView extends ItemView {
 		this.personDetailsPanel = new PersonDetailsPanel(this.contentEl.ownerDocument, {
 			label: this.plugin.t.atlasRenderer.selectedPersonDetails,
 			translator: this.plugin.t,
-			getSnapshot: () => this.projectedSnapshot ?? EMPTY_ATLAS_SNAPSHOT,
+			getSnapshot: () => this.personSnapshot(),
 			getSelectedId: () => this.selectedNodeId,
 			getSettings: () => this.plugin.settings,
 			resolvePersonPhoto: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
@@ -164,7 +170,7 @@ export class PeopleAtlasView extends ItemView {
 				this.renderContactMomentHistory(selected, headingLevel, surface),
 			getRelationshipRows: (selected) =>
 				buildIncidentRelationshipRows(
-					this.projectedSnapshot ?? EMPTY_ATLAS_SNAPSHOT,
+					this.personSnapshot(),
 					selected,
 					this.plugin.settings.relationshipRoleFormat,
 					this.plugin.t,
@@ -203,8 +209,8 @@ export class PeopleAtlasView extends ItemView {
 					if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
 				},
 				canLogContact: (node) => this.canLogContact(node),
-				onLogContact: (node) => {
-					if (this.canLogContact(node)) this.plugin.openLogContact(node.filePath);
+				onLogContact: (node, relationship) => {
+					if (this.canLogContact(node)) this.plugin.openLogContact(node.filePath, relationship?.filePath);
 				},
 				canOpenContactMoment: (moment) => this.plugin.canOpenContactMomentSummary(moment),
 				onOpenContactMoment: async (moment) => {
@@ -218,15 +224,25 @@ export class PeopleAtlasView extends ItemView {
 				},
 				canUpdateFollowUp: (moment) => this.plugin.canUpdateContactMomentFollowUp(moment),
 				onUpdateFollowUp: (moment, status) => this.plugin.updateContactMomentFollowUp(moment, status),
+				canChangeFollowUp: (moment, action) => this.plugin.canChangeContactMomentFollowUp(moment, action),
+				onChangeFollowUp: (moment, action, reviewedDate) =>
+					this.plugin.changeContactMomentFollowUp(moment, action, reviewedDate),
 				onContactMomentActionUnavailable: () => this.plugin.noticeContactMomentActionUnavailable(),
 				canOpenRelationship: (edge) => this.canOpenRelationship(edge),
 				onOpenRelationship: (edge) => this.openRelationship(edge),
 				canEditRelationship: (edge) => this.canEditRelationship(edge),
 				onEditRelationship: (edge, invoker) => this.editRelationship(edge, invoker),
 				onLayoutChanged: (layout) => this.persistLayout(layout),
+				onBrowseStateChanged: (state) => this.persistBrowseState(state),
+				onGraphStateChanged: (state) => {
+					this.viewState = { ...this.viewState, ...state };
+					this.persistViewState();
+					this.renderSnapshot();
+				},
 				resolvePersonPhoto: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
 			},
 			this.plugin.t,
+			{ inlinePersonDetails: false, initialState: this.viewState },
 		);
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
@@ -274,7 +290,7 @@ export class PeopleAtlasView extends ItemView {
 	}
 
 	showFollowUps(): void {
-		this.renderer?.showFollowUps();
+		this.renderer?.showFollowUps("all");
 	}
 
 	private initializeDeferredMyPersonCenter(indexPublished: boolean): void {
@@ -300,8 +316,11 @@ export class PeopleAtlasView extends ItemView {
 		this.selectedNodeId = node?.id;
 		this.selectedPath = node?.filePath;
 		this.renderDetails(node);
-		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
-		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath)
+		if (source === "canvas") {
+			this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
+			this.selectedCenterId = isResolvedAtlasPersonNode(node) ? (node.personId ?? node.id) : undefined;
+			if (this.centerMode === "selected-node") this.persistViewState(this.selectedCenterId);
+		} else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath)
 			this.selectedCenterPath = undefined;
 		if (this.centerMode === "selected-node" && source !== "list") this.renderSnapshot();
 	}
@@ -314,30 +333,59 @@ export class PeopleAtlasView extends ItemView {
 				(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
 			);
 		this.fullSnapshot = full;
+		if (this.selectedCenterId) {
+			const matches = full.nodes.filter((node) => (node.personId ?? node.id) === this.selectedCenterId);
+			this.selectedCenterPath =
+				matches.length === 1 && isResolvedAtlasPersonNode(matches[0]) ? matches[0].filePath : undefined;
+		}
 		const centerPath =
 			this.centerMode === "active-note"
 				? this.activePath
 				: this.centerMode === "selected-node"
 					? this.selectedCenterPath
 					: undefined;
-		const projected = projectGraph(full, {
-			centerMode: this.centerMode,
-			projectionMode: this.projectionMode,
-			centerId: this.centerMode === "configured" ? this.centerId : undefined,
-			centerPath,
-			hops: this.effectiveProjectionHops(),
-			maxNodes: this.viewState.maxNodes,
-		});
+		const permitted = this.viewState.relationshipDate
+			? filterRelationshipsAtDate(full, this.viewState.relationshipDate)
+			: full;
+		const projected = projectGraph(
+			permitted,
+			{
+				centerMode: this.centerMode,
+				projectionMode: this.projectionMode,
+				centerId:
+					this.centerMode === "configured"
+						? this.centerId
+						: this.centerMode === "selected-node"
+							? this.selectedCenterId
+							: undefined,
+				centerPath: this.centerMode === "selected-node" ? undefined : centerPath,
+				hops: this.effectiveProjectionHops(),
+				maxNodes: this.viewState.maxNodes,
+			},
+			full.edges,
+		);
 		this.projectedSnapshot = projected;
 		this.updateCenterModeLabels(full);
 		const layoutKey = buildLayoutKey(
 			this.viewConfigurationKey,
 			this.viewStateForProjection(),
+			this.centerMode === "selected-node" ? this.selectedCenterId : this.centerId,
+			this.centerMode === "selected-node" ? undefined : centerPath,
+		);
+		const legacyLayoutKey = buildLayoutKey(
+			this.viewConfigurationKey,
+			this.viewStateForProjection(),
 			this.centerId,
 			centerPath,
 		);
-		this.renderer?.setGraph(projected, this.viewState.layouts[layoutKey]);
-		if (this.selectedNodeId) this.renderDetails(projected.nodes.find((node) => node.id === this.selectedNodeId));
+		this.renderer?.setGraph(
+			projected,
+			this.viewState.layouts[layoutKey] ?? this.viewState.layouts[legacyLayoutKey],
+			full,
+			this.viewState,
+		);
+		if (this.selectedNodeId)
+			this.renderDetails(this.personSnapshot().nodes.find((node) => node.id === this.selectedNodeId));
 		this.renderDiagnostics(projected);
 	}
 
@@ -351,14 +399,21 @@ export class PeopleAtlasView extends ItemView {
 
 	private updateCenterModeLabels(snapshot: AtlasSnapshot): void {
 		if (!this.centerModeSelect) return;
-		const configuredOption = this.centerModeSelect.querySelector<HTMLOptionElement>('option[value="configured"]');
-		if (!configuredOption) return;
+		const t = this.plugin.t.peopleAtlasView;
 		const configuredNode = snapshot.nodes.find(
 			(node) => node.personId === this.centerId && isResolvedAtlasPersonNode(node),
 		);
-		configuredOption.textContent = configuredNode
-			? this.plugin.t.peopleAtlasView.networkAround({ name: configuredNode.label })
-			: this.plugin.t.peopleAtlasView.configuredCenter;
+		const labels: Record<ProjectionCenterMode, string> = {
+			configured: configuredNode ? t.networkAround({ name: configuredNode.label }) : t.configuredCenter,
+			"active-note": t.activeNote,
+			"selected-node": t.selectedNode,
+			none: t.noCenter,
+		};
+		const wholeNetwork = this.projectionMode === "free-network";
+		this.centerModeSelect.disabled = wholeNetwork;
+		for (const option of Array.from(this.centerModeSelect.options)) {
+			option.textContent = wholeNetwork && option.selected ? t.noCenter : labels[option.value as ProjectionCenterMode];
+		}
 	}
 
 	private createSelect(
@@ -385,11 +440,22 @@ export class PeopleAtlasView extends ItemView {
 			...this.viewState,
 			centerMode: this.centerMode,
 			projectionMode: this.projectionMode,
+			selectedCenterId: this.selectedCenterId ?? null,
 			centerHistory: centerPersonId
 				? rememberCenter(this.viewState, centerPersonId).centerHistory
 				: this.viewState.centerHistory,
 		};
 		void this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
+	}
+
+	private persistBrowseState(state: AtlasBrowseState): void {
+		this.viewState = { ...this.viewState, ...state };
+		void this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
+		this.renderDetails(this.personSnapshot().nodes.find((node) => node.id === this.selectedNodeId));
+	}
+
+	private personSnapshot(): AtlasSnapshot {
+		return this.renderer?.getPersonSnapshot() ?? this.projectedSnapshot ?? EMPTY_ATLAS_SNAPSHOT;
 	}
 
 	private async persistLayout(layout?: LayoutSnapshot, flush = false): Promise<void> {
@@ -400,7 +466,12 @@ export class PeopleAtlasView extends ItemView {
 				: this.centerMode === "selected-node"
 					? this.selectedCenterPath
 					: undefined;
-		const key = buildLayoutKey(this.viewConfigurationKey, this.viewStateForProjection(), this.centerId, centerPath);
+		const key = buildLayoutKey(
+			this.viewConfigurationKey,
+			this.viewStateForProjection(),
+			this.centerMode === "selected-node" ? this.selectedCenterId : this.centerId,
+			this.centerMode === "selected-node" ? undefined : centerPath,
+		);
 		this.viewState.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
 		const pending = this.plugin.saveViewState(this.viewConfigurationKey, this.viewState);
 		if (flush) await this.plugin.flushViewState(this.viewConfigurationKey);
@@ -440,7 +511,7 @@ export class PeopleAtlasView extends ItemView {
 			| StandalonePersonActionFocus
 			| undefined;
 		if (!action) return;
-		const selected = this.projectedSnapshot?.nodes.find((node) => node.id === this.selectedNodeId);
+		const selected = this.personSnapshot().nodes.find((node) => node.id === this.selectedNodeId);
 		if (!isResolvedAtlasPersonNode(selected)) return;
 		if (action === "open") this.openNode(selected);
 		else if (action === "center") this.centerSelectedPerson(selected);
@@ -455,7 +526,7 @@ export class PeopleAtlasView extends ItemView {
 		headingLevel: 3 | 4,
 		_surface: "details" | "sheet",
 	): HTMLElement | undefined {
-		const snapshot = this.projectedSnapshot;
+		const snapshot = this.personSnapshot();
 		if (!snapshot || !node.personId) return undefined;
 		const bounded = buildSelectedPersonContactMomentPresentation(snapshot.contactMoments, node.personId);
 		if (!bounded.earliestOpenFollowUp && bounded.recentMoments.length === 0) return undefined;
@@ -759,8 +830,10 @@ export class PeopleAtlasView extends ItemView {
 		personLabel: string,
 		followUpOn?: string,
 	): string {
-		const sameDay = (this.projectedSnapshot?.contactMoments ?? [])
-			.filter((candidate) => candidate.occurredOn === moment.occurredOn && candidate.personIds.includes(personId))
+		const sameDay = this.personSnapshot()
+			.contactMoments.filter(
+				(candidate) => candidate.occurredOn === moment.occurredOn && candidate.personIds.includes(personId),
+			)
 			.sort((left, right) => left.id.localeCompare(right.id) || left.filePath.localeCompare(right.filePath));
 		const ordinal = sameDay.findIndex(
 			(candidate) => candidate.id === moment.id && candidate.filePath === moment.filePath,
@@ -781,13 +854,12 @@ export class PeopleAtlasView extends ItemView {
 	}
 
 	private contactMomentRelationshipLabel(moment: ContactMomentSummary): string | undefined {
-		if (!moment.relationshipId || !this.projectedSnapshot) return undefined;
-		const edge = this.projectedSnapshot.edges.find(
-			(candidate) => candidate.id === moment.relationshipId && !candidate.inferred,
-		);
+		if (!moment.relationshipId) return undefined;
+		const snapshot = this.personSnapshot();
+		const edge = snapshot.edges.find((candidate) => candidate.id === moment.relationshipId && !candidate.inferred);
 		if (!edge) return undefined;
-		const source = this.projectedSnapshot.nodes.find((candidate) => candidate.id === edge.sourceId);
-		const target = this.projectedSnapshot.nodes.find((candidate) => candidate.id === edge.targetId);
+		const source = snapshot.nodes.find((candidate) => candidate.id === edge.sourceId);
+		const target = snapshot.nodes.find((candidate) => candidate.id === edge.targetId);
 		if (!source || !target) return undefined;
 		const kind = edge.types.length > 0 ? edge.types.join(", ") : this.plugin.t.atlasRenderer.relationship;
 		return this.plugin.t.atlasRenderer.relationshipSummary({ source: source.label, target: target.label, kind });
@@ -799,6 +871,10 @@ export class PeopleAtlasView extends ItemView {
 		if (!this.plugin.settings.showDiagnostics || snapshot.diagnostics.length === 0) return;
 		const heading = this.diagnosticsEl.ownerDocument.createElement("h3");
 		heading.textContent = this.plugin.t.atlasRenderer.diagnosticsHeading({ count: snapshot.diagnostics.length });
+		const openAll = this.diagnosticsEl.ownerDocument.createElement("button");
+		openAll.type = "button";
+		openAll.textContent = this.plugin.t.recovery.diagnosticsTitle;
+		this.registerDomEvent(openAll, "click", () => this.plugin.openDiagnostics(snapshot.diagnostics));
 		const list = this.diagnosticsEl.ownerDocument.createElement("ul");
 		for (const diagnostic of snapshot.diagnostics.slice(0, 20)) {
 			const item = this.diagnosticsEl.ownerDocument.createElement("li");
@@ -821,7 +897,7 @@ export class PeopleAtlasView extends ItemView {
 			}
 			list.append(item);
 		}
-		this.diagnosticsEl.append(heading, list);
+		this.diagnosticsEl.append(heading, openAll, list);
 	}
 
 	private openNode(node: AtlasNode): void {
@@ -837,6 +913,7 @@ export class PeopleAtlasView extends ItemView {
 		this.selectedNodeId = node.id;
 		this.selectedPath = node.filePath;
 		this.selectedCenterPath = node.filePath;
+		this.selectedCenterId = node.personId ?? node.id;
 		this.centerId = node.personId;
 		this.persistViewState(node.personId);
 		this.renderSnapshot();

@@ -75,6 +75,12 @@ export class PersonDetailsPanel {
 		}
 
 		if (isResolvedAtlasPersonNode(selected)) {
+			if (this.options.canLogContact?.(selected) === true) {
+				const primaryActions = this.element.ownerDocument.createElement("div");
+				primaryActions.className = "people-atlas-semantic-actions";
+				primaryActions.append(this.actionButton("log-contact", translator.atlasRenderer.logContact, true));
+				this.element.append(primaryActions);
+			}
 			const profile = renderPersonProfile(this.element.ownerDocument, selected, {
 				contactHeadingLevel: sectionHeadingLevel,
 				resolvePhotoResource: this.options.resolvePersonPhoto,
@@ -138,9 +144,6 @@ export class PersonDetailsPanel {
 		const { translator } = this.options;
 		const actions = this.element.ownerDocument.createElement("div");
 		actions.className = "people-atlas-semantic-actions";
-		if (this.options.canLogContact?.(selected) === true) {
-			actions.append(this.actionButton("log-contact", translator.atlasRenderer.logContact, true));
-		}
 		actions.append(
 			this.actionButton("open", translator.atlasRenderer.openNote),
 			this.actionButton("center", translator.atlasRenderer.useAsCenter),

@@ -63,6 +63,10 @@ export function buildIncidentRelationshipRows(
 		if (edge.types.length > 0) parts.push(translator.relationshipRows.types({ types: edge.types.join(", ") }));
 		if (edge.status) parts.push(translator.relationshipRows.status({ status: edge.status }));
 		if (edge.since) parts.push(translator.relationshipRows.since({ since: translator.formatDateOnly(edge.since) }));
+		if (edge.until) parts.push(translator.relationshipRows.until({ until: translator.formatDateOnly(edge.until) }));
+		if (edge.contactIntervalDays !== undefined) {
+			parts.push(translator.relationshipRows.contactIntervalDays({ days: edge.contactIntervalDays }));
+		}
 		if (edge.lastContact) {
 			parts.push(translator.relationshipRows.lastContact({ lastContact: translator.formatDateOnly(edge.lastContact) }));
 		}

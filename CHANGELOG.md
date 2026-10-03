@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.0 (Alpha)
+
+- Fill the entire canvas backing background at fractional pane sizes and display scales.
+- Expanded people search with aliases, work details, email and phone matching,
+  independent current/all-permitted populations and stable-ID view restoration.
+- Added complete filtered diagnostics, previewed existing-note adoption and
+  person-ID repair, plus reviewed schema 7 settings recovery with a local backup.
+- Added relationship end dates/contact intervals, historical network filtering,
+  family layout and explicit shortest-path/common-contact comparison.
+- Added completed/dismissed follow-up filters, explicit one-week postponement and
+  reopening, plus local birthday and observed-contact cadence attention.
+- Kept Bases admission, canonical ambiguity, source preservation and explicit
+  write boundaries shared across the new surfaces.
+- Hardened relationship editing against stale sources, improved the contact
+  person picker and reused contact reference indexes for larger histories.
+
 ## 0.12.4 (Alpha)
 
 - Simplified the primary People Atlas navigation to **Network**, **People**,

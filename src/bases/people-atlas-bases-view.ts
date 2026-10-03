@@ -11,27 +11,38 @@ import type {
 } from "../domain/types";
 import { normalizePathIdentity } from "../domain/identity";
 import { isResolvedAtlasPersonNode } from "../domain/node-capabilities";
-import { buildGraphSnapshot } from "../graph/graph-source";
+import { buildGraphSnapshot, filterPermittedSnapshotDiagnostics } from "../graph/graph-source";
 import { applyGraphDelta } from "../graph/graph-delta";
 import { projectGraph } from "../graph/project-graph";
+import { filterRelationshipsAtDate } from "../graph/relationship-periods";
+import { isCalendarDate } from "../domain/calendar-date";
 import type PeopleAtlasPlugin from "../main";
 import { resolvePersonPhotoResource } from "../person-photo-resource";
 import { AtlasRenderer, type AtlasSelectionSource } from "../render/atlas-renderer";
 import { adaptBasesEntries, type BasesFieldMapping } from "./entry-adapter";
 import { BASES_OPTION_KEYS } from "./options";
-import { buildLayoutKey, rememberCenter, type AtlasViewState } from "../settings/view-state";
+import {
+	buildLayoutKey,
+	rememberCenter,
+	type AtlasBrowseState,
+	type AtlasLayoutMode,
+	type AtlasViewState,
+} from "../settings/view-state";
 import type { LayoutSnapshot } from "../render/layout-state";
 
 export class PeopleAtlasBasesView extends BasesView {
 	override readonly type = BASES_VIEW_TYPE_PEOPLE_ATLAS;
 	private readonly root: HTMLElement;
+	private readonly diagnosticsButton: HTMLButtonElement;
 	private renderer: AtlasRenderer | undefined;
 	private unsubscribeIndex: (() => void) | undefined;
 	private canonicalSnapshot: RawIndexSnapshot = { people: [], relationships: [], diagnostics: [] };
 	private fullSnapshot: AtlasSnapshot | undefined;
 	private visiblePaths = new Set<string>();
+	private diagnosticEntryPaths = new Set<string>();
 	private selectedPath: string | undefined;
 	private selectedCenterPath: string | undefined;
+	private selectedCenterId: string | undefined;
 	private activePath: string | undefined;
 	private readonly initialMyPersonSettingId: string;
 	private initialMyPersonFilePath: string | undefined;
@@ -46,9 +57,20 @@ export class PeopleAtlasBasesView extends BasesView {
 		super(controller);
 		this.root = parent.ownerDocument.createElement("div");
 		this.root.className = "people-atlas-graph people-atlas-bases-view";
+		this.diagnosticsButton = parent.ownerDocument.createElement("button");
+		this.diagnosticsButton.type = "button";
+		this.diagnosticsButton.className = "people-atlas-base-diagnostics";
+		this.diagnosticsButton.textContent = plugin.t.recovery.diagnosticsTitle;
+		this.diagnosticsButton.hidden = true;
+		this.root.append(this.diagnosticsButton);
 		parent.append(this.root);
 		this.initialMyPersonSettingId = plugin.settings.myPersonId.trim();
-		const navigationCenter = this.readExplicitNavigationCenterId(plugin.getViewState(this.viewConfigurationKey()));
+		const state = plugin.getViewState(this.viewConfigurationKey());
+		this.selectedCenterId =
+			state.selectedCenterId === undefined && this.readCenterMode(state.centerMode) === "selected-node"
+				? state.centerHistory[0]
+				: (state.selectedCenterId ?? undefined);
+		const navigationCenter = this.readExplicitNavigationCenterId(state);
 		const initialMyPerson = navigationCenter ? undefined : plugin.resolveMyPerson();
 		this.initialMyPersonFilePath = initialMyPerson?.filePath;
 		this.initialMyPersonCenterId = initialMyPerson?.id;
@@ -58,6 +80,14 @@ export class PeopleAtlasBasesView extends BasesView {
 	}
 
 	override onload(): void {
+		this.registerDomEvent(this.diagnosticsButton, "click", () => {
+			const diagnostics = this.fullSnapshot?.diagnostics ?? [];
+			const sources = new Set([
+				...this.diagnosticEntryPaths,
+				...diagnostics.flatMap((diagnostic) => diagnostic.filePaths),
+			]);
+			this.plugin.openDiagnostics(diagnostics, sources);
+		});
 		this.activePath = this.app.workspace.getActiveFile()?.path;
 		this.renderer = new AtlasRenderer(
 			this.root,
@@ -73,6 +103,7 @@ export class PeopleAtlasBasesView extends BasesView {
 						this.config.set(BASES_OPTION_KEYS.centerMode, "configured");
 						this.selectedPath = node.filePath;
 						this.selectedCenterPath = node.filePath;
+						this.selectedCenterId = node.personId ?? node.id;
 						this.persistViewState(node.personId);
 						this.onDataUpdated();
 					}
@@ -87,8 +118,8 @@ export class PeopleAtlasBasesView extends BasesView {
 					if (this.canCreateRelationship(node)) this.plugin.openCreateRelationship(node.filePath);
 				},
 				canLogContact: (node) => this.canLogContact(node),
-				onLogContact: (node) => {
-					if (this.canLogContact(node)) this.plugin.openLogContact(node.filePath);
+				onLogContact: (node, relationship) => {
+					if (this.canLogContact(node)) this.plugin.openLogContact(node.filePath, relationship?.filePath);
 				},
 				canOpenContactMoment: (moment) => this.plugin.canOpenContactMomentSummary(moment),
 				onOpenContactMoment: async (moment) => {
@@ -102,15 +133,26 @@ export class PeopleAtlasBasesView extends BasesView {
 				},
 				canUpdateFollowUp: (moment) => this.plugin.canUpdateContactMomentFollowUp(moment),
 				onUpdateFollowUp: (moment, status) => this.plugin.updateContactMomentFollowUp(moment, status),
+				canChangeFollowUp: (moment, action) => this.plugin.canChangeContactMomentFollowUp(moment, action),
+				onChangeFollowUp: (moment, action, reviewedDate) =>
+					this.plugin.changeContactMomentFollowUp(moment, action, reviewedDate),
 				onContactMomentActionUnavailable: () => this.plugin.noticeContactMomentActionUnavailable(),
 				canOpenRelationship: (edge) => this.canOpenRelationship(edge),
 				onOpenRelationship: (edge) => this.openRelationship(edge),
 				canEditRelationship: (edge) => this.canEditRelationship(edge),
 				onEditRelationship: (edge, invoker) => this.editRelationship(edge, invoker),
 				onLayoutChanged: (layout) => this.persistLayout(layout),
+				onBrowseStateChanged: (state) => this.persistBrowseState(state),
+				onGraphStateChanged: (state) => {
+					this.config.set(BASES_OPTION_KEYS.layoutMode, state.layoutMode);
+					this.config.set(BASES_OPTION_KEYS.relationshipDate, state.relationshipDate ?? "");
+					void this.plugin.saveViewState(this.viewConfigurationKey(), { ...this.getViewState(), ...state });
+					this.onDataUpdated();
+				},
 				resolvePersonPhoto: (photoPath) => resolvePersonPhotoResource(this.app, photoPath),
 			},
 			this.plugin.t,
+			{ initialState: this.getViewState(), allPeopleLabel: this.plugin.t.discovery.allPeopleInBase },
 		);
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
@@ -140,8 +182,11 @@ export class PeopleAtlasBasesView extends BasesView {
 	private handleNodeSelection(node: AtlasNode | undefined, source: AtlasSelectionSource): void {
 		const previousSelectedPath = this.selectedPath;
 		this.selectedPath = node?.filePath;
-		if (source === "canvas") this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
-		else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath)
+		if (source === "canvas") {
+			this.selectedCenterPath = isResolvedAtlasPersonNode(node) ? node.filePath : undefined;
+			this.selectedCenterId = isResolvedAtlasPersonNode(node) ? (node.personId ?? node.id) : undefined;
+			if (this.readCenterMode() === "selected-node") this.persistViewState(this.selectedCenterId);
+		} else if (source === "graph-update" && previousSelectedPath === this.selectedCenterPath)
 			this.selectedCenterPath = undefined;
 		if (this.readCenterMode() === "selected-node" && source !== "list") this.onDataUpdated();
 	}
@@ -150,7 +195,13 @@ export class PeopleAtlasBasesView extends BasesView {
 		if (!this.renderer) return;
 		const visible = adaptBasesEntries(this.app, this.data.data, this.readMapping());
 		this.mapInitialMyPersonToVisibleCenter(visible);
+		const resolutionPeople = [...this.canonicalSnapshot.people, ...visible.people];
+		const resolveLink = (target: string, sourcePath: string) =>
+			this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path;
 		const nextVisiblePaths = new Set(visible.people.map((person) => person.filePath));
+		const nextDiagnosticEntryPaths = new Set(
+			this.data.data.filter((entry) => entry.file.extension === "md").map((entry) => entry.file.path),
+		);
 		const visiblePhotoPaths = new Set(
 			[
 				...visible.people.map((person) => person.photoPath),
@@ -165,41 +216,53 @@ export class PeopleAtlasBasesView extends BasesView {
 		const visiblePersonDataMayHaveChanged = Boolean(
 			delta &&
 				(mappedPhotoAssetMayHaveChanged ||
-					delta.changedPaths.some((path) => nextVisiblePaths.has(path)) ||
-					delta.affectedPeople.some((person) => nextVisiblePaths.has(person.filePath))),
+					delta.changedPaths.some(
+						(path) => nextDiagnosticEntryPaths.has(path) || this.diagnosticEntryPaths.has(path),
+					) ||
+					delta.removedPaths.some((path) => this.diagnosticEntryPaths.has(path)) ||
+					delta.affectedPeople.some((person) => nextDiagnosticEntryPaths.has(person.filePath))),
 		);
 		const canApplyDelta = Boolean(
-			delta && this.fullSnapshot && setsEqual(this.visiblePaths, nextVisiblePaths) && !visiblePersonDataMayHaveChanged,
+			delta &&
+				this.fullSnapshot &&
+				setsEqual(this.visiblePaths, nextVisiblePaths) &&
+				setsEqual(this.diagnosticEntryPaths, nextDiagnosticEntryPaths) &&
+				!visiblePersonDataMayHaveChanged,
 		);
-		const full = canApplyDelta
-			? applyGraphDelta(
-					this.fullSnapshot as AtlasSnapshot,
-					delta as IndexDelta,
-					(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
-					{
-						resolutionPeople: this.canonicalSnapshot.people,
-						visiblePaths: nextVisiblePaths,
-						relationships: this.canonicalSnapshot.relationships,
-						contactMoments: this.canonicalSnapshot.contactMoments ?? [],
-					},
-				)
-			: buildGraphSnapshot(
-					{ visible, canonical: this.canonicalSnapshot },
-					(target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
-				);
+		const built = canApplyDelta
+			? applyGraphDelta(this.fullSnapshot as AtlasSnapshot, delta as IndexDelta, resolveLink, {
+					resolutionPeople: this.canonicalSnapshot.people,
+					graphResolutionPeople: resolutionPeople,
+					visiblePaths: nextVisiblePaths,
+					relationships: this.canonicalSnapshot.relationships,
+					contactMoments: this.canonicalSnapshot.contactMoments ?? [],
+				})
+			: buildGraphSnapshot({ visible, canonical: this.canonicalSnapshot }, resolveLink);
+		const full = filterPermittedSnapshotDiagnostics(built, nextDiagnosticEntryPaths, {
+			people: resolutionPeople,
+			relationships: this.canonicalSnapshot.relationships,
+			resolveLink,
+		});
 		this.fullSnapshot = full;
+		this.diagnosticsButton.hidden = !this.plugin.settings.showDiagnostics || full.diagnostics.length === 0;
+		this.diagnosticsButton.textContent = `${this.plugin.t.recovery.diagnosticsTitle} (${this.plugin.t.formatInteger(full.diagnostics.length)})`;
 		this.visiblePaths = nextVisiblePaths;
+		this.diagnosticEntryPaths = nextDiagnosticEntryPaths;
 		this.activePath = this.app.workspace.getActiveFile()?.path;
 		const state = this.getViewState();
 		const centerMode = this.readCenterMode(state.centerMode);
 		const projectionMode = this.readProjectionMode(state.projectionMode);
 		const hops = this.readInteger(BASES_OPTION_KEYS.hops, state.hops, 0);
 		const maxNodes = this.readInteger(BASES_OPTION_KEYS.maxNodes, state.maxNodes, 1);
+		const layoutMode = this.readLayoutMode(state.layoutMode);
+		const relationshipDate = this.readRelationshipDate(state.relationshipDate);
 		if (
 			state.centerMode !== centerMode ||
 			state.projectionMode !== projectionMode ||
 			state.hops !== hops ||
-			state.maxNodes !== maxNodes
+			state.maxNodes !== maxNodes ||
+			state.layoutMode !== layoutMode ||
+			state.relationshipDate !== relationshipDate
 		) {
 			void this.plugin.saveViewState(this.viewConfigurationKey(), {
 				...state,
@@ -207,23 +270,36 @@ export class PeopleAtlasBasesView extends BasesView {
 				projectionMode,
 				hops,
 				maxNodes,
+				layoutMode,
+				relationshipDate,
 			});
 		}
 		const centerId = this.readConfiguredCenterId(state);
+		if (this.selectedCenterId) {
+			const matches = full.nodes.filter((node) => (node.personId ?? node.id) === this.selectedCenterId);
+			this.selectedCenterPath =
+				matches.length === 1 && isResolvedAtlasPersonNode(matches[0]) ? matches[0].filePath : undefined;
+		}
 		const centerPath =
 			centerMode === "active-note"
 				? this.activePath
 				: centerMode === "selected-node"
 					? this.selectedCenterPath
 					: undefined;
-		const projected = projectGraph(full, {
-			centerMode,
-			projectionMode,
-			centerId: centerMode === "configured" ? centerId : undefined,
-			centerPath,
-			hops,
-			maxNodes,
-		});
+		const permitted = relationshipDate ? filterRelationshipsAtDate(full, relationshipDate) : full;
+		const projected = projectGraph(
+			permitted,
+			{
+				centerMode,
+				projectionMode,
+				centerId:
+					centerMode === "configured" ? centerId : centerMode === "selected-node" ? this.selectedCenterId : undefined,
+				centerPath: centerMode === "selected-node" ? undefined : centerPath,
+				hops,
+				maxNodes,
+			},
+			full.edges,
+		);
 		const layoutKey = buildLayoutKey(
 			this.viewConfigurationKey(),
 			{
@@ -232,16 +308,28 @@ export class PeopleAtlasBasesView extends BasesView {
 				projectionMode,
 				hops,
 				maxNodes,
+				layoutMode,
+				relationshipDate,
 			},
+			centerMode === "selected-node" ? this.selectedCenterId : centerId,
+			centerMode === "selected-node" ? undefined : centerPath,
+		);
+		const legacyLayoutKey = buildLayoutKey(
+			this.viewConfigurationKey(),
+			{ ...state, centerMode, projectionMode, hops, maxNodes, layoutMode, relationshipDate },
 			centerId,
 			centerPath,
 		);
-		this.renderer.setGraph(projected, state.layouts[layoutKey]);
+		this.renderer.setGraph(projected, state.layouts[layoutKey] ?? state.layouts[legacyLayoutKey], full, {
+			layoutMode,
+			relationshipDate,
+		});
 	}
 
 	private readMapping(): BasesFieldMapping {
 		const settings = this.plugin.settings;
 		return {
+			aliases: `note.${settings.aliasesProperty}` as BasesPropertyId,
 			name:
 				this.config.getAsPropertyId(BASES_OPTION_KEYS.nameProperty) ??
 				(`note.${settings.nameProperty}` as BasesPropertyId),
@@ -297,8 +385,19 @@ export class PeopleAtlasBasesView extends BasesView {
 
 	private readInteger(key: string, fallback: number, minimum: number): number {
 		const value = this.config.get(key);
-		const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
-		return Number.isInteger(parsed) && parsed >= minimum ? parsed : fallback;
+		const parsed =
+			typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+		return Number.isSafeInteger(parsed) && parsed >= minimum ? parsed : fallback;
+	}
+
+	private readLayoutMode(fallback: AtlasLayoutMode = "radial"): AtlasLayoutMode {
+		const value = this.config.get(BASES_OPTION_KEYS.layoutMode);
+		return value === "radial" || value === "family" ? value : fallback;
+	}
+
+	private readRelationshipDate(fallback: string | null = null): string | null {
+		const value = this.config.get(BASES_OPTION_KEYS.relationshipDate);
+		return value === "" ? null : isCalendarDate(value) ? value : fallback;
 	}
 
 	private viewConfigurationKey(): string {
@@ -367,9 +466,14 @@ export class PeopleAtlasBasesView extends BasesView {
 			...state,
 			centerMode: this.readCenterMode(state.centerMode),
 			projectionMode: this.readProjectionMode(state.projectionMode),
+			selectedCenterId: this.selectedCenterId ?? null,
 			centerHistory: centerPersonId ? rememberCenter(state, centerPersonId).centerHistory : state.centerHistory,
 		};
 		void this.plugin.saveViewState(key, next);
+	}
+
+	private persistBrowseState(state: AtlasBrowseState): void {
+		void this.plugin.saveViewState(this.viewConfigurationKey(), { ...this.getViewState(), ...state });
 	}
 
 	private async persistLayout(layout?: LayoutSnapshot, flush = false): Promise<void> {
@@ -381,6 +485,8 @@ export class PeopleAtlasBasesView extends BasesView {
 		const projectionMode = this.readProjectionMode(state.projectionMode);
 		const hops = this.readInteger(BASES_OPTION_KEYS.hops, state.hops, 0);
 		const maxNodes = this.readInteger(BASES_OPTION_KEYS.maxNodes, state.maxNodes, 1);
+		const layoutMode = this.readLayoutMode(state.layoutMode);
+		const relationshipDate = this.readRelationshipDate(state.relationshipDate);
 		const centerPath =
 			centerMode === "active-note"
 				? this.activePath
@@ -389,9 +495,9 @@ export class PeopleAtlasBasesView extends BasesView {
 					: undefined;
 		const key = buildLayoutKey(
 			viewConfigurationKey,
-			{ ...state, centerMode, projectionMode, hops, maxNodes },
-			centerId,
-			centerPath,
+			{ ...state, centerMode, projectionMode, hops, maxNodes, layoutMode, relationshipDate },
+			centerMode === "selected-node" ? this.selectedCenterId : centerId,
+			centerMode === "selected-node" ? undefined : centerPath,
 		);
 		state.layouts[key] = layout ?? this.renderer.getLayoutSnapshot();
 		const pending = this.plugin.saveViewState(viewConfigurationKey, state);

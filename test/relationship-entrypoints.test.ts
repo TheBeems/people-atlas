@@ -2,6 +2,8 @@ import { TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PersonRecord, RelationshipRecord, RawIndexSnapshot } from "../src/domain/types";
 import { RelationshipModal } from "../src/editor/relationship-modal";
+import type { RelationshipFormSession, RelationshipFormValues } from "../src/editor/relationship-form";
+import { AtlasMutationService, STALE_RELATIONSHIP_EDIT_MESSAGE } from "../src/mutations/atlas-mutation-service";
 import PeopleAtlasPlugin from "../src/main";
 import type { RelationshipPreset } from "../src/settings/relationship-presets";
 import { notices } from "./obsidian-stub";
@@ -283,6 +285,40 @@ describe("relationship editor entrypoints", () => {
 			path: relationship.filePath,
 			relationshipId: "explicit-1",
 		});
+	});
+
+	it.each([
+		["relationship_id", "replacement-id"],
+		["type", "person"],
+		["closeness", 5],
+	])("retains the modal's opening source after %s changes in current metadata", async (property, value) => {
+		const file = markdownFile(relationship.filePath);
+		const { plugin, frontmatterByPath } = createPlugin({ people: [alice], relationships: [relationship] }, file);
+		const processFrontMatter = vi.fn(async () => undefined);
+		Object.assign(plugin.app, { fileManager: { processFrontMatter } });
+		Object.defineProperty(plugin, "mutations", {
+			value: new AtlasMutationService(
+				plugin.app,
+				() => plugin.settings,
+				() => true,
+				plugin.index,
+			),
+		});
+		const open = vi.spyOn(RelationshipModal.prototype, "open");
+		plugin.openEditCurrentRelationship();
+		const modal = open.mock.instances[0] as unknown as {
+			values: RelationshipFormValues;
+			session: RelationshipFormSession;
+		};
+		frontmatterByPath.set(file.path, relationshipFrontmatter(relationship, { [property]: value }));
+		const current = structuredClone(frontmatterByPath.get(file.path));
+
+		expect(await modal.session.submit({ ...modal.values, closeness: "3" })).toEqual({
+			status: "error",
+			message: STALE_RELATIONSHIP_EDIT_MESSAGE,
+		});
+		expect(frontmatterByPath.get(file.path)).toEqual(current);
+		expect(processFrontMatter).not.toHaveBeenCalled();
 	});
 
 	it("does not reorder stored edit endpoints when My person is second", () => {

@@ -1,4 +1,5 @@
 .people-atlas-view {
+	container: people-atlas-view / inline-size;
 	display: flex;
 	flex-direction: column;
 	height: 100%;
@@ -10,6 +11,7 @@
 .people-atlas-toolbar {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: var(--size-4-2);
 	padding: var(--size-4-2) var(--size-4-3);
 	border-bottom: 1px solid var(--background-modifier-border);
@@ -35,16 +37,22 @@
 }
 
 .people-atlas-renderer {
+	container: people-atlas-renderer / inline-size;
 	display: grid;
-	grid-template-rows: auto minmax(0, 1fr);
+	grid-template-rows: auto auto auto minmax(0, 1fr);
 	width: 100%;
 	height: 100%;
 	min-height: inherit;
 }
 
+.people-atlas-renderer[data-mode="follow-ups"] {
+	grid-template-rows: auto auto minmax(0, 1fr);
+}
+
 .people-atlas-view-modes {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: var(--size-4-2, 8px);
 	min-width: 0;
 	margin: 0;
@@ -53,6 +61,58 @@
 	border-bottom: 1px solid var(--background-modifier-border);
 	transition: none;
 	animation: none;
+}
+
+.people-atlas-network-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin: 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.people-atlas-network-controls legend {
+	font-weight: var(--font-semibold);
+}
+
+.people-atlas-network-controls label,
+.people-atlas-network-insight label {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+.people-atlas-network-controls select,
+.people-atlas-network-insight select {
+	max-width: 100%;
+}
+
+.people-atlas-network-insight {
+	padding: var(--size-4-2) var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+	max-height: min(35vh, 320px);
+	overflow: auto;
+	color: var(--text-normal);
+	background: var(--background-primary);
+}
+
+.people-atlas-bases-view {
+	display: flex;
+	flex-direction: column;
+}
+
+.people-atlas-bases-view > .people-atlas-renderer {
+	flex: 1;
+	min-height: 0;
+}
+
+.people-atlas-base-diagnostics {
+	align-self: flex-start;
+	margin: var(--size-4-2) var(--size-4-3);
 }
 
 .people-atlas-view-modes legend {
@@ -186,6 +246,7 @@
 }
 
 .people-atlas-sidebar {
+	min-width: 0;
 	overflow: auto;
 	padding: var(--size-4-3);
 	border-left: 1px solid var(--background-modifier-border);
@@ -244,6 +305,19 @@
 	width: 100%;
 }
 
+.people-atlas-population-control {
+	display: grid;
+	gap: var(--size-4-1, 4px);
+	margin-block-end: var(--size-4-3, 12px);
+	font-weight: var(--font-medium);
+}
+
+.people-atlas-population-control select {
+	width: 100%;
+	min-width: 0;
+	min-height: 44px;
+}
+
 .people-atlas-follow-ups-panel > h2 {
 	margin-block: 0 var(--size-4-2, 8px);
 }
@@ -251,6 +325,14 @@
 .people-atlas-follow-ups-summary {
 	margin-block: 0 var(--size-4-4, 16px);
 	color: var(--text-muted);
+}
+
+.people-atlas-local-attention {
+	margin-block-start: var(--size-4-4, 16px);
+}
+
+.people-atlas-local-attention > section + section {
+	margin-block-start: var(--size-4-4, 16px);
 }
 
 .people-atlas-people-list,
@@ -789,6 +871,52 @@
 	min-width: 0;
 }
 
+.people-atlas-contact-candidates,
+.people-atlas-contact-selected {
+	display: grid;
+	gap: var(--size-4-1);
+	min-inline-size: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.people-atlas-contact-candidates {
+	max-block-size: min(16rem, 35vh);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.people-atlas-contact-candidates[hidden] {
+	display: none;
+}
+
+.people-atlas-contact-candidates label,
+.people-atlas-contact-selected li {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-block-size: 36px;
+	min-inline-size: 0;
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-contact-selected li > span,
+.people-atlas-contact-candidates label > span {
+	flex: 1;
+	min-inline-size: 0;
+}
+
+.people-atlas-contact-candidates input[type="checkbox"] {
+	flex: 0 0 auto;
+	inline-size: auto;
+}
+
+.people-atlas-contact-selected button {
+	flex: 0 0 auto;
+	min-block-size: 36px;
+}
+
 .people-atlas-person-section {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
@@ -1012,11 +1140,7 @@
 	max-width: 100%;
 }
 
-@media (max-width: 700px) {
-	.people-atlas-toolbar {
-		flex-wrap: wrap;
-	}
-
+@container people-atlas-view (max-width: 700px) {
 	.people-atlas-toolbar > select {
 		min-width: min(100%, 12rem);
 		flex: 1 1 12rem;
@@ -1033,6 +1157,40 @@
 		border-top: 1px solid var(--background-modifier-border);
 	}
 
+	.people-atlas-profile-fields,
+	.people-atlas-contact-fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@container people-atlas-renderer (max-width: 700px) {
+	.people-atlas-contact-moment-row,
+	.people-atlas-follow-up-row,
+	.people-atlas-profile-fields,
+	.people-atlas-contact-fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.people-atlas-contact-moment-actions {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		width: 100%;
+	}
+
+	.people-atlas-contact-moment-actions > button[data-contact-moment-action="postpone"] {
+		grid-column: 1 / -1;
+	}
+
+	.people-atlas-view-modes button,
+	.people-atlas-graph-actions button,
+	.people-atlas-semantic-actions button,
+	.people-atlas-follow-ups-panel button {
+		min-width: 44px;
+		min-height: 44px;
+	}
+}
+
+@media (max-width: 700px) {
 	.people-atlas-preset-state,
 	.people-atlas-template-creation {
 		align-items: stretch;
@@ -1084,6 +1242,8 @@
 	.people-atlas-semantic-actions button,
 	.people-atlas-follow-ups-panel button,
 	.people-atlas-contact-moment-actions button,
+	.people-atlas-contact-candidates label,
+	.people-atlas-contact-selected button,
 	.people-atlas-details-sheet button {
 		min-width: 44px;
 		min-height: 44px;
@@ -1130,4 +1290,46 @@
 		/* biome-ignore lint/complexity/noImportantStyles: Reduced-motion preferences must override component motion. */
 		animation-duration: 0.01ms !important;
 	}
+}
+.people-atlas-recovery {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+	overflow-wrap: anywhere;
+}
+
+.people-atlas-recovery-filters,
+.people-atlas-recovery-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.people-atlas-recovery-filters input {
+	flex: 1;
+	min-width: 12em;
+}
+
+.people-atlas-recovery-diagnostics,
+.people-atlas-recovery-choices {
+	max-height: 50vh;
+	overflow: auto;
+}
+
+.people-atlas-recovery-choices label {
+	display: block;
+	padding: var(--size-4-1);
+}
+
+.people-atlas-recovery-choices label[hidden] {
+	display: none;
+}
+
+.people-atlas-recovery-diagnostics button {
+	margin-inline-end: var(--size-4-2);
+	margin-block-end: var(--size-4-1);
+}
+
+.people-atlas-recovery-error {
+	color: var(--text-error);
 }

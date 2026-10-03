@@ -9,24 +9,28 @@ import type {
 import { isAmbiguousAtlasNode, isResolvedAtlasPersonNode } from "../domain/node-capabilities";
 import { createTranslator, type Translator } from "../i18n";
 import type { PeopleAtlasSettings } from "../settings/types";
-import {
-	buildSelectedPersonContactMomentPresentation,
-	groupContactMomentFollowUps,
-} from "./contact-moment-presentation";
+import type { AtlasBrowseState, AtlasPopulationScope, AtlasRendererMode } from "../settings/view-state";
+import { buildSelectedPersonContactMomentPresentation, postponeFollowUpOneWeek } from "./contact-moment-presentation";
 import { createDeterministicLayout, type LayoutPoint } from "./layout";
+import { createFamilyLayout } from "../graph/family-layout";
+import { filterRelationshipsAtDate } from "../graph/relationship-periods";
+import { isCalendarDate } from "../domain/calendar-date";
+import { NetworkInsightPanel } from "./network-insight-panel";
+import type { AtlasGraphState } from "../settings/view-state";
 import type { LayoutSnapshot } from "./layout-state";
 import { GraphCanvasSurface, type AtlasRendererPhotoCacheStats } from "./graph-canvas-surface";
 import type { PersonPhotoResourceResolver } from "./person-profile";
 import { buildIncidentRelationshipRows, type IncidentRelationshipRow } from "./relationship-rows";
 import { GraphInteractionController } from "./graph-interaction-controller";
 import { FollowUpPanel } from "./follow-up-panel";
+import { AttentionPanel } from "./attention-panel";
 import { PersonDetailsPanel } from "./person-details-panel";
 import { RelationshipDetailsPanel } from "./relationship-details-panel";
 import { SemanticPeopleList } from "./semantic-people-list";
 
 export type { AtlasRendererPhotoCacheStats } from "./graph-canvas-surface";
 
-export type ContactMomentAction = "open" | "edit" | "done" | "dismiss";
+export type ContactMomentAction = "open" | "edit" | "done" | "dismiss" | "postpone" | "reopen";
 
 export interface AtlasRendererCallbacks {
 	onOpenNode(node: AtlasNode): void;
@@ -37,7 +41,7 @@ export interface AtlasRendererCallbacks {
 	canCreateRelationship?(node: AtlasNode): boolean;
 	onCreateRelationship?(node: AtlasNode): void;
 	canLogContact?(node: AtlasNode): boolean;
-	onLogContact?(node: AtlasNode): void;
+	onLogContact?(node: AtlasNode, relationship?: AtlasEdge): void;
 	canOpenContactMoment?(moment: ContactMomentSummary): boolean;
 	onOpenContactMoment?(moment: ContactMomentSummary, invoker: HTMLButtonElement): unknown;
 	canEditContactMoment?(moment: ContactMomentSummary): boolean;
@@ -51,6 +55,13 @@ export interface AtlasRendererCallbacks {
 		status: Extract<ContactMomentFollowUpStatus, "done" | "dismissed">,
 		invoker: HTMLButtonElement,
 	): boolean | Promise<boolean>;
+	canChangeFollowUp?(moment: ContactMomentSummary, action: "postpone" | "reopen"): boolean;
+	onChangeFollowUp?(
+		moment: ContactMomentSummary,
+		action: "postpone" | "reopen",
+		reviewedDate: string | undefined,
+		invoker: HTMLButtonElement,
+	): boolean | Promise<boolean>;
 	onContactMomentActionUnavailable?(
 		moment: ContactMomentSummary,
 		action: ContactMomentAction,
@@ -61,12 +72,14 @@ export interface AtlasRendererCallbacks {
 	canEditRelationship?(edge: AtlasEdge): boolean;
 	onEditRelationship?(edge: AtlasEdge, invoker: HTMLButtonElement): void | Promise<void>;
 	onLayoutChanged?(layout: LayoutSnapshot): void;
+	onBrowseStateChanged?(state: AtlasBrowseState): void;
+	onGraphStateChanged?(state: AtlasGraphState): void;
 	resolvePersonPhoto?: PersonPhotoResourceResolver | undefined;
 }
 
 export type AtlasSelectionSource = "canvas" | "list" | "graph-update";
 
-export type RendererMode = "graph" | "list" | "follow-ups";
+export type RendererMode = AtlasRendererMode;
 type SelectedAction = "open" | "center" | "edit" | "create" | "log-contact";
 type SheetAction = "close" | "open" | "center" | "edit" | "create" | "log-contact";
 type SheetInvoker = "details" | "canvas";
@@ -92,9 +105,16 @@ export class AtlasRenderer {
 	private readonly doc: Document;
 	private readonly root: HTMLDivElement;
 	private readonly modeControls: HTMLFieldSetElement;
+	private readonly graphOptions: HTMLFieldSetElement;
+	private readonly layoutSelect: HTMLSelectElement;
+	private readonly relationshipDateInput: HTMLInputElement;
+	private readonly networkInsightPanel: NetworkInsightPanel;
+	private graphState: AtlasGraphState;
 	private readonly graphModeButton: HTMLButtonElement;
 	private readonly listModeButton: HTMLButtonElement;
 	private readonly followUpsModeButton: HTMLButtonElement;
+	private readonly peopleScopeSelect: HTMLSelectElement;
+	private readonly followUpScopeSelect: HTMLSelectElement;
 	private readonly graphCanvas: GraphCanvasSurface;
 	private readonly semanticPeopleList: SemanticPeopleList;
 	private readonly personDetailsPanel: PersonDetailsPanel;
@@ -102,6 +122,7 @@ export class AtlasRenderer {
 	private readonly relationshipDetailsPanel: RelationshipDetailsPanel;
 	private readonly relationshipSheetPanel: RelationshipDetailsPanel;
 	private readonly followUpPanel: FollowUpPanel;
+	private readonly attentionPanel: AttentionPanel;
 	private readonly semanticPanel: HTMLElement;
 	private readonly details: HTMLElement;
 	private readonly followUpsPanel: HTMLElement;
@@ -109,6 +130,7 @@ export class AtlasRenderer {
 	private readonly sheet: HTMLDialogElement;
 	private readonly sheetContent: HTMLDivElement;
 	private readonly contactMomentsByButton = new WeakMap<HTMLButtonElement, ContactMomentSummary>();
+	private readonly postponedDatesByButton = new WeakMap<HTMLButtonElement, string>();
 	private snapshot: AtlasSnapshot = {
 		nodes: [],
 		edges: [],
@@ -120,6 +142,9 @@ export class AtlasRenderer {
 		generatedAt: 0,
 	};
 	private positions = new Map<NodeId, LayoutPoint>();
+	private permittedSnapshot: AtlasSnapshot = this.snapshot;
+	private peopleScope: AtlasPopulationScope = "current";
+	private followUpScope: AtlasPopulationScope = "current";
 	private selectedId: NodeId | undefined;
 	private focusedId: NodeId | undefined;
 	private mode: RendererMode = "graph";
@@ -137,11 +162,22 @@ export class AtlasRenderer {
 		private readonly getSettings: () => PeopleAtlasSettings,
 		private readonly callbacks: AtlasRendererCallbacks,
 		private readonly t: Translator = createTranslator("en"),
+		private readonly options: {
+			inlinePersonDetails?: boolean;
+			initialState?: Partial<AtlasBrowseState & AtlasGraphState>;
+			allPeopleLabel?: string;
+		} = {},
 	) {
 		this.doc = container.ownerDocument;
 		const owningWindow = this.doc.defaultView as (Window & typeof globalThis) | null;
 		if (!owningWindow) throw new Error("AtlasRenderer requires a container with an owning window.");
 		this.win = owningWindow;
+		this.peopleScope = options.initialState?.peopleScope ?? "current";
+		this.followUpScope = options.initialState?.followUpScope ?? "current";
+		this.graphState = {
+			layoutMode: options.initialState?.layoutMode ?? "radial",
+			relationshipDate: options.initialState?.relationshipDate ?? null,
+		};
 
 		this.root = this.doc.createElement("div");
 		this.root.className = "people-atlas-renderer";
@@ -158,6 +194,35 @@ export class AtlasRenderer {
 			false,
 		);
 		this.modeControls.append(legend, this.graphModeButton, this.listModeButton, this.followUpsModeButton);
+		this.graphOptions = this.doc.createElement("fieldset");
+		this.graphOptions.className = "people-atlas-network-controls";
+		const graphLegend = this.doc.createElement("legend");
+		graphLegend.textContent = this.t.networkInsight.graphOptions;
+		const layoutLabel = this.doc.createElement("label");
+		layoutLabel.textContent = this.t.networkInsight.layout;
+		this.layoutSelect = this.doc.createElement("select");
+		this.layoutSelect.setAttribute("aria-label", this.t.networkInsight.layout);
+		for (const [value, label] of [
+			["radial", this.t.networkInsight.radial],
+			["family", this.t.networkInsight.family],
+		]) {
+			const option = this.doc.createElement("option");
+			option.value = value ?? "";
+			option.textContent = label ?? "";
+			this.layoutSelect.append(option);
+		}
+		this.layoutSelect.value = this.graphState.layoutMode;
+		layoutLabel.append(this.layoutSelect);
+		const dateLabel = this.doc.createElement("label");
+		dateLabel.textContent = this.t.networkInsight.asOfDate;
+		this.relationshipDateInput = this.doc.createElement("input");
+		this.relationshipDateInput.type = "date";
+		this.relationshipDateInput.setAttribute("aria-label", this.t.networkInsight.asOfDate);
+		this.relationshipDateInput.setAttribute("title", this.t.networkInsight.asOfDescription);
+		this.relationshipDateInput.value = this.graphState.relationshipDate ?? "";
+		dateLabel.append(this.relationshipDateInput);
+		this.graphOptions.append(graphLegend, layoutLabel, dateLabel);
+		this.networkInsightPanel = new NetworkInsightPanel(this.doc, this.t);
 
 		this.graphCanvas = new GraphCanvasSurface({
 			container: this.container,
@@ -194,7 +259,7 @@ export class AtlasRenderer {
 			noPeopleLabel: this.t.atlasRenderer.noPeople,
 			noSearchResultsLabel: this.t.atlasRenderer.noSearchResults,
 			translator: this.t,
-			getSnapshot: () => this.snapshot,
+			getSnapshot: () => this.peopleSnapshot(),
 			getSelectedId: () => this.selectedId,
 			getFocusedId: () => this.focusedId,
 			setFocusedId: (id) => {
@@ -213,17 +278,24 @@ export class AtlasRenderer {
 			onRenderDetails: () => this.renderSelectedDetails(),
 		});
 		this.semanticPanel = this.semanticPeopleList.element;
+		this.peopleScopeSelect = this.createPopulationControl(this.t.discovery.peoplePopulation, "people");
+		this.semanticPanel.prepend(this.peopleScopeSelect.parentElement as HTMLLabelElement);
 		this.personDetailsPanel = new PersonDetailsPanel(this.doc, {
 			label: this.t.atlasRenderer.selectedPersonDetails,
 			translator: this.t,
-			getSnapshot: () => this.snapshot,
+			getSnapshot: () => this.getPersonSnapshot(),
 			getSelectedId: () => this.selectedId,
 			getSettings: this.getSettings,
 			...(this.callbacks.resolvePersonPhoto ? { resolvePersonPhoto: this.callbacks.resolvePersonPhoto } : {}),
 			renderContactMoments: (selected, headingLevel, surface) =>
 				this.renderSelectedContactMoments(selected, headingLevel, surface),
 			getRelationshipRows: (selected) =>
-				buildIncidentRelationshipRows(this.snapshot, selected, this.getSettings().relationshipRoleFormat, this.t),
+				buildIncidentRelationshipRows(
+					this.getPersonSnapshot(),
+					selected,
+					this.getSettings().relationshipRoleFormat,
+					this.t,
+				),
 			renderRelationshipGroups: (rows, selected, headingLevel) =>
 				this.renderRelationshipGroups(rows, selected, headingLevel),
 			canEditPerson: (selected) =>
@@ -241,14 +313,19 @@ export class AtlasRenderer {
 		this.sheetPersonDetailsPanel = new PersonDetailsPanel(this.doc, {
 			label: this.t.atlasRenderer.selectedPersonDetails,
 			translator: this.t,
-			getSnapshot: () => this.snapshot,
+			getSnapshot: () => this.getPersonSnapshot(),
 			getSelectedId: () => this.sheetNodeId,
 			getSettings: this.getSettings,
 			...(this.callbacks.resolvePersonPhoto ? { resolvePersonPhoto: this.callbacks.resolvePersonPhoto } : {}),
 			renderContactMoments: (selected, headingLevel, surface) =>
 				this.renderSelectedContactMoments(selected, headingLevel, surface),
 			getRelationshipRows: (selected) =>
-				buildIncidentRelationshipRows(this.snapshot, selected, this.getSettings().relationshipRoleFormat, this.t),
+				buildIncidentRelationshipRows(
+					this.getPersonSnapshot(),
+					selected,
+					this.getSettings().relationshipRoleFormat,
+					this.t,
+				),
 			renderRelationshipGroups: (rows, selected, headingLevel) =>
 				this.renderRelationshipGroups(rows, selected, headingLevel),
 			getUnavailableMessage: (selected) => this.capabilityExplanation(selected),
@@ -278,7 +355,7 @@ export class AtlasRenderer {
 			...(this.callbacks.onEditRelationship ? { onEditRelationship: this.callbacks.onEditRelationship } : {}),
 			...(this.callbacks.canEditRelationship ? { canEditRelationship: this.callbacks.canEditRelationship } : {}),
 		});
-		this.semanticPanel.append(this.details);
+		if (this.options.inlinePersonDetails !== false) this.semanticPanel.append(this.details);
 
 		this.followUpPanel = new FollowUpPanel(this.doc, {
 			panelLabel: this.t.atlasRenderer.contactFollowUps,
@@ -295,6 +372,19 @@ export class AtlasRenderer {
 		});
 		this.followUpsPanel = this.followUpPanel.element;
 		this.followUpsHeading = this.followUpPanel.heading;
+		this.followUpScopeSelect = this.createPopulationControl(this.t.discovery.followUpPopulation, "follow-ups");
+		this.followUpsPanel.insertBefore(
+			this.followUpScopeSelect.parentElement as HTMLLabelElement,
+			this.followUpPanel.summary,
+		);
+		this.attentionPanel = new AttentionPanel(this.doc, {
+			translator: this.t,
+			getSnapshot: () => this.followUpSnapshot(),
+			getLocalCalendarDay: () => this.localCalendarDay(),
+			canLogContact: (node) => Boolean(this.callbacks.onLogContact && this.callbacks.canLogContact?.(node) === true),
+			onLogContact: (node, relationship) => this.callbacks.onLogContact?.(node, relationship),
+		});
+		this.followUpsPanel.append(this.attentionPanel.element);
 
 		this.sheet = this.doc.createElement("dialog");
 		this.sheet.className = "people-atlas-details-sheet";
@@ -303,7 +393,15 @@ export class AtlasRenderer {
 		this.sheetContent.className = "people-atlas-details-sheet-content";
 		this.sheet.append(this.sheetContent);
 
-		this.root.append(this.modeControls, this.graphCanvas.element, this.semanticPanel, this.followUpsPanel, this.sheet);
+		this.root.append(
+			this.modeControls,
+			this.graphOptions,
+			this.networkInsightPanel.element,
+			this.graphCanvas.element,
+			this.semanticPanel,
+			this.followUpsPanel,
+			this.sheet,
+		);
 		this.container.append(this.root);
 		this.graphCanvas.resize();
 		this.graphInteraction.attach();
@@ -312,6 +410,10 @@ export class AtlasRenderer {
 		this.graphModeButton.addEventListener("click", this.onGraphMode);
 		this.listModeButton.addEventListener("click", this.onListMode);
 		this.followUpsModeButton.addEventListener("click", this.onFollowUpsMode);
+		this.peopleScopeSelect.addEventListener("change", this.onPeopleScopeChanged);
+		this.followUpScopeSelect.addEventListener("change", this.onFollowUpScopeChanged);
+		this.layoutSelect.addEventListener("change", this.onGraphStateChanged);
+		this.relationshipDateInput.addEventListener("change", this.onGraphStateChanged);
 		this.details.addEventListener("click", this.onDetailsClick);
 		this.followUpsPanel.addEventListener("click", this.onFollowUpsClick);
 		this.graphCanvas.zoomOutButton.addEventListener("click", this.onZoomOut);
@@ -323,9 +425,15 @@ export class AtlasRenderer {
 		this.sheet.addEventListener("keydown", this.onSheetKeyDown);
 
 		this.updateSemanticPanel();
+		this.setMode(options.initialState?.rendererMode ?? "graph", false);
 	}
 
-	setGraph(snapshot: AtlasSnapshot, savedLayout?: LayoutSnapshot): void {
+	setGraph(
+		snapshot: AtlasSnapshot,
+		savedLayout?: LayoutSnapshot,
+		permittedSnapshot: AtlasSnapshot = snapshot,
+		graphState?: Partial<AtlasGraphState>,
+	): void {
 		this.graphInteraction.cancel();
 		const activeElement = this.doc.activeElement;
 		const focusedButton = this.semanticPeopleList.personButtonFrom(activeElement);
@@ -349,7 +457,16 @@ export class AtlasRenderer {
 			focusedContactMomentAction?.surface === "follow-ups" ? this.followUpMomentOrder() : [];
 
 		this.snapshot = snapshot;
-		this.positions = createDeterministicLayout(snapshot);
+		this.permittedSnapshot = permittedSnapshot;
+		if (graphState)
+			this.graphState = {
+				layoutMode: graphState.layoutMode ?? "radial",
+				relationshipDate: graphState.relationshipDate ?? null,
+			};
+		this.layoutSelect.value = this.graphState.layoutMode;
+		this.relationshipDateInput.value = this.graphState.relationshipDate ?? "";
+		this.positions =
+			this.graphState.layoutMode === "family" ? createFamilyLayout(snapshot) : createDeterministicLayout(snapshot);
 		if (savedLayout) this.graphCanvas.restoreLayoutSnapshot(savedLayout);
 
 		if (this.selectedId && !this.nodeById(this.selectedId)) {
@@ -382,9 +499,7 @@ export class AtlasRenderer {
 		}
 
 		if (listHeldFocus) {
-			const targetId = focusedNodeId && this.nodeById(focusedNodeId) ? focusedNodeId : snapshot.nodes[0]?.id;
-			if (targetId) this.semanticPeopleList.focusPersonButton(targetId);
-			else this.listModeButton.focus();
+			if (!this.semanticPeopleList.restoreFocus(focusedNodeId)) this.listModeButton.focus();
 		} else if (actionHeldFocus && focusedAction) {
 			this.focusSelectedAction(focusedAction);
 		} else if (relationshipActionHeldFocus && focusedRelationshipAction) {
@@ -406,8 +521,22 @@ export class AtlasRenderer {
 		this.requestDraw();
 	}
 
-	showFollowUps(): void {
+	showFollowUps(scope?: AtlasPopulationScope): void {
+		if (scope && this.followUpScope !== scope) {
+			this.followUpScope = scope;
+			this.followUpScopeSelect.value = scope;
+			this.callbacks.onBrowseStateChanged?.(this.getBrowseState());
+		}
 		this.setMode("follow-ups");
+	}
+
+	getBrowseState(): AtlasBrowseState {
+		return { rendererMode: this.mode, peopleScope: this.peopleScope, followUpScope: this.followUpScope };
+	}
+
+	getPersonSnapshot(): AtlasSnapshot {
+		const outsideGraph = this.selectedId && !this.snapshot.nodes.some((node) => node.id === this.selectedId);
+		return this.peopleScope === "all" || outsideGraph ? this.permittedSnapshot : this.snapshot;
 	}
 
 	fitToContent(): void {
@@ -472,6 +601,10 @@ export class AtlasRenderer {
 		this.graphModeButton.removeEventListener("click", this.onGraphMode);
 		this.listModeButton.removeEventListener("click", this.onListMode);
 		this.followUpsModeButton.removeEventListener("click", this.onFollowUpsMode);
+		this.peopleScopeSelect.removeEventListener("change", this.onPeopleScopeChanged);
+		this.followUpScopeSelect.removeEventListener("change", this.onFollowUpScopeChanged);
+		this.layoutSelect.removeEventListener("change", this.onGraphStateChanged);
+		this.relationshipDateInput.removeEventListener("change", this.onGraphStateChanged);
 		this.details.removeEventListener("click", this.onDetailsClick);
 		this.followUpsPanel.removeEventListener("click", this.onFollowUpsClick);
 		this.graphCanvas.zoomOutButton.removeEventListener("click", this.onZoomOut);
@@ -485,8 +618,10 @@ export class AtlasRenderer {
 		this.sheetPersonDetailsPanel.destroy();
 		this.semanticPeopleList.destroy();
 		this.followUpPanel.destroy();
+		this.attentionPanel.destroy();
 		this.relationshipDetailsPanel.destroy();
 		this.relationshipSheetPanel.destroy();
+		this.networkInsightPanel.destroy();
 		this.root.remove();
 	}
 
@@ -507,8 +642,10 @@ export class AtlasRenderer {
 		return button;
 	}
 
-	private setMode(mode: RendererMode): void {
+	private setMode(mode: RendererMode, persist = true): void {
 		if (this.destroyed) return;
+		this.root.dataset.mode = mode;
+		this.networkInsightPanel.element.hidden = mode === "follow-ups";
 		if (this.mode === mode) {
 			if (mode === "follow-ups") {
 				this.renderFollowUps();
@@ -536,7 +673,72 @@ export class AtlasRenderer {
 			this.renderFollowUps();
 			this.scheduleFollowUpDayRefresh();
 		}
+		if (persist) this.callbacks.onBrowseStateChanged?.(this.getBrowseState());
 	}
+
+	private createPopulationControl(label: string, surface: "people" | "follow-ups"): HTMLSelectElement {
+		const wrapper = this.doc.createElement("label");
+		wrapper.className = "people-atlas-population-control";
+		wrapper.textContent = label;
+		const select = this.doc.createElement("select");
+		select.setAttribute("aria-label", label);
+		select.dataset.populationSurface = surface;
+		const choices: Array<[AtlasPopulationScope, string]> = [
+			["current", this.t.discovery.thisView],
+			["all", this.options.allPeopleLabel ?? this.t.discovery.allPeople],
+		];
+		for (const [value, text] of choices) {
+			const option = this.doc.createElement("option");
+			option.value = value;
+			option.textContent = text;
+			select.append(option);
+		}
+		select.value = surface === "people" ? this.peopleScope : this.followUpScope;
+		wrapper.append(select);
+		return select;
+	}
+
+	private peopleSnapshot(): AtlasSnapshot {
+		return this.peopleScope === "all" ? this.permittedSnapshot : this.snapshot;
+	}
+
+	private followUpSnapshot(): AtlasSnapshot {
+		return this.followUpScope === "all" ? this.permittedSnapshot : this.snapshot;
+	}
+
+	private readonly onPeopleScopeChanged = (): void => {
+		this.peopleScope = this.peopleScopeSelect.value === "all" ? "all" : "current";
+		this.updateSemanticPanel();
+		this.callbacks.onBrowseStateChanged?.(this.getBrowseState());
+	};
+
+	private readonly onGraphStateChanged = (): void => {
+		const date = this.relationshipDateInput.value;
+		if (this.relationshipDateInput.validity.badInput || (date && !isCalendarDate(date))) {
+			this.relationshipDateInput.setCustomValidity(this.t.networkInsight.invalidDate);
+			this.relationshipDateInput.reportValidity();
+			return;
+		}
+		this.relationshipDateInput.setCustomValidity("");
+		this.graphState = {
+			layoutMode: this.layoutSelect.value === "family" ? "family" : "radial",
+			relationshipDate: date || null,
+		};
+		if (this.callbacks.onGraphStateChanged) this.callbacks.onGraphStateChanged({ ...this.graphState });
+		else {
+			this.positions =
+				this.graphState.layoutMode === "family"
+					? createFamilyLayout(this.snapshot)
+					: createDeterministicLayout(this.snapshot);
+			this.requestDraw();
+		}
+	};
+
+	private readonly onFollowUpScopeChanged = (): void => {
+		this.followUpScope = this.followUpScopeSelect.value === "all" ? "all" : "current";
+		this.renderFollowUps();
+		this.callbacks.onBrowseStateChanged?.(this.getBrowseState());
+	};
 
 	private resize(): void {
 		this.graphCanvas.resize();
@@ -553,9 +755,15 @@ export class AtlasRenderer {
 	private updateSemanticPanel(): void {
 		this.graphCanvas.detailsButton.disabled = !this.selectedId || !this.nodeById(this.selectedId);
 		this.semanticPeopleList.update();
+		const people = this.peopleSnapshot();
+		const network = this.graphState.relationshipDate
+			? filterRelationshipsAtDate(people, this.graphState.relationshipDate)
+			: people;
+		this.networkInsightPanel.update(network, this.selectedId);
 	}
 
 	private renderSelectedDetails(): void {
+		if (this.options.inlinePersonDetails === false) return;
 		this.personDetailsPanel.render();
 	}
 
@@ -617,7 +825,7 @@ export class AtlasRenderer {
 		surface: Extract<ContactMomentSurface, "details" | "sheet">,
 	): HTMLElement | undefined {
 		if (!selected.personId) return undefined;
-		const moments = this.contactMoments();
+		const moments = this.getPersonSnapshot().contactMoments;
 		const bounded = buildSelectedPersonContactMomentPresentation(moments, selected.personId);
 		if (!bounded.earliestOpenFollowUp && bounded.recentMoments.length === 0) return undefined;
 		const all = buildSelectedPersonContactMomentPresentation(moments, selected.personId, moments.length).recentMoments;
@@ -691,6 +899,7 @@ export class AtlasRenderer {
 
 	private renderFollowUps(): void {
 		this.followUpPanel.render();
+		this.attentionPanel.render();
 	}
 
 	private renderContactMomentRow(
@@ -795,6 +1004,17 @@ export class AtlasRenderer {
 				options.accessibleContext,
 			);
 			if (dismiss) actions.append(dismiss);
+			for (const action of ["postpone", "reopen"] as const) {
+				const button = this.createContactMomentActionButton(
+					action,
+					moment,
+					surface,
+					options.followUpOn,
+					accessiblePeers,
+					options.accessibleContext,
+				);
+				if (button) actions.append(button);
+			}
 		}
 		if (actions.childElementCount > 0) item.append(actions);
 		return item;
@@ -809,12 +1029,17 @@ export class AtlasRenderer {
 		accessibleContext?: string,
 	): HTMLButtonElement | undefined {
 		if (!this.canUseContactMomentAction(action, moment)) return undefined;
+		const postponedDate =
+			action === "postpone" ? postponeFollowUpOneWeek(moment.followUpOn, this.localCalendarDay()) : undefined;
+		if (action === "postpone" && !postponedDate) return undefined;
 		const people = this.contactMomentPeopleLabel(moment);
 		const actionLabels: Record<ContactMomentAction, string> = {
 			open: this.t.atlasRenderer.openContactMoment,
 			edit: this.t.atlasRenderer.editContactMoment,
 			done: this.t.atlasRenderer.markFollowUpDone,
 			dismiss: this.t.atlasRenderer.dismissFollowUp,
+			postpone: this.t.followUpAttention.postpone({ date: this.formatFollowUpDate(postponedDate) }),
+			reopen: this.t.followUpAttention.reopen,
 		};
 		const button = this.createActionButton(actionLabels[action]);
 		button.dataset.contactMomentAction = action;
@@ -822,7 +1047,7 @@ export class AtlasRenderer {
 		button.dataset.contactMomentPath = moment.filePath;
 		button.dataset.contactMomentSurface = surface;
 		const dateContext =
-			action === "done" || action === "dismiss"
+			action !== "open" && action !== "edit"
 				? this.t.atlasRenderer.due({
 						date: this.formatFollowUpDate(followUpOn ?? moment.followUpOn),
 					})
@@ -838,12 +1063,14 @@ export class AtlasRenderer {
 			.join(", ");
 		button.setAttribute("aria-label", accessibleName);
 		if (
-			(action === "done" || action === "dismiss") &&
+			action !== "open" &&
+			action !== "edit" &&
 			this.pendingFollowUpMomentIdentities.has(this.contactMomentIdentity(moment))
 		) {
 			button.setAttribute("aria-disabled", "true");
 		}
-		this.contactMomentsByButton.set(button, moment);
+		this.contactMomentsByButton.set(button, { ...moment, personIds: [...moment.personIds] });
+		if (postponedDate) this.postponedDatesByButton.set(button, postponedDate);
 		return button;
 	}
 
@@ -881,7 +1108,7 @@ export class AtlasRenderer {
 		visible: string | undefined,
 	): string {
 		const date =
-			action === "done" || action === "dismiss"
+			action !== "open" && action !== "edit"
 				? (moment.followUpOn ?? this.t.atlasRenderer.unknownDate)
 				: moment.occurredOn;
 		return [this.contactMomentPeopleLabel(moment), date, visible ?? ""].join("\u0000");
@@ -905,9 +1132,22 @@ export class AtlasRenderer {
 				return Boolean(this.callbacks.onOpenContactMoment && this.callbacks.canOpenContactMoment?.(moment) === true);
 			if (action === "edit")
 				return Boolean(this.callbacks.onEditContactMoment && this.callbacks.canEditContactMoment?.(moment) === true);
+			const effectiveStatus = moment.followUpStatus ?? "open";
+			if (action === "postpone" || action === "reopen") {
+				const eligible =
+					action === "postpone"
+						? effectiveStatus === "open"
+						: effectiveStatus === "done" || effectiveStatus === "dismissed";
+				return Boolean(
+					eligible && this.callbacks.onChangeFollowUp && this.callbacks.canChangeFollowUp?.(moment, action) === true,
+				);
+			}
 			const status = this.followUpStatusForAction(action);
 			return Boolean(
-				status && this.callbacks.onUpdateFollowUp && this.callbacks.canUpdateFollowUp?.(moment, status) === true,
+				effectiveStatus === "open" &&
+					status &&
+					this.callbacks.onUpdateFollowUp &&
+					this.callbacks.canUpdateFollowUp?.(moment, status) === true,
 			);
 		} catch {
 			return false;
@@ -926,7 +1166,7 @@ export class AtlasRenderer {
 
 	private contactMomentPeopleLabel(moment: ContactMomentSummary): string {
 		const labels = moment.personIds.map((personId) => {
-			const person = this.snapshot.nodes.find(
+			const person = this.permittedSnapshot.nodes.find(
 				(node) =>
 					!isAmbiguousAtlasNode(node) &&
 					node.kind === "person" &&
@@ -939,7 +1179,9 @@ export class AtlasRenderer {
 
 	private contactMomentRelationshipLabel(moment: ContactMomentSummary): string | undefined {
 		if (!moment.relationshipId) return undefined;
-		const edge = this.snapshot.edges.find((candidate) => candidate.id === moment.relationshipId && !candidate.inferred);
+		const edge = this.permittedSnapshot.edges.find(
+			(candidate) => candidate.id === moment.relationshipId && !candidate.inferred,
+		);
 		if (!edge) return undefined;
 		const source = this.nodeById(edge.sourceId);
 		const target = this.nodeById(edge.targetId);
@@ -949,11 +1191,11 @@ export class AtlasRenderer {
 	}
 
 	private contactMoments(): readonly ContactMomentSummary[] {
-		return this.snapshot.contactMoments;
+		return this.followUpSnapshot().contactMoments;
 	}
 
 	private hiddenContactMomentCount(): number {
-		return Math.max(0, this.snapshot.hiddenContactMomentCount);
+		return Math.max(0, this.followUpSnapshot().hiddenContactMomentCount);
 	}
 
 	private openSheet(invoker: SheetInvoker): void {
@@ -1020,7 +1262,10 @@ export class AtlasRenderer {
 	}
 
 	private nodeById(nodeId: NodeId | string): AtlasNode | undefined {
-		return this.snapshot.nodes.find((node) => node.id === nodeId);
+		return (
+			this.snapshot.nodes.find((node) => node.id === nodeId) ??
+			this.permittedSnapshot.nodes.find((node) => node.id === nodeId)
+		);
 	}
 
 	private actionButtonFrom(target: EventTarget | Element | null): HTMLButtonElement | undefined {
@@ -1062,7 +1307,12 @@ export class AtlasRenderer {
 		const filePath = button?.dataset.contactMomentPath;
 		const surface = button?.dataset.contactMomentSurface;
 		if (
-			(action !== "open" && action !== "edit" && action !== "done" && action !== "dismiss") ||
+			(action !== "open" &&
+				action !== "edit" &&
+				action !== "done" &&
+				action !== "dismiss" &&
+				action !== "postpone" &&
+				action !== "reopen") ||
 			!momentId ||
 			!filePath ||
 			(surface !== "details" && surface !== "sheet" && surface !== "follow-ups")
@@ -1166,8 +1416,7 @@ export class AtlasRenderer {
 	}
 
 	private followUpMomentOrder(): string[] {
-		const groups = groupContactMomentFollowUps(this.contactMoments(), this.localCalendarDay());
-		return [...groups.overdue, ...groups.dueToday, ...groups.upcoming].map((row) => row.moment.id);
+		return this.followUpPanel.getMomentOrder();
 	}
 
 	private scheduleFollowUpDayRefresh(): void {
@@ -1348,10 +1597,26 @@ export class AtlasRenderer {
 		const renderedMoment = this.contactMomentsByButton.get(button);
 		const focus = this.contactMomentActionFocusFrom(button);
 		if (!renderedMoment || !focus) return;
-		const moment = this.contactMoments().find(
+		const currentMoments =
+			focus.surface === "follow-ups" ? this.contactMoments() : this.getPersonSnapshot().contactMoments;
+		const moment = currentMoments.find(
 			(candidate) => candidate.id === renderedMoment.id && candidate.filePath === renderedMoment.filePath,
 		);
-		if (!moment || !this.canUseContactMomentAction(focus.action, moment)) {
+		const changingFollowUp = focus.action === "postpone" || focus.action === "reopen";
+		const reviewedDate = this.postponedDatesByButton.get(button);
+		const staleReview =
+			changingFollowUp &&
+			moment &&
+			(moment.followUpOn !== renderedMoment.followUpOn ||
+				moment.followUpStatus !== renderedMoment.followUpStatus ||
+				moment.occurredOn !== renderedMoment.occurredOn ||
+				moment.relationshipId !== renderedMoment.relationshipId ||
+				moment.summary !== renderedMoment.summary ||
+				moment.channel !== renderedMoment.channel ||
+				moment.personIds.join("\u0000") !== renderedMoment.personIds.join("\u0000") ||
+				(focus.action === "postpone" &&
+					reviewedDate !== postponeFollowUpOneWeek(moment.followUpOn, this.localCalendarDay())));
+		if (!moment || staleReview || !this.canUseContactMomentAction(focus.action, moment)) {
 			try {
 				this.callbacks.onContactMomentActionUnavailable?.(moment ?? renderedMoment, focus.action, button);
 			} catch {
@@ -1372,12 +1637,19 @@ export class AtlasRenderer {
 		}
 		const status = this.followUpStatusForAction(focus.action);
 		const identity = this.contactMomentIdentity(moment);
-		if (!status || this.pendingFollowUpMomentIdentities.has(identity)) return;
+		if ((!status && !changingFollowUp) || this.pendingFollowUpMomentIdentities.has(identity)) return;
 		this.pendingFollowUpMomentIdentities.add(identity);
 		this.setFollowUpMomentBusy(focus.momentId, focus.filePath, true);
 		let accepted = false;
 		try {
-			accepted = (await this.callbacks.onUpdateFollowUp?.(moment, status, button)) === true;
+			accepted = changingFollowUp
+				? (await this.callbacks.onChangeFollowUp?.(
+						moment,
+						focus.action as "postpone" | "reopen",
+						reviewedDate,
+						button,
+					)) === true
+				: (await this.callbacks.onUpdateFollowUp?.(moment, status as TerminalFollowUpStatus, button)) === true;
 		} catch {
 			accepted = false;
 		} finally {
@@ -1401,7 +1673,7 @@ export class AtlasRenderer {
 		else row.removeAttribute("aria-busy");
 		for (const button of Array.from(
 			row.querySelectorAll<HTMLButtonElement>(
-				'button[data-contact-moment-action="done"], button[data-contact-moment-action="dismiss"]',
+				'button[data-contact-moment-action="done"], button[data-contact-moment-action="dismiss"], button[data-contact-moment-action="postpone"], button[data-contact-moment-action="reopen"]',
 			),
 		)) {
 			if (busy) button.setAttribute("aria-disabled", "true");

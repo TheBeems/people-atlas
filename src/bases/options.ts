@@ -1,4 +1,5 @@
 import type { BasesOptions } from "obsidian";
+import { createTranslator, type Translator } from "../i18n";
 
 export const BASES_OPTION_KEYS = {
 	nameProperty: "nameProperty",
@@ -19,10 +20,12 @@ export const BASES_OPTION_KEYS = {
 	maxNodes: "maxNodes",
 	stateKey: "stateKey",
 	showLabels: "showLabels",
+	layoutMode: "layoutMode",
+	relationshipDate: "relationshipDate",
 } as const;
 
-export function buildBasesOptions(): BasesOptions[] {
-	return [
+export function buildBasesOptions(t: Translator = createTranslator("en")): BasesOptions[] {
+	const options: BasesOptions[] = [
 		{
 			type: "property",
 			key: BASES_OPTION_KEYS.nameProperty,
@@ -96,16 +99,27 @@ export function buildBasesOptions(): BasesOptions[] {
 			placeholder: "Optional person_id",
 		},
 		{
-			type: "text",
+			type: "dropdown",
 			key: BASES_OPTION_KEYS.centerMode,
 			displayName: "Center mode",
-			placeholder: "configured, active-note, selected-node or none",
+			default: "configured",
+			options: {
+				configured: t.peopleAtlasView.configuredCenter,
+				"active-note": t.peopleAtlasView.activeNote,
+				"selected-node": t.peopleAtlasView.selectedNode,
+				none: t.peopleAtlasView.noCenter,
+			},
 		},
 		{
-			type: "text",
+			type: "dropdown",
 			key: BASES_OPTION_KEYS.projectionMode,
 			displayName: "Projection mode",
-			placeholder: "ego, free-network or contact-health",
+			default: "ego",
+			options: {
+				ego: t.peopleAtlasView.egoNetwork,
+				"free-network": t.peopleAtlasView.freeNetwork,
+				"contact-health": t.peopleAtlasView.contactHealth,
+			},
 		},
 		{
 			type: "text",
@@ -126,10 +140,30 @@ export function buildBasesOptions(): BasesOptions[] {
 			placeholder: "Optional stable key for this view",
 		},
 		{
+			type: "dropdown",
+			key: BASES_OPTION_KEYS.layoutMode,
+			displayName: t.networkInsight.layout,
+			default: "radial",
+			options: { radial: t.networkInsight.radial, family: t.networkInsight.family },
+		},
+		{
+			type: "text",
+			key: BASES_OPTION_KEYS.relationshipDate,
+			displayName: t.networkInsight.asOfDate,
+			placeholder: "YYYY-MM-DD",
+		},
+		{
 			type: "toggle",
 			key: BASES_OPTION_KEYS.showLabels,
 			displayName: "Show labels",
 			default: true,
 		},
 	];
+	return options.map((option) => ({
+		...option,
+		displayName: t.basesOptions[option.key as keyof typeof BASES_OPTION_KEYS],
+		...(option.type === "property" ? { placeholder: t.basesOptions.propertyPlaceholder } : {}),
+		...(option.key === BASES_OPTION_KEYS.centerPersonId ? { placeholder: t.basesOptions.personIdPlaceholder } : {}),
+		...(option.key === BASES_OPTION_KEYS.stateKey ? { placeholder: t.basesOptions.stateKeyPlaceholder } : {}),
+	}));
 }

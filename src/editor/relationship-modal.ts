@@ -2,6 +2,7 @@ import { Modal, Notice, type App, type TFile } from "obsidian";
 import type { SimpleRelationshipChoice } from "../domain/simple-relationships";
 import type { PersonRecord, RelationshipRecord } from "../domain/types";
 import type { AtlasMutationService } from "../mutations/atlas-mutation-service";
+import { captureRelationshipEditSourceBaseline } from "../mutations/relationship-source-guard";
 import { appendRelationshipPersonPicker } from "./relationship-person-picker";
 import { createTranslator, type Translator } from "../i18n";
 import { RelationshipPresetModal } from "../settings/relationship-preset-modal";
@@ -142,7 +143,16 @@ export class RelationshipModal extends Modal {
 				(target, sourcePath) => app.metadataCache.getFirstLinkpathDest(target, sourcePath)?.path,
 			);
 			this.session = new RelationshipFormSession(
-				{ kind: "edit", file: mode.file, original: structuredClone(this.values) },
+				{
+					kind: "edit",
+					file: mode.file,
+					original: structuredClone(this.values),
+					sourceBaseline: captureRelationshipEditSourceBaseline(
+						mode.file.path,
+						app.metadataCache.getFileCache(mode.file)?.frontmatter ?? {},
+						getSettings(),
+					),
+				},
 				people,
 				mutations,
 				getCurrentPeople,
@@ -328,6 +338,25 @@ export class RelationshipModal extends Modal {
 			type: "date",
 			onInput: (value) => {
 				this.values.since = value;
+			},
+		});
+		this.addInput(contextGroup, {
+			label: this.t.relationshipModal.until,
+			description: this.t.relationshipModal.untilDescription,
+			value: this.values.until,
+			type: "date",
+			onInput: (value) => {
+				this.values.until = value;
+			},
+		});
+		this.addInput(contextGroup, {
+			label: this.t.relationshipModal.contactIntervalDays,
+			description: this.t.relationshipModal.contactIntervalDaysDescription,
+			value: this.values.contactIntervalDays,
+			type: "number",
+			min: "1",
+			onInput: (value) => {
+				this.values.contactIntervalDays = value;
 			},
 		});
 		this.addInput(contextGroup, {

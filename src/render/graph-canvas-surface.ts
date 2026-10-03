@@ -361,9 +361,11 @@ export class GraphCanvasSurface {
 		const positions = this.options.getPositions();
 		const ctx = this.context;
 
-		ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
+		// Paint every backing pixel before using CSS coordinates, including rounded fractional extents.
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.fillStyle = background;
-		ctx.fillRect(0, 0, this.width, this.height);
+		ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
 		ctx.save();
 		ctx.translate(this.camera.x, this.camera.y);
 		ctx.scale(this.camera.scale, this.camera.scale);

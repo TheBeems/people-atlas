@@ -1,6 +1,6 @@
 Status: active
 Created: 2026-07-26
-Updated: 2026-07-26
+Updated: 2026-10-03
 
 # Performance characterization boundaries
 
@@ -70,6 +70,16 @@ shaping P6 work after P6a.
 
 ## Claim limits
 
+- Contact-history characterization on 2026-10-03 found repeated full reference
+  index construction per participant and linked relationship endpoint. Reuse
+  lazy indexes within one snapshot/moment/diagnostics pass; keep separate public
+  operations and before/after mutation resolutions fresh. Do not turn this
+  bounded reuse into a persistent cache without a separate invalidation design.
+- `npm run perf:contact-history -- <output.json>` covers person-only and linked
+  history at 100/1,000 records. Compare the same fixture and snapshot hashes,
+  warmups and sample counts before quoting timing differences. This Node-only
+  runner does not measure the UI or native Obsidian.
+
 - Candidate ceilings in the P6a evidence are proposals only; no test, build,
   check or CI rule enforces them.
 - `ubuntu-latest`/Node 22 compatibility was source-inspected but not executed
@@ -80,6 +90,9 @@ shaping P6 work after P6a.
   end-to-end input latency.
 
 ## References
+
+- `.10x/evidence/2026-10-03-contact-history-characterization.md`
+- `.10x/tickets/2026-10-03-contact-snapshot-performance.md`
 
 - `.10x/specs/performance-characterization.md`
 - `.10x/tickets/2026-07-26-performance-characterization.md`

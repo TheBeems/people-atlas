@@ -2,10 +2,15 @@ import type { TFile } from "obsidian";
 import type { RelationshipPresetSyncMutationResult, RelationshipPresetSyncUpdates } from "./atlas-mutation-service";
 import type { RelationshipMutationInput, RelationshipUpdates } from "./validation";
 import type { RelationshipPresetValues } from "../settings/relationship-presets";
+import type { RelationshipEditSourceBaseline } from "./relationship-source-guard";
 
 export interface RelationshipMutationOperations {
 	createRelationship(input: RelationshipMutationInput): Promise<TFile>;
-	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void>;
+	updateRelationship(
+		file: TFile,
+		updates: RelationshipUpdates,
+		sourceBaseline?: RelationshipEditSourceBaseline,
+	): Promise<void>;
 	syncRelationshipPreset(
 		file: TFile,
 		approvedBefore: RelationshipPresetValues,
@@ -21,8 +26,12 @@ export class RelationshipMutationCoordinator {
 		return this.operations.createRelationship(input);
 	}
 
-	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void> {
-		return this.operations.updateRelationship(file, updates);
+	updateRelationship(
+		file: TFile,
+		updates: RelationshipUpdates,
+		sourceBaseline?: RelationshipEditSourceBaseline,
+	): Promise<void> {
+		return this.operations.updateRelationship(file, updates, sourceBaseline);
 	}
 
 	syncRelationshipPreset(

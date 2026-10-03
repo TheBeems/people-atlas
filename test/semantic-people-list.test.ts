@@ -7,11 +7,12 @@ const person: AtlasNode = {
 	personId: "person-alice",
 	kind: "person",
 	label: "Élodie van Dijk",
+	aliases: ["Lodie", "Research alias"],
 	filePath: "People/Elodie van Dijk.md",
 	jobTitle: "Hoofd Onderzoek",
 	organisations: ["Université de Lyon"],
 	emails: ["elodie@example.com"],
-	phones: [],
+	phones: ["+31 (6) 12-34 56 78"],
 	isCenter: false,
 };
 
@@ -22,10 +23,14 @@ describe("semantic people search", () => {
 		expect(matchesPersonSearch(person, "onderzoek")).toBe(true);
 	});
 
-	it("searches only visible person fields", () => {
+	it("searches names, canonical aliases, email and phone independently of identity", () => {
 		expect(matchesPersonSearch(person, "elodie")).toBe(true);
-		expect(matchesPersonSearch(person, "example.com")).toBe(false);
-		expect(matchesPersonSearch(person, "alias")).toBe(false);
+		expect(matchesPersonSearch(person, "example.com")).toBe(true);
+		expect(matchesPersonSearch(person, "alias")).toBe(true);
+		expect(matchesPersonSearch(person, "31612345678")).toBe(true);
+		expect(matchesPersonSearch(person, "+31 6 1234 5678")).toBe(true);
+		expect(matchesPersonSearch(person, "wrong12345678")).toBe(false);
+		expect(matchesPersonSearch(person, person.id)).toBe(false);
 		expect(matchesPersonSearch(person, "   ")).toBe(true);
 	});
 });

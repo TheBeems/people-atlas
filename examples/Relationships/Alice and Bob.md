@@ -11,6 +11,7 @@ to_role: Friend
 closeness: 4
 since: 2018-03-01
 last_contact: 2026-07-18
+contact_interval_days: 30
 status: active
 ---
 

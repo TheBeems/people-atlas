@@ -334,7 +334,7 @@ describe("accessible atlas renderer", () => {
 
 		const search = document.querySelector<HTMLInputElement>('.people-atlas-people-search input[type="search"]');
 		if (!search) throw new Error("The people search control is unavailable.");
-		expect(search.getAttribute("aria-label")).toBe("Search people");
+		expect(search.getAttribute("aria-label")).toBe("Search people in this view");
 		expect(search.placeholder).toBe("Search by name, role or organisation");
 
 		search.value = "principal";
@@ -379,7 +379,7 @@ describe("accessible atlas renderer", () => {
 
 		const search = document.querySelector<HTMLInputElement>('.people-atlas-people-search input[type="search"]');
 		if (!search) throw new Error("The people search control is unavailable.");
-		expect(search.getAttribute("aria-label")).toBe("Personen zoeken");
+		expect(search.getAttribute("aria-label")).toBe("Personen zoeken in deze weergave");
 		expect(search.placeholder).toBe("Zoek op naam, functie of organisatie");
 		search.value = "niemand";
 		search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1250,6 +1250,56 @@ describe("accessible atlas renderer", () => {
 		renderer.setGraph(snapshot([]));
 		await expect.element(page.getByText("No people in this view")).toBeInTheDocument();
 		await expect.element(page.getByRole("button", { name: "People", exact: true })).toHaveFocus();
+	});
+
+	it.each(["rename", "delete"])("recovers filtered list focus after a focused person %s", async (change) => {
+		const bonnie = { ...charlie, label: "Bonnie" };
+		const { renderer } = mount(snapshot([alice, bob, bonnie]));
+		await page.getByRole("button", { name: "People", exact: true }).click();
+		const search = page.getByRole("searchbox", { name: "Search people in this view" });
+		await search.fill("bo");
+		await page.getByRole("button", { name: "Bob", exact: true }).click();
+
+		renderer.setGraph(snapshot(change === "rename" ? [alice, { ...bob, label: "Robert" }, bonnie] : [alice, bonnie]));
+
+		await expect.element(page.getByRole("button", { name: "Bonnie", exact: true })).toHaveFocus();
+		expect(document.querySelectorAll('.people-atlas-person-button[tabindex="0"]')).toHaveLength(1);
+		renderer.setGraph(snapshot([alice]));
+		await expect.element(search).toHaveFocus();
+		await expect.element(page.getByText("No people found")).toBeInTheDocument();
+		renderer.destroy();
+	});
+
+	it("puts the primary contact action before profile, relationship and contact-history content", async () => {
+		const contactMoment: ContactMomentSummary = {
+			id: "contact-alice",
+			filePath: "People/Contacts/Alice.md",
+			personIds: [alice.personId as string],
+			occurredOn: "2026-10-03",
+			summary: "Discussed the follow-up",
+		};
+		const { renderer } = mount(snapshot([alice, bob], edges, [contactMoment]));
+		await page.getByRole("button", { name: "People", exact: true }).click();
+		await page.getByRole("button", { name: "Alice, Example Org", exact: true }).click();
+		const detail = document.querySelector<HTMLElement>(".people-atlas-semantic-details");
+		const primary = detail?.querySelector<HTMLButtonElement>('button[data-action="log-contact"]');
+		const profile = detail?.querySelector(".people-atlas-profile");
+		const relationships = detail?.querySelector(".people-atlas-connection-groups");
+		const history = detail?.querySelector(".people-atlas-contact-moment-history");
+		if (!primary || !profile || !relationships || !history) {
+			throw new Error("Expected primary action, profile, relationships and contact history.");
+		}
+		expect(primary.compareDocumentPosition(profile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(primary.compareDocumentPosition(relationships) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(primary.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		await page.getByRole("button", { name: "Network" }).click();
+		await page.getByRole("button", { name: "Details" }).click();
+		const sheet = page.getByRole("dialog", { name: "Selected person details" }).element();
+		const sheetPrimary = sheet.querySelector('button[data-sheet-action="log-contact"]');
+		const sheetProfile = sheet.querySelector(".people-atlas-profile");
+		if (!sheetPrimary || !sheetProfile) throw new Error("Expected shared sheet primary action and profile.");
+		expect(sheetPrimary.compareDocumentPosition(sheetProfile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		renderer.destroy();
 	});
 
 	it("preserves equivalent selected action focus through graph updates", async () => {
@@ -2276,7 +2326,7 @@ describe("accessible atlas renderer", () => {
 		}
 	});
 
-	it("refreshes follow-up day groups on the owning Window timer and cancels it on mode change and destroy", () => {
+	it("refreshes follow-up and birthday day groups on the owning Window timer and cancels it on mode change and destroy", () => {
 		const frame = document.createElement("iframe");
 		document.body.append(frame);
 		const frameWindow = frame.contentWindow as Window & typeof globalThis;
@@ -2325,7 +2375,7 @@ describe("accessible atlas renderer", () => {
 		});
 		renderer.setGraph(
 			snapshot(
-				[alice],
+				[{ ...alice, birthDate: "--08-01" }],
 				[],
 				[
 					{
@@ -2341,6 +2391,12 @@ describe("accessible atlas renderer", () => {
 		);
 		renderer.showFollowUps();
 		expect(frameDocument.querySelector('[data-follow-up-group="upcoming"]')).not.toBeNull();
+		expect(frameDocument.querySelector('[data-attention-section="birthdays"]')?.textContent).toContain(
+			"Birthdays in the next 30 days",
+		);
+		expect(frameDocument.querySelector('[data-attention-section="birthdays"]')?.textContent).not.toContain(
+			"Birthdays today",
+		);
 		expect(setTimeout).toHaveBeenCalledOnce();
 		const firstTimer = nextTimer;
 		const firstRefresh = timers.get(firstTimer);
@@ -2351,6 +2407,12 @@ describe("accessible atlas renderer", () => {
 		firstRefresh?.();
 		expect(frameDocument.querySelector('[data-follow-up-group="upcoming"]')).toBeNull();
 		expect(frameDocument.querySelector('[data-follow-up-group="due-today"]')).not.toBeNull();
+		expect(frameDocument.querySelector('[data-attention-section="birthdays"]')?.textContent).toContain(
+			"Birthdays today",
+		);
+		expect(frameDocument.querySelector('[data-attention-section="birthdays"]')?.textContent).not.toContain(
+			"Birthdays in the next 30 days",
+		);
 		expect(setTimeout).toHaveBeenCalledTimes(2);
 		const secondTimer = nextTimer;
 

@@ -1,0 +1,25 @@
+filters:
+  and:
+    - 'file.ext == "md"'
+    - 'type == "person"'
+views:
+  - type: people-atlas
+    name: Example Co network
+    stateKey: work-example
+    filters:
+      and:
+        - 'list(organisations).contains("Example Co")'
+    centerMode: none
+    projectionMode: free-network
+    layoutMode: radial
+    maxNodes: 500
+  - type: table
+    name: Work contacts
+    filters:
+      and:
+        - 'list(organisations).contains("Example Co")'
+    order:
+      - note.name
+      - note.job_title
+      - note.organisations
+      - note.emails

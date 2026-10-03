@@ -30,6 +30,8 @@ export interface PeopleAtlasSettings {
 	relationshipToRoleProperty: string;
 	closenessProperty: string;
 	sinceProperty: string;
+	untilProperty: string;
+	contactIntervalDaysProperty: string;
 	lastContactProperty: string;
 	statusProperty: string;
 	contactMomentIdProperty: string;

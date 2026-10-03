@@ -92,6 +92,61 @@ export interface ContactMomentFollowUpStatusMutationResult {
 	status: ContactMomentTerminalFollowUpStatus;
 }
 
+export type ContactMomentFollowUpChange = { kind: "postpone"; followUpOn: string } | { kind: "reopen" };
+
+export interface ContactMomentFollowUpChangeInput
+	extends Omit<ContactMomentFollowUpStatusMutationInput, "status" | "reviewedFollowUpStatus"> {
+	reviewedFollowUpStatus: ContactMomentFollowUpStatus | undefined;
+	sourceBaseline: ContactMomentEditSourceBaseline;
+	change: ContactMomentFollowUpChange;
+}
+
+export interface ContactMomentFollowUpChangeResult {
+	file: TFile;
+	followUpOn: string;
+	status: ContactMomentFollowUpStatus | undefined;
+}
+
+export function normalizeContactMomentFollowUpChangeInput(
+	input: ContactMomentFollowUpChangeInput,
+): ContactMomentFollowUpChangeInput {
+	const normalized = normalizeContactMomentFollowUpStatusMutationInput({
+		...input,
+		reviewedFollowUpStatus: undefined,
+		status: "done",
+	});
+	const { status: _status, ...reviewed } = normalized;
+	return {
+		...reviewed,
+		reviewedFollowUpStatus: input.reviewedFollowUpStatus,
+		sourceBaseline: input.sourceBaseline,
+		change:
+			input.change.kind === "postpone"
+				? { kind: "postpone", followUpOn: input.change.followUpOn.trim() }
+				: { ...input.change },
+	};
+}
+
+export function validateContactMomentFollowUpChangeInput(input: ContactMomentFollowUpChangeInput): string[] {
+	const errors = validateContactMomentFollowUpStatusMutationInput({
+		...input,
+		reviewedFollowUpStatus: undefined,
+		status: "done",
+	});
+	if (!input.sourceBaseline || typeof input.sourceBaseline.signature !== "string")
+		errors.push("A reviewed contact-moment source baseline is required.");
+	if (input.change.kind === "postpone") {
+		if (input.reviewedFollowUpStatus !== undefined && input.reviewedFollowUpStatus !== "open")
+			errors.push("Only an open follow-up can be postponed.");
+		if (!isFullCalendarDate(input.change.followUpOn) || input.change.followUpOn <= input.reviewedFollowUpOn)
+			errors.push("The reviewed postponed date must be a valid later YYYY-MM-DD date.");
+	} else if (input.change.kind === "reopen") {
+		if (input.reviewedFollowUpStatus !== "done" && input.reviewedFollowUpStatus !== "dismissed")
+			errors.push("Only a completed or dismissed follow-up can be reopened.");
+	} else errors.push("Choose a supported follow-up change.");
+	return errors;
+}
+
 export type ContactMomentRelationshipAdvanceResult =
 	| {
 			status: "not-requested";

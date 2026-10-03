@@ -1,4 +1,5 @@
 import type { RelationshipStatus } from "../domain/types";
+import { isCalendarDate, isContactIntervalDays } from "../domain/calendar-date";
 import { parsePersonBirthDate, validatePersonEmails, validatePersonPhones } from "../domain/person-profile";
 import type { PeopleAtlasSettings } from "../settings/types";
 
@@ -29,6 +30,8 @@ export interface RelationshipMutationInput {
 	toRole?: string;
 	closeness?: number;
 	since?: string;
+	until?: string;
+	contactIntervalDays?: number;
 	lastContact?: string;
 	status?: RelationshipStatus;
 }
@@ -58,6 +61,8 @@ export interface RelationshipUpdates {
 	toRole?: string | null;
 	closeness?: number | null;
 	since?: string | null;
+	until?: string | null;
+	contactIntervalDays?: number | null;
 	lastContact?: string | null;
 	status?: RelationshipStatus | null;
 }
@@ -170,17 +175,6 @@ function validatePersonProfileValues(
 	}
 }
 
-function validDate(value: string): boolean {
-	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-	if (!match) return false;
-	const date = new Date(`${value}T00:00:00Z`);
-	return (
-		date.getUTCFullYear() === Number(match[1]) &&
-		date.getUTCMonth() + 1 === Number(match[2]) &&
-		date.getUTCDate() === Number(match[3])
-	);
-}
-
 export function validateRelationshipInput(input: RelationshipMutationInput, settings: PeopleAtlasSettings): string[] {
 	const errors: string[] = [];
 	if (validateNotePath(input.path)) errors.push("A safe Markdown relationship path is required.");
@@ -199,8 +193,15 @@ export function validateRelationshipInput(input: RelationshipMutationInput, sett
 		(!Number.isFinite(input.closeness) || input.closeness < 1 || input.closeness > 5)
 	)
 		errors.push("Closeness must be between 1 and 5.");
-	for (const date of [input.since, input.lastContact])
-		if (date !== undefined && !validDate(date)) errors.push("Relationship dates must use valid YYYY-MM-DD values.");
+	for (const date of [input.since, input.until, input.lastContact])
+		if (date !== undefined && !isCalendarDate(date))
+			errors.push("Relationship dates must use valid YYYY-MM-DD values.");
+	if (isCalendarDate(input.since) && isCalendarDate(input.until) && input.until < input.since) {
+		errors.push("Relationship end date cannot precede its start date.");
+	}
+	if (input.contactIntervalDays !== undefined && !isContactIntervalDays(input.contactIntervalDays)) {
+		errors.push("Contact interval must be a positive whole number of days.");
+	}
 	const keys = [
 		settings.typeProperty,
 		settings.relationshipIdProperty,
@@ -210,6 +211,12 @@ export function validateRelationshipInput(input: RelationshipMutationInput, sett
 		settings.relationshipPresetProperty,
 		settings.relationshipFromRoleProperty,
 		settings.relationshipToRoleProperty,
+		settings.closenessProperty,
+		settings.sinceProperty,
+		settings.untilProperty,
+		settings.contactIntervalDaysProperty,
+		settings.lastContactProperty,
+		settings.statusProperty,
 	];
 	if (new Set(keys).size !== keys.length)
 		errors.push("Relationship identity, endpoint, type, preset and role properties must be distinct.");

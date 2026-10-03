@@ -1,11 +1,14 @@
 import type { ContactMomentFollowUpStatus, ContactMomentSummary } from "../domain/types";
+import { addCalendarDays, isCalendarDate } from "../domain/calendar-date";
+
+export type ContactMomentFollowUpFilter = "open" | "done" | "dismissed" | "all";
 
 export type ContactMomentPresentationSource = ContactMomentSummary;
 
 export interface ContactMomentFollowUpRow {
 	moment: ContactMomentPresentationSource;
 	followUpOn: string;
-	reviewedFollowUpStatus: "open" | undefined;
+	reviewedFollowUpStatus: ContactMomentFollowUpStatus | undefined;
 }
 
 export interface SelectedPersonContactMomentPresentation {
@@ -20,6 +23,26 @@ export interface ContactMomentFollowUpGroups {
 }
 
 const DEFAULT_RECENT_MOMENT_LIMIT = 3;
+
+export function postponeFollowUpOneWeek(followUpOn: string | undefined, today: string): string | undefined {
+	if (!isCalendarDate(followUpOn) || !isCalendarDate(today)) return undefined;
+	return addCalendarDays(followUpOn < today ? today : followUpOn, 7);
+}
+
+export function filterContactMomentFollowUps(
+	moments: readonly ContactMomentPresentationSource[],
+	filter: ContactMomentFollowUpFilter = "open",
+): ContactMomentFollowUpRow[] {
+	return moments
+		.filter(isValidContactMomentPresentationSource)
+		.filter((moment) => moment.followUpOn && (filter === "all" || (moment.followUpStatus ?? "open") === filter))
+		.map((moment) => ({
+			moment,
+			followUpOn: moment.followUpOn as string,
+			reviewedFollowUpStatus: moment.followUpStatus,
+		}))
+		.sort(compareFollowUpRows);
+}
 
 export function buildSelectedPersonContactMomentPresentation(
 	moments: readonly ContactMomentPresentationSource[],
@@ -136,12 +159,5 @@ function isFollowUpStatus(value: string): value is ContactMomentFollowUpStatus {
 }
 
 function isFullCalendarDate(value: string): boolean {
-	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-	if (!match) return false;
-	const date = new Date(`${value}T00:00:00Z`);
-	return (
-		date.getUTCFullYear() === Number(match[1]) &&
-		date.getUTCMonth() + 1 === Number(match[2]) &&
-		date.getUTCDate() === Number(match[3])
-	);
+	return isCalendarDate(value);
 }

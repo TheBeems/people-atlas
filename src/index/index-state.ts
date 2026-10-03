@@ -1,5 +1,10 @@
 import { normalizePathIdentity } from "../domain/identity";
-import { createReferenceIndex, resolveReference, type ReferenceResolution } from "../domain/person-reference-resolver";
+import {
+	createReferenceIndex,
+	resolveReference,
+	type ReferenceIndex,
+	type ReferenceResolution,
+} from "../domain/person-reference-resolver";
 import { referenceKey } from "../domain/wikilink";
 import type {
 	AtlasDiagnostic,
@@ -96,6 +101,11 @@ interface ResolvedContactMoment {
 	diagnostics: AtlasDiagnostic[];
 }
 
+interface ContactReferenceIndexes {
+	people?: ReferenceIndex<PersonRecord>;
+	relationships?: ReferenceIndex<RelationshipRecord>;
+}
+
 export class IndexState {
 	private readonly filesByPath = new Map<string, StoredFile>();
 	private readonly peopleById = new Map<string, Set<string>>();
@@ -186,6 +196,7 @@ export class IndexState {
 	}
 
 	getSnapshot(): RawIndexSnapshot {
+		const referenceIndexes: ContactReferenceIndexes = {};
 		const people: PersonRecord[] = [];
 		const relationships: RelationshipRecord[] = [];
 		const contactMoments: ContactMomentRecord[] = [];
@@ -195,7 +206,7 @@ export class IndexState {
 			if (file.relationship) relationships.push(file.relationship);
 			diagnostics.push(...file.diagnostics);
 			if (file.contactMoment) {
-				const resolved = this.resolveContactMoment(file.contactMoment);
+				const resolved = this.resolveContactMoment(file.contactMoment, referenceIndexes);
 				contactMoments.push(resolved.record);
 				diagnostics.push(...resolved.diagnostics);
 			}
@@ -252,8 +263,9 @@ export class IndexState {
 	}
 
 	getContactMomentsForPaths(paths: Iterable<string>): ContactMomentRecord[] {
+		const referenceIndexes: ContactReferenceIndexes = {};
 		return this.getFiles(paths).flatMap((file) =>
-			file.contactMoment ? [this.resolveContactMoment(file.contactMoment).record] : [],
+			file.contactMoment ? [this.resolveContactMoment(file.contactMoment, referenceIndexes).record] : [],
 		);
 	}
 
@@ -302,12 +314,13 @@ export class IndexState {
 	}
 
 	getDiagnosticsForPaths(paths: Iterable<string>): AtlasDiagnostic[] {
+		const referenceIndexes: ContactReferenceIndexes = {};
 		const selected = new Set(paths);
 		const diagnostics = [...this.filesByPath.entries()].flatMap(([path, file]) => {
 			if (!selected.has(path)) return [];
 			return [
 				...file.diagnostics,
-				...(file.contactMoment ? this.resolveContactMoment(file.contactMoment).diagnostics : []),
+				...(file.contactMoment ? this.resolveContactMoment(file.contactMoment, referenceIndexes).diagnostics : []),
 			];
 		});
 		for (const id of this.getDuplicateContactMomentIds()) {
@@ -404,7 +417,10 @@ export class IndexState {
 		return targets;
 	}
 
-	private resolveContactMoment(source: ContactMomentRecord): ResolvedContactMoment {
+	private resolveContactMoment(
+		source: ContactMomentRecord,
+		referenceIndexes: ContactReferenceIndexes = {},
+	): ResolvedContactMoment {
 		const diagnostics: AtlasDiagnostic[] = [];
 		const personIds: string[] = [];
 		const personPaths = new Set<string>();
@@ -417,7 +433,7 @@ export class IndexState {
 			const sourceReferenceKey = referenceKey(reference);
 			const repeatedSourceReference = seenReferenceKeys.has(sourceReferenceKey);
 			seenReferenceKeys.add(sourceReferenceKey);
-			const resolution = this.resolvePersonReference(reference);
+			const resolution = this.resolvePersonReference(reference, referenceIndexes);
 			if (resolution.status === "unresolved") {
 				diagnostics.push({
 					id: `unresolved-contact-moment-person:${source.filePath}:${sourceReferenceKey}`,
@@ -465,7 +481,7 @@ export class IndexState {
 
 		let relationshipId: string | undefined;
 		if (source.relationship) {
-			const resolution = this.resolveRelationshipReference(source.relationship);
+			const resolution = this.resolveRelationshipReference(source.relationship, referenceIndexes);
 			if (resolution.status === "unresolved") {
 				diagnostics.push({
 					id: `unresolved-contact-moment-relationship:${source.filePath}:${referenceKey(source.relationship)}`,
@@ -491,7 +507,7 @@ export class IndexState {
 				if (resolved) {
 					relationshipId = resolved.id;
 					const endpointPaths = [resolved.from, resolved.to].map((endpoint) =>
-						this.resolveCanonicalPersonPath(endpoint),
+						this.resolveCanonicalPersonPath(endpoint, referenceIndexes),
 					);
 					if (endpointPaths.some((path) => path === undefined)) {
 						diagnostics.push({
@@ -530,12 +546,20 @@ export class IndexState {
 		};
 	}
 
-	private resolvePersonReference(reference: PersonReference): ReferenceResolution<PersonRecord> {
-		return resolveReference(reference, "", createReferenceIndex(this.getPeopleRecords()));
+	private resolvePersonReference(
+		reference: PersonReference,
+		indexes: ContactReferenceIndexes,
+	): ReferenceResolution<PersonRecord> {
+		indexes.people ??= createReferenceIndex(this.getPeopleRecords());
+		return resolveReference(reference, "", indexes.people);
 	}
 
-	private resolveRelationshipReference(reference: RelationshipReference): ReferenceResolution<RelationshipRecord> {
-		return resolveReference(reference, "", createReferenceIndex(this.getRelationshipRecords()));
+	private resolveRelationshipReference(
+		reference: RelationshipReference,
+		indexes: ContactReferenceIndexes,
+	): ReferenceResolution<RelationshipRecord> {
+		indexes.relationships ??= createReferenceIndex(this.getRelationshipRecords());
+		return resolveReference(reference, "", indexes.relationships);
 	}
 
 	private getPeopleRecords(): PersonRecord[] {
@@ -546,8 +570,8 @@ export class IndexState {
 		return [...this.filesByPath.values()].flatMap((file) => (file.relationship ? [file.relationship] : []));
 	}
 
-	private resolveCanonicalPersonPath(reference: PersonReference): string | undefined {
-		const resolution = this.resolvePersonReference(reference);
+	private resolveCanonicalPersonPath(reference: PersonReference, indexes: ContactReferenceIndexes): string | undefined {
+		const resolution = this.resolvePersonReference(reference, indexes);
 		if (resolution.status !== "resolved" || !resolution.resolved) return undefined;
 		if (this.getPersonPathsForId(resolution.resolved.id).length !== 1) return undefined;
 		return resolution.resolved.filePath;

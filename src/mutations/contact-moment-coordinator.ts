@@ -2,6 +2,8 @@ import type { TFile } from "obsidian";
 import type {
 	ContactMomentFollowUpStatusMutationInput,
 	ContactMomentFollowUpStatusMutationResult,
+	ContactMomentFollowUpChangeInput,
+	ContactMomentFollowUpChangeResult,
 	ContactMomentMutationInput,
 	ContactMomentMutationResult,
 	ContactMomentRelationshipRetryResult,
@@ -25,6 +27,7 @@ export interface ContactMomentMutationOperations {
 	updateContactMomentFollowUpStatus(
 		input: ContactMomentFollowUpStatusMutationInput,
 	): Promise<ContactMomentFollowUpStatusMutationResult>;
+	changeContactMomentFollowUp(input: ContactMomentFollowUpChangeInput): Promise<ContactMomentFollowUpChangeResult>;
 	retryContactMomentRelationship(
 		retry: ContactMomentRelationshipRetryToken,
 	): Promise<ContactMomentRelationshipRetryResult>;
@@ -54,6 +57,10 @@ export class ContactMomentMutationCoordinator {
 		input: ContactMomentFollowUpStatusMutationInput,
 	): Promise<ContactMomentFollowUpStatusMutationResult> {
 		return this.operations.updateContactMomentFollowUpStatus(input);
+	}
+
+	changeContactMomentFollowUp(input: ContactMomentFollowUpChangeInput): Promise<ContactMomentFollowUpChangeResult> {
+		return this.operations.changeContactMomentFollowUp(input);
 	}
 
 	retryContactMomentRelationship(

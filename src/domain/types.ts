@@ -51,6 +51,8 @@ export interface RelationshipRecord {
 	types: string[];
 	closeness?: number | undefined;
 	since?: string | undefined;
+	until?: string | undefined;
+	contactIntervalDays?: number | undefined;
 	lastContact?: string | undefined;
 	status?: RelationshipStatus | undefined;
 }
@@ -99,6 +101,8 @@ export interface AtlasDiagnostic {
 		| "missing-relationship-id"
 		| "invalid-relationship-status"
 		| "invalid-relationship-date"
+		| "invalid-relationship-period"
+		| "invalid-relationship-contact-interval"
 		| "incomplete-relationship-roles"
 		| "duplicate-contact-moment-id"
 		| "missing-contact-moment-id"
@@ -129,6 +133,7 @@ export interface AtlasNode {
 	id: NodeId;
 	kind: "person" | "ghost";
 	label: string;
+	aliases?: string[] | undefined;
 	filePath?: string | undefined;
 	personId?: PersonId | undefined;
 	photoPath?: string | undefined;
@@ -152,6 +157,8 @@ export interface AtlasEdge {
 	toRole?: string | undefined;
 	closeness?: number | undefined;
 	since?: string | undefined;
+	until?: string | undefined;
+	contactIntervalDays?: number | undefined;
 	lastContact?: string | undefined;
 	status?: RelationshipStatus | undefined;
 	filePath?: string | undefined;

@@ -144,7 +144,7 @@ describe("controlled People Atlas Obsidian integration", () => {
 			type: "property",
 			displayName: "Linked people property",
 		});
-		expect(runtime.commands.size).toBe(9);
+		expect(runtime.commands.size).toBe(12);
 		expect([...runtime.commands.values()].map((command) => command.name)).toEqual([
 			"Open atlas",
 			"Open follow-ups",
@@ -155,6 +155,9 @@ describe("controlled People Atlas Obsidian integration", () => {
 			"Log contact",
 			"Edit current contact moment",
 			"Rebuild People Atlas index",
+			"Open all diagnostics",
+			"Adopt existing person notes",
+			"Review older settings recovery",
 		]);
 		expect(
 			[...runtime.commands.values()].every(

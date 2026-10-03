@@ -7,9 +7,11 @@ import {
 	MutationError,
 	PartialPersonMutationError,
 	STALE_PERSON_EDIT_MESSAGE,
+	STALE_RELATIONSHIP_EDIT_MESSAGE,
 	STALE_RELATIONSHIP_PRESET_PREVIEW_MESSAGE,
 } from "../src/mutations/atlas-mutation-service";
 import { capturePersonEditSourceBaseline } from "../src/mutations/person-source-guard";
+import { captureRelationshipEditSourceBaseline } from "../src/mutations/relationship-source-guard";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { PeopleAtlasSettings } from "../src/settings/types";
 import { UNSAFE_PEOPLE_ROOT_CASES } from "./people-root-fixtures";
@@ -158,6 +160,116 @@ function vaultFile(path: string): TFile {
 	file.extension = dot < 0 ? "" : filename.slice(dot + 1);
 	return file;
 }
+
+describe("relationship periods and cadence mutation safety", () => {
+	it("creates mapped fields and preserves them, legacy YAML and body through other explicit edits", async () => {
+		const settings = { ...DEFAULT_SETTINGS, untilProperty: "einddatum", contactIntervalDaysProperty: "contactdagen" };
+		const harness = createHarness({ settings });
+		const created = await harness.service.createRelationship({
+			path: "People/Relationships/Period.md",
+			from: "a",
+			to: "b",
+			since: "2024-02-29",
+			until: "2026-10-03",
+			contactIntervalDays: 30,
+		});
+		const content = harness.files.get(created.path)?.content ?? "";
+		expect(parseYaml(content.split("---")[1] ?? "")).toMatchObject({
+			since: "2024-02-29",
+			einddatum: "2026-10-03",
+			contactdagen: 30,
+		});
+		const frontmatter = {
+			type: "relationship",
+			relationship_id: "r",
+			from: "a",
+			to: "b",
+			since: "2024-02-29",
+			einddatum: "2026-10-03",
+			contactdagen: 30,
+			direction: "source-to-target",
+			custom: { keep: [1, 2] },
+		};
+		harness.files.set(created.path, { path: created.path, frontmatter, content: "# Body stays\n" });
+		await harness.service.updateRelationship(created, { status: "dormant" });
+		expect(harness.files.get(created.path)).toMatchObject({
+			content: "# Body stays\n",
+			frontmatter: { ...frontmatter, status: "dormant" },
+		});
+		await harness.service.updateRelationship(created, { until: null, contactIntervalDays: null });
+		expect(harness.files.get(created.path)?.frontmatter).toEqual({
+			type: "relationship",
+			relationship_id: "r",
+			from: "a",
+			to: "b",
+			since: "2024-02-29",
+			direction: "source-to-target",
+			custom: { keep: [1, 2] },
+			status: "dormant",
+		});
+	});
+
+	it.each([
+		{ until: "2024-02-28" },
+		{ until: "2023-02-29" },
+		{ contactIntervalDays: 0 },
+		{ contactIntervalDays: 1.5 },
+	])("rejects invalid period/cadence edits without host writes: %s", async (updates) => {
+		const harness = createHarness();
+		const path = "People/Relationships/r.md";
+		const source = { type: "relationship", relationship_id: "r", from: "a", to: "b", since: "2024-02-29" };
+		harness.files.set(path, { path, frontmatter: structuredClone(source) });
+		await expect(harness.service.updateRelationship(vaultFile(path), updates)).rejects.toBeInstanceOf(MutationError);
+		expect(harness.hostCommitCount.current).toBe(0);
+		expect(harness.processFrontMatterCallCount.current).toBe(0);
+		expect(harness.files.get(path)?.frontmatter).toEqual(source);
+	});
+
+	it.each([
+		["until", "2026-10-04"],
+		["contact_interval_days", 14],
+	] as const)("rejects owned-field source drift inside the atomic callback: %s", async (property, value) => {
+		const harness = createHarness();
+		const path = "People/Relationships/r.md";
+		const source = {
+			type: "relationship",
+			relationship_id: "r",
+			from: "a",
+			to: "b",
+			until: "2026-10-03",
+			contact_interval_days: 30,
+		};
+		harness.files.set(path, { path, frontmatter: { ...source, [property]: value } });
+		harness.cachedFrontmatter.set(path, source);
+		await expect(harness.service.updateRelationship(vaultFile(path), { status: "dormant" })).rejects.toThrow(
+			STALE_RELATIONSHIP_EDIT_MESSAGE,
+		);
+		expect(harness.hostCommitCount.current).toBe(0);
+		expect(harness.files.get(path)?.frontmatter).toEqual({ ...source, [property]: value });
+	});
+
+	it("keeps the validated period mapping snapshot when settings change inside the callback", async () => {
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		const harness = createHarness({ settings });
+		const path = "People/Relationships/r.md";
+		const source = {
+			type: "relationship",
+			relationship_id: "r",
+			from: "a",
+			to: "b",
+			until: "2026-10-03",
+			contact_interval_days: 30,
+		};
+		harness.files.set(path, { path, frontmatter: structuredClone(source) });
+		harness.beforeProcessFrontMatterCallback.current = () => {
+			settings.untilProperty = "other_until";
+		};
+		await expect(harness.service.updateRelationship(vaultFile(path), { until: "2026-10-04" })).resolves.toBeUndefined();
+		expect(harness.hostCommitCount.current).toBe(1);
+		expect(harness.files.get(path)?.frontmatter).toEqual({ ...source, until: "2026-10-04" });
+		expect(harness.files.get(path)?.frontmatter).not.toHaveProperty("other_until");
+	});
+});
 
 function personRecord(id: string, filePath: string, name: string): PersonRecord {
 	return {
@@ -485,6 +597,110 @@ describe("AtlasMutationService", () => {
 		await expect(service.updateRelationship(file, { status: "dormant" })).resolves.toBeUndefined();
 		expect(files.get(file.path)?.frontmatter).toHaveProperty("status", "dormant");
 		expect(files.get(file.path)?.frontmatter).not.toHaveProperty("status:unsafe");
+	});
+
+	it.each([
+		["relationship_id", "relationship-replacement"],
+		["type", "person"],
+		["closeness", 5],
+		["to", "[[People/Charlie]]"],
+		["status", "ended"],
+	])("rejects a changed editor source %s even after the cache refreshes", async (property, value) => {
+		const { files, hostCommitCount, processFrontMatterCallCount, service } = createHarness();
+		const file = { path: "Relationships/Reviewed.md" } as TFile;
+		const original = {
+			type: "relationship",
+			relationship_id: "relationship-reviewed",
+			from: "[[People/Alice]]",
+			to: "[[People/Bob]]",
+			closeness: 2,
+		};
+		const baseline = captureRelationshipEditSourceBaseline(file.path, original, DEFAULT_SETTINGS);
+		const current = { ...original, [property]: value };
+		files.set(file.path, { path: file.path, frontmatter: current });
+
+		await expect(service.updateRelationship(file, { closeness: 3 }, baseline)).rejects.toThrow(
+			STALE_RELATIONSHIP_EDIT_MESSAGE,
+		);
+		expect(processFrontMatterCallCount.current).toBe(0);
+		expect(hostCommitCount.current).toBe(0);
+		expect(files.get(file.path)?.frontmatter).toEqual(current);
+	});
+
+	it.each([
+		["relationship_id", "relationship-replacement"],
+		["type", "person"],
+		["closeness", 5],
+	])("rejects direct-call source drift in %s inside the atomic callback", async (property, value) => {
+		const { cachedFrontmatter, files, hostCommitCount, processFrontMatterCallCount, service } = createHarness();
+		const file = { path: "Relationships/Reviewed.md" } as TFile;
+		const observed = {
+			type: "relationship",
+			relationship_id: "relationship-reviewed",
+			from: "[[People/Alice]]",
+			to: "[[People/Bob]]",
+			closeness: 2,
+		};
+		cachedFrontmatter.set(file.path, observed);
+		const live = { ...observed, [property]: value };
+		files.set(file.path, { path: file.path, frontmatter: live });
+
+		await expect(service.updateRelationship(file, { closeness: 3 })).rejects.toThrow(STALE_RELATIONSHIP_EDIT_MESSAGE);
+		expect(processFrontMatterCallCount.current).toBe(1);
+		expect(hostCommitCount.current).toBe(0);
+		expect(files.get(file.path)?.frontmatter).toEqual(live);
+	});
+
+	it("preserves unrelated frontmatter and body edits while saving reviewed custom-mapped fields", async () => {
+		const settings = {
+			...DEFAULT_SETTINGS,
+			typeProperty: "soort",
+			relationshipIdProperty: "relatie_id",
+			relationshipFromProperty: "van",
+			relationshipToProperty: "naar",
+			closenessProperty: "nabijheid",
+		};
+		const { files, cachedFrontmatter, hostCommitCount, service } = createHarness({ settings });
+		const file = { path: "Relationships/Reviewed.md" } as TFile;
+		const original = {
+			soort: "relationship",
+			relatie_id: "relationship-reviewed",
+			van: "[[People/Alice]]",
+			naar: "[[People/Bob]]",
+			nabijheid: 2,
+			custom: "original",
+		};
+		const baseline = captureRelationshipEditSourceBaseline(file.path, original, settings);
+		cachedFrontmatter.set(file.path, original);
+		const content = "A newly edited body must remain unchanged.\n";
+		files.set(file.path, { path: file.path, content, frontmatter: { ...original, custom: "new", extra: ["keep"] } });
+
+		await expect(service.updateRelationship(file, { closeness: 3 }, baseline)).resolves.toBeUndefined();
+		expect(hostCommitCount.current).toBe(1);
+		expect(files.get(file.path)).toMatchObject({
+			content,
+			frontmatter: { relatie_id: "relationship-reviewed", nabijheid: 3, custom: "new", extra: ["keep"] },
+		});
+	});
+
+	it("allows an explicit relationship ID edit against its unchanged opening baseline", async () => {
+		const { files, hostCommitCount, service } = createHarness();
+		const file = { path: "Relationships/Reviewed.md" } as TFile;
+		const original = {
+			type: "relationship",
+			relationship_id: "relationship-reviewed",
+			from: "[[People/Alice]]",
+			to: "[[People/Bob]]",
+			closeness: 2,
+		};
+		files.set(file.path, { path: file.path, frontmatter: original });
+		const baseline = captureRelationshipEditSourceBaseline(file.path, original, DEFAULT_SETTINGS);
+
+		await expect(
+			service.updateRelationship(file, { relationshipId: "relationship-renamed" }, baseline),
+		).resolves.toBeUndefined();
+		expect(hostCommitCount.current).toBe(1);
+		expect(files.get(file.path)?.frontmatter).toEqual({ ...original, relationship_id: "relationship-renamed" });
 	});
 
 	it("rejects person create without an explicit UUID-backed person ID before writing", async () => {

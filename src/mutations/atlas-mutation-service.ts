@@ -18,12 +18,16 @@ import {
 	contactMomentEditSourceMatches,
 	decideLastContactAdvance,
 	normalizeContactMomentFollowUpStatusMutationInput,
+	normalizeContactMomentFollowUpChangeInput,
 	normalizeContactMomentMutationInput,
 	validateContactMomentFollowUpStatusMutationInput,
+	validateContactMomentFollowUpChangeInput,
 	validateContactMomentMutationInput,
 	type CanonicalContactMomentRelationshipTarget,
 	type ContactMomentFollowUpStatusMutationInput,
 	type ContactMomentFollowUpStatusMutationResult,
+	type ContactMomentFollowUpChangeInput,
+	type ContactMomentFollowUpChangeResult,
 	type ContactMomentMutationInput,
 	type ContactMomentMutationResult,
 	type ContactMomentRelationshipAdvanceResult,
@@ -57,7 +61,18 @@ import {
 } from "./validation";
 import { ContactMomentMutationCoordinator } from "./contact-moment-coordinator";
 import { PersonMutationCoordinator } from "./person-mutation-coordinator";
+import {
+	PersonRecoveryService,
+	type PersonRecoveryKind,
+	type PersonRecoveryPreview,
+	type PersonRecoveryResult,
+} from "./person-recovery";
 import { RelationshipMutationCoordinator } from "./relationship-mutation-coordinator";
+import {
+	captureRelationshipEditSourceBaseline,
+	relationshipEditSourceMatches,
+	type RelationshipEditSourceBaseline,
+} from "./relationship-source-guard";
 
 export class MutationError extends Error {
 	constructor(message: string) {
@@ -148,6 +163,8 @@ export const STALE_RELATIONSHIP_PRESET_PREVIEW_MESSAGE =
 	"The relationship changed after this preview was opened. Review a new preview.";
 export const STALE_PERSON_EDIT_MESSAGE =
 	"The person note changed after the editor was opened. Reopen it before saving.";
+export const STALE_RELATIONSHIP_EDIT_MESSAGE =
+	"The relationship note changed after the editor was opened. Reopen it before saving.";
 
 const RELATIONSHIP_PRESET_ALREADY_CURRENT = new Error("Relationship template values are already current.");
 const PERSON_EDIT_GUARD_ONLY = new Error("Person edit live-state guard completed.");
@@ -166,6 +183,7 @@ export class AtlasMutationService {
 	private readonly generateId: () => string;
 	private readonly generateContactMomentId: () => string;
 	private readonly personMutations: PersonMutationCoordinator;
+	private readonly personRecovery: PersonRecoveryService;
 	private readonly relationshipMutations: RelationshipMutationCoordinator;
 	private readonly contactMomentMutations: ContactMomentMutationCoordinator;
 
@@ -185,9 +203,20 @@ export class AtlasMutationService {
 			updatePerson: (file, updates, options) =>
 				this.runExclusive(() => this.updatePersonExclusive(file, updates, options)),
 		});
+		this.personRecovery = new PersonRecoveryService(
+			this.app,
+			this.getSettings,
+			this.canWrite,
+			() => this.currentPersonRecords(),
+			(operation) => this.runExclusive(operation),
+			(id, path) =>
+				!this.identityInUse(id, path, this.reservedPersonIds, (candidate) => this.index.getPeoplePathsById(candidate)),
+			(id, path) => this.rememberIdentity(this.reservedPersonIds, id, path),
+		);
 		this.relationshipMutations = new RelationshipMutationCoordinator({
 			createRelationship: (input) => this.runExclusive(() => this.createRelationshipExclusive(input)),
-			updateRelationship: (file, updates) => this.runExclusive(() => this.updateRelationshipExclusive(file, updates)),
+			updateRelationship: (file, updates, sourceBaseline) =>
+				this.runExclusive(() => this.updateRelationshipExclusive(file, updates, sourceBaseline)),
 			syncRelationshipPreset: (file, approvedBefore, updates) =>
 				this.runExclusive(() => this.syncRelationshipPresetExclusive(file, approvedBefore, updates)),
 		});
@@ -198,6 +227,7 @@ export class AtlasMutationService {
 				this.runExclusive(() => this.updateContactMomentExclusive(file, input, updates, options)),
 			updateContactMomentFollowUpStatus: (input) =>
 				this.runExclusive(() => this.updateContactMomentFollowUpStatusExclusive(input)),
+			changeContactMomentFollowUp: (input) => this.runExclusive(() => this.changeContactMomentFollowUpExclusive(input)),
 			retryContactMomentRelationship: (retry) =>
 				this.runExclusive(() => this.retryContactMomentRelationshipExclusive(retry)),
 		});
@@ -205,6 +235,14 @@ export class AtlasMutationService {
 
 	createPerson(input: PersonMutationInput): Promise<TFile> {
 		return this.personMutations.createPerson(input);
+	}
+
+	previewPersonRecovery(path: string, kind: PersonRecoveryKind): Promise<PersonRecoveryPreview> {
+		return this.personRecovery.preview(path, kind);
+	}
+
+	applyPersonRecovery(preview: PersonRecoveryPreview): Promise<PersonRecoveryResult> {
+		return this.personRecovery.apply(preview);
 	}
 
 	createRelationship(input: RelationshipMutationInput): Promise<TFile> {
@@ -215,8 +253,12 @@ export class AtlasMutationService {
 		return this.personMutations.updatePerson(file, updates, options);
 	}
 
-	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void> {
-		return this.relationshipMutations.updateRelationship(file, updates);
+	updateRelationship(
+		file: TFile,
+		updates: RelationshipUpdates,
+		sourceBaseline?: RelationshipEditSourceBaseline,
+	): Promise<void> {
+		return this.relationshipMutations.updateRelationship(file, updates, sourceBaseline);
 	}
 
 	createContactMoment(
@@ -239,6 +281,10 @@ export class AtlasMutationService {
 		input: ContactMomentFollowUpStatusMutationInput,
 	): Promise<ContactMomentFollowUpStatusMutationResult> {
 		return this.contactMomentMutations.updateContactMomentFollowUpStatus(input);
+	}
+
+	changeContactMomentFollowUp(input: ContactMomentFollowUpChangeInput): Promise<ContactMomentFollowUpChangeResult> {
+		return this.contactMomentMutations.changeContactMomentFollowUp(input);
 	}
 
 	retryContactMomentRelationship(
@@ -548,7 +594,9 @@ export class AtlasMutationService {
 
 	private contactMomentFollowUpStatusTargetErrors(
 		file: TFile,
-		input: ContactMomentFollowUpStatusMutationInput,
+		input: Omit<ContactMomentFollowUpStatusMutationInput, "status" | "reviewedFollowUpStatus"> & {
+			reviewedFollowUpStatus: string | undefined;
+		},
 		settings: PeopleAtlasSettings,
 		frontmatter: Record<string, unknown> = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {},
 	): string[] {
@@ -619,6 +667,70 @@ export class AtlasMutationService {
 			errors.push("The contact-moment follow-up status changed after it was reviewed.");
 		}
 		return errors;
+	}
+
+	private async changeContactMomentFollowUpExclusive(
+		rawInput: ContactMomentFollowUpChangeInput,
+	): Promise<ContactMomentFollowUpChangeResult> {
+		const settings = this.assertWritable();
+		const input = normalizeContactMomentFollowUpChangeInput(rawInput);
+		const errors = validateContactMomentFollowUpChangeInput(input);
+		if (errors.length) throw new MutationError(errors.join(" "));
+		const indexedPaths = this.index.getContactMomentPathsById?.(input.contactMomentId) ?? [];
+		if (indexedPaths.length !== 1 || !indexedPaths.some((path) => this.sameVaultPath(path, input.filePath)))
+			errors.push("The contact-moment follow-up is missing or ambiguous in the canonical index.");
+		const file = this.noteFileAt(input.filePath);
+		if (!file) errors.push("The reviewed contact-moment note is no longer available.");
+		if (file) {
+			errors.push(...this.contactMomentFollowUpStatusTargetErrors(file, input, settings));
+			if (
+				!contactMomentEditSourceMatches(
+					this.app.metadataCache.getFileCache(file)?.frontmatter ?? {},
+					settings,
+					input.sourceBaseline,
+				)
+			)
+				errors.push("The contact-moment source changed after it was reviewed.");
+		}
+		if (errors.length || !file) throw new MutationError([...new Set(errors)].join(" "));
+		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+			const liveSettings = this.assertWritable();
+			const mappingKeys = [
+				"typeProperty",
+				"personTypeValue",
+				"relationshipTypeValue",
+				"personIdProperty",
+				"contactMomentTypeValue",
+				"contactMomentIdProperty",
+				"contactMomentPeopleProperty",
+				"contactMomentRelationshipProperty",
+				"contactMomentOccurredOnProperty",
+				"contactMomentChannelProperty",
+				"contactMomentSummaryProperty",
+				"contactMomentFollowUpOnProperty",
+				"contactMomentFollowUpStatusProperty",
+				"relationshipIdProperty",
+				"relationshipFromProperty",
+				"relationshipToProperty",
+			] as const;
+			if (mappingKeys.some((key) => settings[key] !== liveSettings[key]))
+				throw new MutationError("The contact-moment property mapping changed after it was reviewed.");
+			const livePaths = this.index.getContactMomentPathsById?.(input.contactMomentId) ?? [];
+			if (livePaths.length !== 1 || !livePaths.some((path) => this.sameVaultPath(path, input.filePath)))
+				throw new MutationError("The contact-moment follow-up is missing or ambiguous in the canonical index.");
+			const liveErrors = this.contactMomentFollowUpStatusTargetErrors(file, input, liveSettings, frontmatter);
+			if (!contactMomentEditSourceMatches(frontmatter, liveSettings, input.sourceBaseline))
+				liveErrors.push("The contact-moment source changed after it was reviewed.");
+			if (liveErrors.length) throw new MutationError([...new Set(liveErrors)].join(" "));
+			if (input.change.kind === "postpone")
+				this.apply(frontmatter, settings.contactMomentFollowUpOnProperty, input.change.followUpOn);
+			else this.apply(frontmatter, settings.contactMomentFollowUpStatusProperty, "open");
+		});
+		return {
+			file,
+			followUpOn: input.change.kind === "postpone" ? input.change.followUpOn : input.reviewedFollowUpOn,
+			status: input.change.kind === "reopen" ? "open" : input.reviewedFollowUpStatus,
+		};
 	}
 
 	private async retryContactMomentRelationshipExclusive(
@@ -879,9 +991,20 @@ export class AtlasMutationService {
 		return snapshot.people;
 	}
 
-	private async updateRelationshipExclusive(file: TFile, updates: RelationshipUpdates): Promise<void> {
+	private async updateRelationshipExclusive(
+		file: TFile,
+		updates: RelationshipUpdates,
+		sourceBaseline?: RelationshipEditSourceBaseline,
+	): Promise<void> {
 		const settings = this.assertWritable();
 		const current = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+		const baseline = sourceBaseline ?? captureRelationshipEditSourceBaseline(file.path, current, settings);
+		if (
+			this.readString(current, settings.typeProperty)?.toLowerCase() !== settings.relationshipTypeValue.toLowerCase() ||
+			!relationshipEditSourceMatches(file.path, current, settings, baseline)
+		) {
+			throw new MutationError(STALE_RELATIONSHIP_EDIT_MESSAGE);
+		}
 		const value = <T>(key: string, update: T | null | undefined): T | undefined =>
 			update === null ? undefined : (update ?? (current[key] as T | undefined));
 		const path = file.path;
@@ -909,6 +1032,10 @@ export class AtlasMutationService {
 		if (closeness !== undefined) input.closeness = closeness;
 		const since = value<string>(settings.sinceProperty, updates.since);
 		if (since !== undefined) input.since = since;
+		const until = value<string>(settings.untilProperty, updates.until);
+		if (until !== undefined) input.until = until;
+		const contactIntervalDays = value<number>(settings.contactIntervalDaysProperty, updates.contactIntervalDays);
+		if (contactIntervalDays !== undefined) input.contactIntervalDays = contactIntervalDays;
 		const lastContact = value<string>(settings.lastContactProperty, updates.lastContact);
 		if (lastContact !== undefined) input.lastContact = lastContact;
 		const status = value<"active" | "dormant" | "ended">(settings.statusProperty, updates.status);
@@ -924,6 +1051,9 @@ export class AtlasMutationService {
 		}
 		if (errors.length > 0) throw new MutationError(errors.join(" "));
 		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+			if (!relationshipEditSourceMatches(file.path, frontmatter, settings, baseline)) {
+				throw new MutationError(STALE_RELATIONSHIP_EDIT_MESSAGE);
+			}
 			this.apply(frontmatter, settings.relationshipIdProperty, updates.relationshipId);
 			this.apply(frontmatter, settings.relationshipFromProperty, updates.from);
 			this.apply(frontmatter, settings.relationshipToProperty, updates.to);
@@ -933,6 +1063,8 @@ export class AtlasMutationService {
 			this.apply(frontmatter, settings.relationshipToRoleProperty, updates.toRole);
 			this.apply(frontmatter, settings.closenessProperty, updates.closeness);
 			this.apply(frontmatter, settings.sinceProperty, updates.since);
+			this.apply(frontmatter, settings.untilProperty, updates.until);
+			this.apply(frontmatter, settings.contactIntervalDaysProperty, updates.contactIntervalDays);
 			this.apply(frontmatter, settings.lastContactProperty, updates.lastContact);
 			this.apply(frontmatter, settings.statusProperty, updates.status);
 		});
@@ -1612,6 +1744,12 @@ export class AtlasMutationService {
 				if (closeness !== undefined) input.closeness = closeness;
 				const since = this.readString(frontmatter, settings.sinceProperty);
 				if (since !== undefined) input.since = since;
+				const until = frontmatter[settings.untilProperty];
+				if (until !== undefined && until !== null && until !== "") input.until = until as string;
+				const contactIntervalDays = frontmatter[settings.contactIntervalDaysProperty];
+				if (contactIntervalDays !== undefined && contactIntervalDays !== null && contactIntervalDays !== "") {
+					input.contactIntervalDays = contactIntervalDays as number;
+				}
 				const lastContact = this.readString(frontmatter, settings.lastContactProperty);
 				if (lastContact !== undefined) input.lastContact = lastContact;
 				const status = this.readString(frontmatter, settings.statusProperty);
@@ -1879,6 +2017,10 @@ export class AtlasMutationService {
 			...(input.toRole ? [`${settings.relationshipToRoleProperty}: ${yamlValue(input.toRole)}`] : []),
 			...(input.closeness !== undefined ? [`${settings.closenessProperty}: ${input.closeness}`] : []),
 			...(input.since ? [`${settings.sinceProperty}: ${yamlValue(input.since)}`] : []),
+			...(input.until ? [`${settings.untilProperty}: ${yamlValue(input.until)}`] : []),
+			...(input.contactIntervalDays !== undefined
+				? [`${settings.contactIntervalDaysProperty}: ${input.contactIntervalDays}`]
+				: []),
 			...(input.lastContact ? [`${settings.lastContactProperty}: ${yamlValue(input.lastContact)}`] : []),
 			...(input.status ? [`${settings.statusProperty}: ${yamlValue(input.status)}`] : []),
 		].join("\n")}\n`;

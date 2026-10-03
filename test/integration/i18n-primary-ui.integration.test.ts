@@ -90,6 +90,9 @@ describe("primary i18n UI", () => {
 				"Contact loggen",
 				"Huidig contactmoment bewerken",
 				"People Atlas-index opnieuw opbouwen",
+				"Alle meldingen openen",
+				"Bestaande persoonsnotities opnemen",
+				"Herstel van oudere instellingen bekijken",
 			]);
 			expect(englishCommands.map(({ name }) => name)).toEqual([
 				"Open atlas",
@@ -101,6 +104,9 @@ describe("primary i18n UI", () => {
 				"Log contact",
 				"Edit current contact moment",
 				"Rebuild People Atlas index",
+				"Open all diagnostics",
+				"Adopt existing person notes",
+				"Review older settings recovery",
 			]);
 			expect([...dutch.runtime.ribbonItems].map((item) => item.title)).toEqual(["People Atlas openen"]);
 			expect([...english.runtime.ribbonItems].map((item) => item.title)).toEqual(["Open People Atlas"]);

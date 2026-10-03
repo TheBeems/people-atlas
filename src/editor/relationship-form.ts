@@ -9,9 +9,11 @@ import {
 } from "../domain/simple-relationships";
 import { peopleCollectionPaths } from "../domain/people-paths";
 import { resolveCanonicalPersonByPath } from "../domain/identity";
+import { createReferenceIndex, resolveReference } from "../domain/person-reference-resolver";
 import type { PersonRecord, PersonReference, RelationshipRecord, RelationshipStatus } from "../domain/types";
 import type { RelationshipMutationInput, RelationshipUpdates } from "../mutations/validation";
 import { sanitizeNoteName } from "../mutations/validation";
+import type { RelationshipEditSourceBaseline } from "../mutations/relationship-source-guard";
 import { relationshipPresetMatches, type RelationshipPreset } from "../settings/relationship-presets";
 
 export { resolveCanonicalPersonByPath } from "../domain/identity";
@@ -27,18 +29,29 @@ export interface RelationshipFormValues {
 	toRole: string;
 	closeness: string;
 	since: string;
+	until: string;
+	contactIntervalDays: string;
 	lastContact: string;
 	status: RelationshipStatus | "";
 }
 
 export interface RelationshipMutationPort {
 	createRelationship(input: RelationshipMutationInput): Promise<TFile>;
-	updateRelationship(file: TFile, updates: RelationshipUpdates): Promise<void>;
+	updateRelationship(
+		file: TFile,
+		updates: RelationshipUpdates,
+		sourceBaseline?: RelationshipEditSourceBaseline,
+	): Promise<void>;
 }
 
 export type RelationshipFormSessionMode =
 	| { kind: "create" }
-	| { kind: "edit"; file: TFile; original: RelationshipFormValues };
+	| {
+			kind: "edit";
+			file: TFile;
+			original: RelationshipFormValues;
+			sourceBaseline?: RelationshipEditSourceBaseline;
+	  };
 
 export type RelationshipSubmitResult =
 	| { status: "success"; createdFile?: TFile }
@@ -102,6 +115,8 @@ export function createRelationshipFormValues(
 		toRole: "",
 		closeness: "",
 		since: "",
+		until: "",
+		contactIntervalDays: "",
 		lastContact: "",
 		status: "",
 	};
@@ -169,6 +184,8 @@ export function editRelationshipFormValues(
 		toRole: relationship.toRole ?? "",
 		closeness: relationship.closeness === undefined ? "" : String(relationship.closeness),
 		since: relationship.since ?? "",
+		until: relationship.until ?? "",
+		contactIntervalDays: relationship.contactIntervalDays === undefined ? "" : String(relationship.contactIntervalDays),
 		lastContact: relationship.lastContact ?? "",
 		status: relationship.status ?? "",
 	};
@@ -242,6 +259,8 @@ export function buildRelationshipCreateInput(
 	const toRole = optionalString(values.toRole);
 	const closeness = optionalNumber(values.closeness);
 	const since = optionalString(values.since);
+	const until = optionalString(values.until);
+	const contactIntervalDays = optionalNumber(values.contactIntervalDays);
 	const lastContact = optionalString(values.lastContact);
 	if (relationshipId !== undefined) input.relationshipId = relationshipId;
 	if (presetId !== undefined) input.presetId = presetId;
@@ -250,6 +269,8 @@ export function buildRelationshipCreateInput(
 	if (toRole !== undefined) input.toRole = toRole;
 	if (closeness !== undefined) input.closeness = closeness;
 	if (since !== undefined) input.since = since;
+	if (until !== undefined) input.until = until;
+	if (contactIntervalDays !== undefined) input.contactIntervalDays = contactIntervalDays;
 	if (lastContact !== undefined) input.lastContact = lastContact;
 	if (values.status) input.status = values.status;
 	return input;
@@ -288,6 +309,12 @@ export function buildRelationshipUpdates(
 	if (values.since.trim() !== original.since.trim()) {
 		updates.since = optionalString(values.since) ?? null;
 	}
+	if (values.until.trim() !== original.until.trim()) {
+		updates.until = optionalString(values.until) ?? null;
+	}
+	if (values.contactIntervalDays.trim() !== original.contactIntervalDays.trim()) {
+		updates.contactIntervalDays = optionalNumber(values.contactIntervalDays) ?? null;
+	}
 	if (values.lastContact.trim() !== original.lastContact.trim()) {
 		updates.lastContact = optionalString(values.lastContact) ?? null;
 	}
@@ -324,9 +351,16 @@ export class RelationshipFormSession {
 				this.completed = true;
 				return { status: "success", createdFile };
 			}
+			if (!values.fromPath || !values.toPath) {
+				throw new Error("Both relationship endpoints must be selected from indexed people.");
+			}
 			const updates = buildRelationshipUpdates(values, this.mode.original, currentPeople);
 			if (Object.keys(updates).length > 0) {
-				await this.mutations.updateRelationship(this.mode.file, updates);
+				if (this.mode.sourceBaseline) {
+					await this.mutations.updateRelationship(this.mode.file, updates, this.mode.sourceBaseline);
+				} else {
+					await this.mutations.updateRelationship(this.mode.file, updates);
+				}
 			}
 			this.completed = true;
 			return { status: "success" };
@@ -347,19 +381,12 @@ function resolveEndpointPath(
 	people: PersonRecord[],
 	resolveLink: (target: string, sourcePath: string) => string | undefined,
 ): string {
-	const idMatches = people.filter((person) => person.id === reference.target);
-	if (idMatches.length === 1) {
-		const person = idMatches[0];
-		if (person && resolveCanonicalPersonByPath(people, person.filePath)) return person.filePath;
-		return reference.target;
+	const resolution = resolveReference(reference, sourcePath, createReferenceIndex(people), resolveLink);
+	if (resolution.status === "resolved") return resolution.resolved?.filePath ?? "";
+	if (resolution.status === "unresolved" && !people.some((person) => person.filePath === reference.raw)) {
+		return reference.raw;
 	}
-	if (idMatches.length > 1) return reference.target;
-	const resolvedPath = resolveLink(reference.target, sourcePath);
-	if (resolvedPath && resolveCanonicalPersonByPath(people, resolvedPath)) return resolvedPath;
-	const exact = people.find(
-		(person) => person.filePath === reference.target || person.filePath.replace(/\.md$/i, "") === reference.target,
-	);
-	return exact && resolveCanonicalPersonByPath(people, exact.filePath) ? exact.filePath : reference.target;
+	return "";
 }
 
 function resolveUniqueExplicitPersonById(

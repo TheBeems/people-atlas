@@ -33,6 +33,10 @@ const STRICT_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const PLUGIN_ID = /^[a-z]+(?:-[a-z]+)*$/u;
 const PLUGIN_NAME = /^[A-Za-z0-9 +()-]+$/u;
 const execFileAsync = promisify(execFile);
+// Only this complete module shape may read this plugin's own raw recovery data.
+// Any extra statement, parameter, path, operation or different file keeps the ban.
+const BOUNDED_PLUGIN_DATA_SOURCE =
+	/^\s*import\s+type\s*\{\s*App\s*\}\s*from\s*["']obsidian["'];\s*export\s+function\s+readOriginalPluginDataText\s*\(\s*app\s*:\s*App\s*\)\s*:\s*Promise\s*<\s*string\s*>\s*\{\s*return\s+app\.vault\.adapter\.read\(\s*`\$\{app\.vault\.configDir\}\/plugins\/people-atlas\/data\.json`\s*\);\s*\}\s*$/u;
 
 const SOURCE_POLICY_RULES = Object.freeze([
 	["Node.js built-in import", /\bfrom\s+["']node:/u],
@@ -121,8 +125,14 @@ async function inspectSourcePolicies(rootDir, errors) {
 	for (const sourceFile of sourceFiles) {
 		const relativePath = path.relative(rootDir, sourceFile).replaceAll(path.sep, "/");
 		const source = await readFile(sourceFile, "utf8");
+		const dedicatedRecoveryReader = relativePath === "src/settings/plugin-data-source.ts";
+		const approvedRecoverySource = dedicatedRecoveryReader && BOUNDED_PLUGIN_DATA_SOURCE.test(source);
+		if (dedicatedRecoveryReader && !approvedRecoverySource)
+			errors.push(`${relativePath} must contain only the bounded own-plugin recovery reader.`);
 		for (const [description, pattern] of SOURCE_POLICY_RULES) {
-			if (pattern.test(source)) errors.push(`${relativePath} contains prohibited ${description}.`);
+			const boundedRecoveryRead = description === "direct Vault adapter access" && approvedRecoverySource;
+			if (pattern.test(source) && !boundedRecoveryRead)
+				errors.push(`${relativePath} contains prohibited ${description}.`);
 		}
 	}
 	return sourceFiles.length;

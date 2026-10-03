@@ -1,3 +1,5 @@
+import { englishRecovery } from "./recovery";
+
 type MyPersonDescriptionParameters = {
 	name: string;
 	filePath: string;
@@ -47,6 +49,37 @@ type NoteOpenFailureParameters = NoticeErrorParameters & {
 };
 
 export const englishCatalog = {
+	followUpAttention: {
+		filter: "Follow-up status",
+		open: "Open",
+		completed: "Completed",
+		dismissed: "Dismissed",
+		all: "All",
+		noMatches: "No follow-ups with this status.",
+		filteredSummary: ({ count, status, hidden }: { count: string; status: string; hidden: string }) =>
+			`${count} follow-ups · ${status}${hidden ? ` · ${hidden} contact moments hidden` : ""}`,
+		postpone: ({ date }: { date: string }) => `Postpone one week · ${date}`,
+		reopen: "Reopen follow-up",
+		postponed: ({ date }: { date: string }) => `Follow-up postponed to ${date}.`,
+		reopened: "Follow-up reopened.",
+		birthdays: "Birthdays",
+		birthdaysToday: "Birthdays today",
+		birthdaysSoon: "Birthdays in the next 30 days",
+		noBirthdays: "No birthdays in the next 30 days.",
+		age: ({ age }: { age: number }) => `${age} years`,
+		cadence: "Desired contact frequency",
+		noCadence: "No contact intervals with an observed date.",
+		observed: ({ date }: { date: string }) => `Last observed contact: ${date}`,
+		logWith: ({ person }: { person: string }) => `Log contact with ${person}`,
+	},
+	recovery: englishRecovery,
+	discovery: {
+		peoplePopulation: "People to search",
+		followUpPopulation: "Follow-ups for",
+		thisView: "This view",
+		allPeople: "All people",
+		allPeopleInBase: "All people in this Base",
+	},
 	commandOpenAtlas: "Open atlas",
 	commandOpenFollowUps: "Open follow-ups",
 	commandCreatePerson: "Create person",
@@ -202,6 +235,11 @@ export const englishCatalog = {
 		closenessDescription: "Optional value from 1 to 5.",
 		since: "Since",
 		sinceDescription: "Optional relationship start date.",
+		until: "Until",
+		untilDescription: "Optional relationship end date, on or after the start date. Does not change status.",
+		contactIntervalDays: "Desired contact interval (days)",
+		contactIntervalDaysDescription:
+			"Optional positive whole days between contacts. Suggestions require an observed contact date.",
 		lastContact: "Last contact",
 		lastContactDescription: "Optional observation date; it never changes status automatically.",
 		status: "Status",
@@ -314,8 +352,16 @@ export const englishCatalog = {
 		titleEdit: "Edit contact moment",
 		groupPeople: "People",
 		people: "People",
-		peopleDescription:
-			"Choose one or more canonical people. Paths and stable IDs—not display names—are stored as identity.",
+		peopleDescription: "Choose one or more people. Your selection is kept while you search.",
+		searchPeople: "Search people",
+		searchPeoplePlaceholder: "Search by name or note path",
+		selectedPeople: "Selected people",
+		noSelectedPeople: "No people selected",
+		noPeopleFound: "No people found",
+		peopleRequired: "Select at least one person.",
+		peopleResults: ({ count }: { count: string }) => `People found: ${count}`,
+		remove: "Remove",
+		removePerson: ({ name }: { name: string }) => `Remove ${name}`,
 		relationship: "Relationship",
 		relationshipDescription:
 			"Optional. Only canonical relationship notes sharing at least one selected person can advance last contact.",
@@ -376,7 +422,7 @@ export const englishCatalog = {
 		details: "Details",
 		listView: "People Atlas people view",
 		noPeople: "No people in this view",
-		searchPeople: "Search people",
+		searchPeople: "Search people in this view",
 		searchPeoplePlaceholder: "Search by name, role or organisation",
 		noSearchResults: "No people found",
 		peopleInAtlas: "People in this view",
@@ -500,6 +546,64 @@ export const englishCatalog = {
 		photoDecodeError: "Photo unavailable: the image could not be decoded.",
 		photoUnavailable: "Photo unavailable: a safe vault resource could not be prepared.",
 	},
+	networkInsight: {
+		heading: "Network insight",
+		counterpart: "Compare selected person with",
+		chooseCounterpart: "Choose a person",
+		choosePeople: "Select a person in the atlas, then choose a counterpart.",
+		populationDescription:
+			"Uses existing connections within the selected people population. Unresolved and ambiguous people are excluded.",
+		shortestPath: "Shortest connection path",
+		commonContacts: "Common contacts",
+		samePerson: "Both selections refer to the same person.",
+		disconnected: "No connection path exists within this population.",
+		unavailable: "A selected person is no longer uniquely available in this population.",
+		noCommonContacts: "No common contacts within this population.",
+		pathStep: ({ first, second, sources }: { first: string; second: string; sources: string }) =>
+			`${first} ↔ ${second}: ${sources}`,
+		commonContact: ({
+			person,
+			firstSources,
+			secondSources,
+		}: {
+			person: string;
+			firstSources: string;
+			secondSources: string;
+		}) => `${person}. First connection: ${firstSources}. Second connection: ${secondSources}.`,
+		graphOptions: "Network display",
+		layout: "Layout",
+		radial: "Radial network",
+		family: "Family (explicit parent/child roles)",
+		asOfDate: "Relationships on date",
+		asOfDescription:
+			"Optional inclusive start/end-date filter. Undated bounds are unknown; contact moments remain observations.",
+		invalidDate: "Choose a valid YYYY-MM-DD date or clear the field.",
+	},
+	basesOptions: {
+		nameProperty: "Name property",
+		idProperty: "Person ID property",
+		photoProperty: "Photo property",
+		organisationsProperty: "Organisations property",
+		contactsProperty: "Linked people property",
+		birthDateProperty: "Birth date property",
+		pronounsProperty: "Pronouns property",
+		genderProperty: "Gender property",
+		emailsProperty: "Email addresses property",
+		phonesProperty: "Phone numbers property",
+		jobTitleProperty: "Job title property",
+		centerPersonId: "Center person ID",
+		centerMode: "Center",
+		projectionMode: "Projection",
+		hops: "Network distance (whole steps)",
+		maxNodes: "Maximum people (positive whole number)",
+		stateKey: "View state key",
+		showLabels: "Show labels",
+		layoutMode: "Layout",
+		relationshipDate: "Relationships on date (YYYY-MM-DD)",
+		propertyPlaceholder: "Select a property",
+		personIdPlaceholder: "Optional person_id",
+		stateKeyPlaceholder: "Optional stable key for this view",
+	},
 	relationshipRows: {
 		unresolvedSuffix: " (unresolved)",
 		ambiguousSuffix: " (ambiguous)",
@@ -516,6 +620,8 @@ export const englishCatalog = {
 		types: ({ types }: { types: string }) => `Types: ${types}`,
 		status: ({ status }: { status: string }) => `Status: ${status}`,
 		since: ({ since }: { since: string }) => `Since: ${since}`,
+		until: ({ until }: { until: string }) => `Until: ${until}`,
+		contactIntervalDays: ({ days }: { days: number }) => `Desired contact interval: ${days} days`,
 		lastContact: ({ lastContact }: { lastContact: string }) => `Last contact: ${lastContact}`,
 		actionAccessibleName: ({ action, context }: { action: string; context: string }) => `${action} with ${context}`,
 	},

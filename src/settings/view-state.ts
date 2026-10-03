@@ -1,16 +1,33 @@
 import type { ProjectionCenterMode, ProjectionMode } from "../domain/types";
+import { isCalendarDate } from "../domain/calendar-date";
 import type { LayoutSnapshot } from "../render/layout-state";
 
 export const VIEW_STATE_SCHEMA_VERSION = 1;
 export const MAX_CENTER_HISTORY = 20;
 
-export interface AtlasViewState {
+export type AtlasPopulationScope = "current" | "all";
+export type AtlasRendererMode = "graph" | "list" | "follow-ups";
+export type AtlasLayoutMode = "radial" | "family";
+
+export interface AtlasGraphState {
+	layoutMode: AtlasLayoutMode;
+	relationshipDate: string | null;
+}
+
+export interface AtlasBrowseState {
+	rendererMode: AtlasRendererMode;
+	peopleScope: AtlasPopulationScope;
+	followUpScope: AtlasPopulationScope;
+}
+
+export interface AtlasViewState extends Partial<AtlasBrowseState>, Partial<AtlasGraphState> {
 	schemaVersion: number;
 	centerMode: ProjectionCenterMode;
 	projectionMode: ProjectionMode;
 	hops: number;
 	maxNodes: number;
 	centerHistory: string[];
+	selectedCenterId?: string | null;
 	layouts: Record<string, LayoutSnapshot>;
 }
 
@@ -64,6 +81,12 @@ export function normalizeViewState(value: AtlasViewState): AtlasViewState {
 		hops: value.hops,
 		maxNodes: value.maxNodes,
 		centerHistory: history,
+		...(value.selectedCenterId !== undefined ? { selectedCenterId: value.selectedCenterId } : {}),
+		...(value.rendererMode !== undefined ? { rendererMode: value.rendererMode } : {}),
+		...(value.peopleScope !== undefined ? { peopleScope: value.peopleScope } : {}),
+		...(value.followUpScope !== undefined ? { followUpScope: value.followUpScope } : {}),
+		...(value.layoutMode !== undefined ? { layoutMode: value.layoutMode } : {}),
+		...(value.relationshipDate !== undefined ? { relationshipDate: value.relationshipDate } : {}),
 		layouts,
 	};
 }
@@ -77,7 +100,10 @@ export function rememberCenter(state: AtlasViewState, personId: string): AtlasVi
 
 export function buildLayoutKey(
 	viewConfigurationKey: string,
-	state: Pick<AtlasViewState, "centerMode" | "projectionMode" | "hops" | "maxNodes">,
+	state: Pick<
+		AtlasViewState,
+		"centerMode" | "projectionMode" | "hops" | "maxNodes" | "layoutMode" | "relationshipDate"
+	>,
 	centerId?: string,
 	centerPath?: string,
 ): string {
@@ -87,6 +113,8 @@ export function buildLayoutKey(
 		projectionMode: state.projectionMode,
 		hops: state.hops,
 		maxNodes: state.maxNodes,
+		...(state.layoutMode === "family" ? { layoutMode: "family" } : {}),
+		...(state.relationshipDate ? { relationshipDate: state.relationshipDate } : {}),
 		centerId: centerId ?? "",
 		centerPath: centerPath ?? "",
 	});
@@ -111,6 +139,29 @@ function isValidViewState(value: unknown): value is AtlasViewState {
 	if (!Number.isInteger(value.hops) || (value.hops as number) < 0) return false;
 	if (!Number.isInteger(value.maxNodes) || (value.maxNodes as number) <= 0) return false;
 	if (!Array.isArray(value.centerHistory) || value.centerHistory.some((id) => typeof id !== "string")) return false;
+	if (
+		value.selectedCenterId !== undefined &&
+		value.selectedCenterId !== null &&
+		(typeof value.selectedCenterId !== "string" || !value.selectedCenterId.trim())
+	)
+		return false;
+	if (
+		value.rendererMode !== undefined &&
+		value.rendererMode !== "graph" &&
+		value.rendererMode !== "list" &&
+		value.rendererMode !== "follow-ups"
+	)
+		return false;
+	if (value.peopleScope !== undefined && value.peopleScope !== "current" && value.peopleScope !== "all") return false;
+	if (value.followUpScope !== undefined && value.followUpScope !== "current" && value.followUpScope !== "all")
+		return false;
+	if (value.layoutMode !== undefined && value.layoutMode !== "radial" && value.layoutMode !== "family") return false;
+	if (
+		value.relationshipDate !== undefined &&
+		value.relationshipDate !== null &&
+		!isCalendarDate(value.relationshipDate)
+	)
+		return false;
 	if (!isRecord(value.layouts)) return false;
 	return Object.values(value.layouts).every(isValidLayoutSnapshot);
 }

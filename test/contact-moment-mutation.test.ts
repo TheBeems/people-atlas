@@ -4,6 +4,7 @@ import { AtlasMutationService, MutationError } from "../src/mutations/atlas-muta
 import {
 	captureContactMomentEditSourceBaseline,
 	type ContactMomentMutationInput,
+	type ContactMomentFollowUpChangeInput,
 } from "../src/mutations/contact-moment";
 import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import type { PeopleAtlasSettings } from "../src/settings/types";
@@ -1069,5 +1070,174 @@ describe("AtlasMutationService contact moments", () => {
 		harness.entries.delete(path);
 		await expect(harness.service.updateContactMomentFollowUpStatus(reviewed)).rejects.toThrow("no longer available");
 		expect(harness.operations).toHaveLength(writesAfterCompletion);
+	});
+});
+
+describe("guarded follow-up postponement and reopening", () => {
+	function fixture(status?: "open" | "done" | "dismissed", settings = { ...DEFAULT_SETTINGS }) {
+		const harness = createHarness(settings);
+		harness.addCanonicalPeopleAndRelationship("2026-07-01");
+		const path = "People/Contact moments/reviewed-follow-up.md";
+		const note = harness.addNote(
+			path,
+			{
+				type: "contact_moment",
+				contact_moment_id: "reviewed-follow-up",
+				people: ["[[People/Alice]]"],
+				relationship: "[[People/Relationships/Alice - Bob]]",
+				occurred_on: "2026-07-31",
+				follow_up_on: "2026-10-01",
+				channel: "call",
+				summary: "Reviewed summary",
+				custom: { preserve: [1, 2] },
+				...(status ? { follow_up_status: status } : {}),
+			},
+			"## Personal body\nKeep exactly.\n",
+		);
+		harness.contactMomentsById.set("reviewed-follow-up", [path]);
+		const input: ContactMomentFollowUpChangeInput = {
+			filePath: path,
+			contactMomentId: "reviewed-follow-up",
+			reviewedPersonIds: ["person-alice"],
+			reviewedRelationshipId: "relationship-alice-bob",
+			reviewedOccurredOn: "2026-07-31",
+			reviewedFollowUpOn: "2026-10-01",
+			reviewedFollowUpStatus: status,
+			sourceBaseline: captureContactMomentEditSourceBaseline(note.frontmatter, settings),
+			change: { kind: "postpone", followUpOn: "2026-10-10" },
+		};
+		return { harness, note, input, settings };
+	}
+
+	it.each([
+		undefined,
+		"open",
+	] as const)("postpones only the due date while preserving %s status, body and unrelated fields", async (status) => {
+		const { harness, note, input } = fixture(status);
+		const before = structuredClone(note.frontmatter);
+		const relationship = structuredClone(
+			(harness.entries.get("People/Relationships/Alice - Bob.md") as HarnessNote).frontmatter,
+		);
+		const result = await harness.service.changeContactMomentFollowUp(input);
+		expect(result).toMatchObject({ file: note, followUpOn: "2026-10-10", status });
+		expect(note.frontmatter).toEqual({ ...before, follow_up_on: "2026-10-10" });
+		expect(note.body).toBe("## Personal body\nKeep exactly.\n");
+		expect((harness.entries.get("People/Relationships/Alice - Bob.md") as HarnessNote).frontmatter).toEqual(
+			relationship,
+		);
+		expect(harness.committedFrontmatterWrites).toEqual([note.path]);
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toThrow("changed after it was reviewed");
+		expect(harness.committedFrontmatterWrites).toEqual([note.path]);
+	});
+
+	it.each(["done", "dismissed"] as const)("reopens %s by changing only status to open", async (status) => {
+		const { harness, note, input } = fixture(status);
+		const before = structuredClone(note.frontmatter);
+		input.change = { kind: "reopen" };
+		await expect(harness.service.changeContactMomentFollowUp(input)).resolves.toMatchObject({
+			status: "open",
+			followUpOn: "2026-10-01",
+		});
+		expect(note.frontmatter).toEqual({ ...before, follow_up_status: "open" });
+		expect(note.body).toBe("## Personal body\nKeep exactly.\n");
+		expect(harness.committedFrontmatterWrites).toEqual([note.path]);
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toThrow(
+			"status changed after it was reviewed",
+		);
+		expect(harness.committedFrontmatterWrites).toEqual([note.path]);
+	});
+
+	it.each([
+		["stable ID", "contact_moment_id", "other"],
+		["due date", "follow_up_on", "2026-10-02"],
+		["status", "follow_up_status", "done"],
+		["people", "people", ["[[People/Bob]]"]],
+		["occurred date", "occurred_on", "2026-08-01"],
+		["source summary", "summary", "Unreviewed change"],
+	] as const)("rejects stale %s before any write", async (_label, property, changed) => {
+		const { harness, note, input } = fixture();
+		note.frontmatter[property] = changed;
+		harness.syncSource(note);
+		const changedSource = note.source;
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toBeInstanceOf(MutationError);
+		expect(harness.operations).toEqual([]);
+		expect(harness.committedFrontmatterWrites).toEqual([]);
+		expect(note.source).toBe(changedSource);
+	});
+
+	it.each([
+		"date",
+		"status",
+		"summary",
+		"mapping",
+		"ambiguity",
+	])("revalidates %s inside the atomic callback without committing", async (drift) => {
+		const { harness, note, input, settings } = fixture();
+		harness.beforeFrontmatterCallback = (live) => {
+			if (drift === "date") live.frontmatter.follow_up_on = "2026-10-02";
+			if (drift === "status") live.frontmatter.follow_up_status = "dismissed";
+			if (drift === "summary") live.frontmatter.summary = "Changed during Save";
+			if (drift === "mapping") settings.contactMomentFollowUpOnProperty = "rescheduled_on";
+			if (drift === "ambiguity")
+				harness.contactMomentsById.set(input.contactMomentId, [note.path, "Moments/Duplicate.md"]);
+			harness.syncSource(live);
+		};
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toBeInstanceOf(MutationError);
+		expect(harness.committedFrontmatterWrites).toEqual([]);
+		expect(note.frontmatter.follow_up_on).not.toBe("2026-10-10");
+		expect(note.frontmatter.rescheduled_on).toBeUndefined();
+	});
+
+	it("rejects missing and ambiguous canonical notes and unsupported state transitions", async () => {
+		const { harness, note, input } = fixture();
+		await expect(harness.service.changeContactMomentFollowUp({ ...input, change: { kind: "reopen" } })).rejects.toThrow(
+			"completed or dismissed",
+		);
+		await expect(
+			harness.service.changeContactMomentFollowUp({ ...input, change: { kind: "postpone", followUpOn: "2026-09-30" } }),
+		).rejects.toThrow("valid later");
+		harness.contactMomentsById.set(input.contactMomentId, [note.path, "Moments/Duplicate.md"]);
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toThrow("missing or ambiguous");
+		harness.contactMomentsById.set(input.contactMomentId, [note.path]);
+		harness.entries.delete(note.path);
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toThrow("no longer available");
+		expect(harness.operations).toEqual([]);
+	});
+
+	it("rejects in-place person-ID mapping drift even when both mapped identity fields resolve the same people", async () => {
+		const { harness, note, input, settings } = fixture();
+		for (const path of ["People/Alice.md", "People/Bob.md"]) {
+			const person = harness.entries.get(path) as HarnessNote;
+			person.frontmatter.alternate_person_id = person.frontmatter.person_id;
+			harness.syncSource(person);
+		}
+		harness.beforeFrontmatterCallback = () => {
+			settings.personIdProperty = "alternate_person_id";
+		};
+		const before = structuredClone(note.frontmatter);
+		await expect(harness.service.changeContactMomentFollowUp(input)).rejects.toThrow(
+			"property mapping changed after it was reviewed",
+		);
+		expect(harness.committedFrontmatterWrites).toEqual([]);
+		expect(note.frontmatter).toEqual(before);
+	});
+
+	it("serializes queued actions into one write and propagates a save failure with no write", async () => {
+		const { harness, note, input } = fixture();
+		const first = harness.service.changeContactMomentFollowUp(input);
+		const second = harness.service.changeContactMomentFollowUp(input);
+		await expect(second).rejects.toThrow("changed after it was reviewed");
+		await first;
+		expect(harness.committedFrontmatterWrites).toEqual([note.path]);
+		const failing = fixture();
+		failing.harness.beforeFrontmatterCallback = () => {
+			throw new Error("simulated save failure");
+		};
+		const before = failing.note.source;
+		await expect(failing.harness.service.changeContactMomentFollowUp(failing.input)).rejects.toThrow(
+			"simulated save failure",
+		);
+		expect(failing.harness.committedFrontmatterWrites).toEqual([]);
+		expect(failing.note.source).toBe(before);
 	});
 });

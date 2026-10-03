@@ -137,6 +137,20 @@ export class SemanticPeopleList {
 		button?.focus();
 	}
 
+	restoreFocus(nodeId: NodeId | undefined): boolean {
+		const buttons = Array.from(this.peopleList.querySelectorAll<HTMLButtonElement>(".people-atlas-person-button"));
+		const button = buttons.find((candidate) => candidate.dataset.nodeId === nodeId) ?? buttons[0];
+		if (button) {
+			button.focus();
+			return this.element.ownerDocument.activeElement === button;
+		}
+		if (normalizeSearchText(this.searchQuery)) {
+			this.searchInput.focus();
+			return this.element.ownerDocument.activeElement === this.searchInput;
+		}
+		return false;
+	}
+
 	contains(target: Node): boolean {
 		return this.element.contains(target);
 	}
@@ -235,9 +249,23 @@ function personAccessibleName(node: AtlasNode, translator: Translator): string {
 export function matchesPersonSearch(node: AtlasNode, query: string): boolean {
 	const normalizedQuery = normalizeSearchText(query);
 	if (!normalizedQuery) return true;
-	return [node.label, node.jobTitle ?? "", ...node.organisations].some((value) =>
-		normalizeSearchText(value).includes(normalizedQuery),
-	);
+	if (
+		[
+			node.label,
+			...(node.aliases ?? []),
+			node.jobTitle ?? "",
+			...node.organisations,
+			...node.emails,
+			...node.phones,
+		].some((value) => normalizeSearchText(value).includes(normalizedQuery))
+	)
+		return true;
+	const phoneQuery = normalizePhoneSearch(query);
+	return Boolean(phoneQuery && node.phones.some((phone) => normalizePhoneSearch(phone).includes(phoneQuery)));
+}
+
+function normalizePhoneSearch(value: string): string {
+	return /^[+\d\s().-]+$/.test(value.trim()) ? value.replace(/\D/g, "") : "";
 }
 
 export function normalizeSearchText(value: string): string {

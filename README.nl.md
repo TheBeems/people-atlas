@@ -18,6 +18,10 @@ People Atlas brengt personen, expliciete relaties en onopgeloste persoonslinks u
 - Een incrementele vaultindex die alleen gewijzigde bestanden opnieuw verwerkt.
 - Een zelfstandige graafweergave en aangepaste Bases-view op hetzelfde graafmodel.
 - Deterministische layout, pan, zoom, slepen, touchgebaren en een toetsenbordtoegankelijke lijstweergave.
+- Zoeken op naam, alias, werkgegevens, e-mailadres en telefoonnummer binnen deze
+  weergave of een expliciet gekozen volledige toegestane personenverzameling.
+- Bewaarde weergaven, personenkeuzes en middelpunten via stabiele ID's, plus een
+  familie-indeling, datumfilter voor relaties, kortste paden en gedeelde contacten.
 - Gecureerde aanmaak en bewerking van personen, met namen, aliassen, organisaties, foto's, optionele
   profielgegevens en gevalideerde gekoppelde personen.
 - Vault-eigen fotoselectie en profielafbeeldingen, plus begrensde graafavatars
@@ -31,6 +35,9 @@ People Atlas brengt personen, expliciete relaties en onopgeloste persoonslinks u
   en een expliciete Follow-ups-view.
 - `@`-suggesties die wikilinks invoegen en alleen na een expliciete keuze een persoonsnotitie aanmaken.
 - Diagnostiek voor dubbele ID's, onopgeloste wikilinks en kapotte relatie-eindpunten.
+- Alle meldingen filteren, bestaande persoonsnotities na een preview opnemen en
+  persoons-ID's herstellen; oudere ondersteunde instellingen expliciet herstellen
+  met een lokale back-up.
 
 ## Compatibiliteit
 
@@ -74,9 +81,9 @@ Nadat People Atlas is opgenomen:
 7. Gebruik **People Atlas: Log contact** globaal of vanuit een geselecteerde
    canonieke persoon. Gebruik **Edit current contact moment** terwijl een
    contactmomentnotitie actief is.
-8. Gebruik **People Atlas: Open follow-ups** om Overdue, Due today en Upcoming
-   werk te bekijken en een follow-up expliciet als done of dismissed te
-   markeren.
+8. Gebruik **People Atlas: Open follow-ups** voor alle toegestane personen, of
+   **Opvolging** in een atlas voor de huidige verzameling. Bekijk open werk,
+   stel één week uit, rond af of negeer; filter afgeronde historie en heropen.
 
 Relatienotities komen standaard in `People/Relationships/<Eerste persoon> - <Tweede persoon>.md`. Het voorgestelde pad blijft controleerbaar en bestaande notities worden nooit overschreven.
 
@@ -188,11 +195,73 @@ Een canonieke relatie koppelen wijzigt die relatie niet vanzelf. De optionele
 `last_contact`-checkbox begint uitgeschakeld en verhoogt alleen een oudere
 datum; relatiestatus, rollen, typen en templatemetadata blijven ongemoeid.
 Een geselecteerde canonieke persoon toont begrensde recente historie en de
-eerstvolgende open follow-up. De Follow-ups-view groepeert open werk op lokale
-kalenderdatum; done/dismissed-acties wijzigen alleen de ingestelde
-statusproperty van dat contactmoment.
+eerstvolgende open follow-up. **Opvolgstatus** begint op **Open**, met filters voor
+**Afgerond**, **Genegeerd** en **Alles**. Afgeronde regels behouden hun status en
+worden niet als achterstallig werk getoond. Afronden/negeren/heropenen wijzigt
+alleen de status. **Eén week uitstellen** toont de nieuwe datum en wijzigt alleen
+de opvolgdatum: zeven kalenderdagen na vandaag of de bestaande opvolgdatum,
+afhankelijk van welke later valt. Gewijzigde bronnen moeten opnieuw worden bekeken.
+
+Dezelfde personenverzameling toont verjaardagen vandaag en in de komende 30
+kalenderdagen. Leeftijd verschijnt alleen bij een bekend geboortejaar; 29 februari
+verschijnt alleen in een schrikkeljaar. Gewenste contactintervallen leveren
+suggesties op basis van vastgelegde contacten, met een expliciete actie om contact
+te registreren. Openen of annuleren wijzigt geen notities; het bijwerken van de
+relatie begint uitgeschakeld.
+
+**Personen doorzoeken** en **Opvolging voor** bieden onafhankelijk **Deze weergave**
+of **Alle personen**. Alle personen gebruikt de volledige verzameling vóór de
+graaflimiet en het netwerk-/datumfilter. Binnen Bases heet dit **Alle personen in
+deze Base** en worden de Base-filters nooit verruimd. Opvolging voor alle personen
+gebruikt de huidige kalenderdag, ook bij een historisch netwerk; netwerkvergelijkingen
+behouden de gekozen datum. Zoeken of een resultaat selecteren verplaatst het
+middelpunt of de camera niet. Details en acties van die exacte persoon blijven
+beschikbaar buiten de graaf. Elke weergave bewaart modus en personenkeuzes;
+middelpunten worden ook na een hernoeming via hun stabiele ID hersteld.
 
 Voorbeelden staan onder [`examples/`](examples/).
+
+Optionele velden op relatienotities zijn `until: JJJJ-MM-DD` en
+`contact_interval_days: 30`: een inclusieve einddatum en een gewenst positief
+geheel aantal dagen tussen contacten. De einddatum mag niet vóór `since` liggen.
+Een leeg veld verwijdert de waarde alleen na expliciet opslaan. Status, rollen en
+`last_contact` veranderen hierdoor niet. Ongeldige invoer geeft diagnostiek en
+wordt niet stilzwijgend aangepast. Contactsuggesties vereisen een vastgelegde
+contactdatum; beëindigde en onduidelijke relaties worden uitgesloten.
+
+Beide atlasweergaven bieden **Relaties op datum**, een optioneel filter vóór de
+netwerkselectie, en een **Familie**-indeling. Ontbrekende datumgrenzen blijven
+onbekend. Contactmomenten blijven waarnemingen en zijn zichtbaar wanneer alle
+deelnemers bij de toegestane personenverzameling horen. Alleen expliciete
+`parent`/`child`-rolparen bepalen familiegeneraties; cycli en tegenstrijdigheden
+krijgen een vaste vlakke indeling. Radiaal blijft standaard. Keuzes en verschoven
+posities worden per weergave bewaard.
+
+Selecteer een persoon en open **Netwerkinzicht** om een tweede persoon te kiezen.
+Kortste verbindingspaden en gemeenschappelijke contacten gebruiken bestaande
+verbindingen, onderscheiden relatienotities van gekoppelde personen en sluiten
+onopgeloste of onduidelijke personen uit. Bases-filters begrenzen ook dit
+overzicht. De voorbeelden [`Family.base`](examples/Family.base),
+[`Work.base`](examples/Work.base) en [`Follow-up.base`](examples/Follow-up.base)
+bevatten opgeslagen atlas- en tabelweergaven. Pas hun map-, organisatie- en
+veldfilters aan je vault aan; kies **Opvolging** in de opvolgatlas voor de gedeelde
+wachtrij.
+
+**People Atlas: Alle meldingen openen** biedt alle meldingen met filters en
+acties voor de exacte bron. **Bestaande persoonsnotities opnemen** toont vooraf
+classificatie, veldkoppelingen en voorgestelde ID's op het bestaande pad. Unieke
+ingevulde ID's, notitie-inhoud en overige properties blijven behouden. Bij dubbele
+ID's krijgt alleen de gekozen notitie een nieuw ID; verwijzingen via ID moeten
+apart worden bekeken. Resultaten staan per notitie; afgeronde regels worden bij
+opnieuw proberen niet nogmaals toegepast. Base-meldingen en herstelfouten tonen
+alleen de toegestane broncontext.
+
+**Herstel van oudere instellingen bekijken** ondersteunt het onderzochte schema 7.
+Bekijk behouden/aangepaste/standaard ingestelde en niet ondersteunde velden, en kies
+de People-hoofdmap vóór bevestiging. De exacte oorspronkelijke plugingegevens
+blijven lokaal bewaard als herstelback-up, ook na latere instellingenwijzigingen.
+Dit verplaatst of migreert geen notities. Niet ondersteunde, toekomstige of
+ongeldige configuraties blijven alleen-lezen.
 
 ## Privacy en gegevenstoegang
 
@@ -204,6 +273,8 @@ Voorbeelden staan onder [`examples/`](examples/).
 - Persoons-, relatie- en contactmomentnotities worden alleen na een expliciete
   gebruikersactie en validatie aangemaakt of gewijzigd.
 - Plugininstellingen en viewstate worden via Obsidian's plugin-data-API opgeslagen.
+- Expliciet instellingenherstel leest alleen het lokale `data.json` van deze
+  plugin voor een exacte back-up; normaal laden en opslaan blijft via de plugin-data-API.
 
 ## Ontwikkeling
 
@@ -228,6 +299,12 @@ npm run verify:reproducible
 ```
 
 `npm run check` omvat formattering, lint, typen, tests, productiebuild, releasemetadata, bundelgrootte en het Community Plugins-contract. Met `npm run community:check` kan alleen dat laatste contract worden uitgevoerd.
+
+Browsertests gebruiken standaard Playwrights beheerde Chromium. Om expliciet de
+geïnstalleerde Edge te testen, stel `PEOPLE_ATLAS_BROWSER_CHANNEL=msedge` in
+(PowerShell: `$env:PEOPLE_ATLAS_BROWSER_CHANNEL='msedge'`) en gebruik dezelfde
+opdrachten. Dit geldt ook voor integratie- en DPR-tests; vermeld de gekozen browser
+bij de resultaten. Deze gecontroleerde tests vervangen testen in Obsidian niet.
 
 De releasetag moet zonder `v`-prefix exact overeenkomen met `manifest.json.version`. De workflow controleert de remote tag-SHA, herhaalt de buildgates, attesteert de artifacts en publiceert uitsluitend `main.js`, `manifest.json` en `styles.css`.
 

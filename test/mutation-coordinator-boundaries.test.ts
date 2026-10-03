@@ -13,6 +13,8 @@ import type {
 	ContactMomentRelationshipRetryToken,
 	ContactMomentMutationResult,
 	ContactMomentFollowUpStatusMutationResult,
+	ContactMomentFollowUpChangeInput,
+	ContactMomentFollowUpChangeResult,
 } from "../src/mutations/contact-moment";
 import type {
 	PersonEditOptions,
@@ -41,6 +43,7 @@ const momentSaveOptions = {} as ContactMomentSaveOptions;
 const momentUpdates = {} as ContactMomentUpdates;
 const momentUpdateOptions = {} as ContactMomentUpdateOptions;
 const followUpInput = {} as ContactMomentFollowUpStatusMutationInput;
+const followUpChangeInput = {} as ContactMomentFollowUpChangeInput;
 const retryToken = {} as ContactMomentRelationshipRetryToken;
 
 describe("mutation coordinators", () => {
@@ -93,6 +96,7 @@ describe("mutation coordinators", () => {
 			relationship: { status: "not-requested", message: "ok" },
 		} satisfies ContactMomentMutationResult;
 		const statusResult = { file, status: "done" } satisfies ContactMomentFollowUpStatusMutationResult;
+		const changeResult = { file, status: "open", followUpOn: "2026-10-10" } satisfies ContactMomentFollowUpChangeResult;
 		const retryResult = { status: "error", message: "retry" } satisfies ContactMomentRelationshipRetryResult;
 		const contact = new ContactMomentMutationCoordinator({
 			createContactMoment: async () => {
@@ -107,6 +111,10 @@ describe("mutation coordinators", () => {
 				calls.push("status");
 				return statusResult;
 			},
+			changeContactMomentFollowUp: async () => {
+				calls.push("change-follow-up");
+				return changeResult;
+			},
 			retryContactMomentRelationship: async () => {
 				calls.push("retry");
 				return retryResult;
@@ -116,7 +124,8 @@ describe("mutation coordinators", () => {
 		expect(await contact.createContactMoment(momentInput, momentSaveOptions)).toBe(success);
 		expect(await contact.updateContactMoment(file, momentInput, momentUpdates, momentUpdateOptions)).toBe(success);
 		expect(await contact.updateContactMomentFollowUpStatus(followUpInput)).toBe(statusResult);
+		expect(await contact.changeContactMomentFollowUp(followUpChangeInput)).toBe(changeResult);
 		expect(await contact.retryContactMomentRelationship(retryToken)).toBe(retryResult);
-		expect(calls).toEqual(["create", "update", "status", "retry"]);
+		expect(calls).toEqual(["create", "update", "status", "change-follow-up", "retry"]);
 	});
 });

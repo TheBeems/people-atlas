@@ -102,6 +102,7 @@ function mountModal(options?: {
 	const openFile = vi.fn(async () => undefined);
 	const app = {
 		metadataCache: {
+			getFileCache: () => ({ frontmatter: {} }),
 			getFirstLinkpathDest: (target: string) => {
 				const person = people.find(
 					(candidate) =>
@@ -216,6 +217,37 @@ afterEach(() => {
 });
 
 describe("relationship modal", () => {
+	it("shows authored period/cadence fields and submits only explicit edits", async () => {
+		const relationship: RelationshipRecord = {
+			id: "r-period",
+			filePath: "People/Relationships/Period.md",
+			from: { raw: alice.id, target: alice.id, kind: "id" },
+			to: { raw: bob.id, target: bob.id, kind: "id" },
+			types: [],
+			since: "2024-02-29",
+			until: "2026-10-03",
+			contactIntervalDays: 30,
+		};
+		const { content, updateRelationship } = mountModal({
+			mode: { kind: "edit", file: { path: relationship.filePath } as TFile, relationship },
+			people: [alice, bob],
+		});
+		const until = inputForLabel(content, "Until");
+		const interval = inputForLabel(content, "Desired contact interval (days)");
+		expect(until.type).toBe("date");
+		expect(until.value).toBe("2026-10-03");
+		expect(interval.type).toBe("number");
+		expect(interval.min).toBe("1");
+		expect(interval.value).toBe("30");
+		setInput(interval, "0");
+		buttonWithText(content, "Save").click();
+		expect(updateRelationship).not.toHaveBeenCalled();
+		setInput(interval, "14");
+		setInput(until, "");
+		buttonWithText(content, "Save").click();
+		await expect.poll(() => updateRelationship.mock.calls.length).toBe(1);
+		expect(updateRelationship.mock.calls[0]?.[1]).toEqual({ until: null, contactIntervalDays: 14 });
+	});
 	it("collapses the shortcut and template conveniences by default, keeping only the core relationship fields visible", () => {
 		const { content } = mountModal();
 		const section = Array.from(
@@ -1212,7 +1244,13 @@ describe("relationship modal", () => {
 
 		buttonWithText(content, "Save").click();
 
-		await vi.waitFor(() => expect(updateRelationship).toHaveBeenCalledWith(file, { closeness: 3 }));
+		await vi.waitFor(() =>
+			expect(updateRelationship).toHaveBeenCalledWith(
+				file,
+				{ closeness: 3 },
+				expect.objectContaining({ path: file.path, signature: expect.any(String) }),
+			),
+		);
 		await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
 		expect(afterClose).toHaveBeenCalledOnce();
 		expect(openFile).not.toHaveBeenCalled();

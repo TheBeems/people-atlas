@@ -39,7 +39,7 @@ export function appendRelationshipPersonPicker(
 	input.type = "search";
 	const initiallySelectedPerson = options.people.find((person) => person.filePath === options.value);
 	let selectedPath = options.value;
-	input.value = initiallySelectedPerson?.name ?? "";
+	input.value = initiallySelectedPerson?.name ?? options.value;
 	input.autocomplete = "off";
 	input.setAttribute("aria-describedby", descriptionId);
 	input.setAttribute("role", "combobox");

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { glob, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -6,9 +6,11 @@ import { collectIntegrationTestFiles, runIntegrationTests } from "../scripts/run
 
 test("enumerates every integration test file in deterministic order", async () => {
 	const files = await collectIntegrationTestFiles(process.cwd());
+	const expectedFiles: string[] = [];
+	for await (const file of glob("test/integration/*.integration.test.ts")) expectedFiles.push(path.normalize(file));
 
-	expect(files).toHaveLength(9);
-	expect(files).toEqual([...files].sort());
+	expect(files).toEqual(expectedFiles.sort());
+	expect(files).toContain(path.join("test", "integration", "atlas-ui.integration.test.ts"));
 	expect(files.every((file) => file.endsWith(".integration.test.ts"))).toBe(true);
 });
 

@@ -1,0 +1,19 @@
+filters:
+  and:
+    - 'file.ext == "md"'
+    - 'type == "person"'
+    - 'file.inFolder("People")'
+views:
+  - type: people-atlas
+    name: Family network
+    stateKey: family-example
+    centerMode: none
+    projectionMode: free-network
+    layoutMode: family
+    maxNodes: 500
+  - type: table
+    name: People and birthdays
+    order:
+      - note.name
+      - note.person_id
+      - note.birth_date

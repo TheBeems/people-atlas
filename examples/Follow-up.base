@@ -1,0 +1,25 @@
+filters:
+  and:
+    - 'file.ext == "md"'
+views:
+  - type: people-atlas
+    name: Follow-up population
+    stateKey: follow-up-example
+    filters:
+      and:
+        - 'type == "person"'
+    centerMode: none
+    projectionMode: free-network
+    maxNodes: 500
+  - type: table
+    name: Open follow-up notes
+    filters:
+      and:
+        - 'type == "contact_moment"'
+        - 'follow_up_on != null'
+        - 'follow_up_status == null || follow_up_status == "open"'
+    order:
+      - note.follow_up_on
+      - note.people
+      - note.summary
+      - note.follow_up_status

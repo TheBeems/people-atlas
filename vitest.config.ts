@@ -56,6 +56,8 @@ const dispatchTouch = defineBrowserCommand<[selector: string, steps: CdpTouchSte
 );
 
 const browserMatrixFactors = [1, 1.5, 2] as const satisfies readonly BrowserMatrixFactor[];
+const browserChannel = process.env.PEOPLE_ATLAS_BROWSER_CHANNEL?.trim();
+const launchOptions = browserChannel ? { channel: browserChannel } : {};
 
 export default defineConfig({
 	resolve: {
@@ -70,6 +72,8 @@ export default defineConfig({
 				test: {
 					name: "node",
 					environment: "node",
+					// Bound subprocess contention while retaining every assertion and timeout.
+					maxWorkers: 4,
 					include: ["test/**/*.test.ts"],
 					exclude: [
 						"test/browser/**/*.browser.test.ts",
@@ -86,7 +90,7 @@ export default defineConfig({
 					browser: {
 						enabled: true,
 						headless: true,
-						provider: playwright(),
+						provider: playwright({ launchOptions }),
 						instances: [{ browser: "chromium" }],
 						commands: {
 							dispatchTouch,
@@ -102,7 +106,7 @@ export default defineConfig({
 					browser: {
 						enabled: true,
 						headless: true,
-						provider: playwright(),
+						provider: playwright({ launchOptions }),
 						instances: [{ browser: "chromium" }],
 					},
 				},
@@ -120,6 +124,7 @@ export default defineConfig({
 							browser: "chromium",
 							name: `chromium-dpr-${factor}`,
 							provider: playwright({
+								launchOptions,
 								contextOptions: {
 									deviceScaleFactor: factor,
 								},

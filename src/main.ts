@@ -15,11 +15,23 @@ import { PersonIndex } from "./index/person-index";
 import { AtlasMutationService } from "./mutations/atlas-mutation-service";
 import { CanonicalEntryPointResolver, type CanonicalContactMomentResolution } from "./entrypoints/canonical-resolution";
 import { captureContactMomentEditSourceBaseline } from "./mutations/contact-moment";
+import { isCalendarDate } from "./domain/calendar-date";
 import { capturePersonEditSourceBaseline } from "./mutations/person-source-guard";
 import { PersonMentionSuggest } from "./editor/person-mention-suggest";
 import { PersonModal } from "./editor/person-modal";
+import { DiagnosticsModal } from "./editor/diagnostics-modal";
+import { PersonRecoveryModal } from "./editor/person-recovery-modal";
 import { DEFAULT_SETTINGS } from "./settings/defaults";
 import { loadPluginSettings } from "./settings/load";
+import {
+	canRecoverSettings,
+	saveReviewedSettingsRecovery,
+	settingsDataWithBackup,
+	type SettingsRecoveryBackup,
+	type SettingsRecoveryPreview,
+} from "./settings/recovery";
+import { SettingsRecoveryModal } from "./settings/recovery-modal";
+import { readOriginalPluginDataText } from "./settings/plugin-data-source";
 import { PeopleAtlasSettingTab } from "./settings/settings-tab";
 import type { PeopleAtlasSettings } from "./settings/types";
 import {
@@ -48,7 +60,13 @@ import {
 } from "./domain/partner-parent-confirmation";
 import { ContactMomentModal } from "./editor/contact-moment-modal";
 import type { ContactMomentFormContext } from "./editor/contact-moment-form";
-import type { ContactMomentRecord, ContactMomentSummary, PersonRecord, RelationshipRecord } from "./domain/types";
+import type {
+	AtlasDiagnostic,
+	ContactMomentRecord,
+	ContactMomentSummary,
+	PersonRecord,
+	RelationshipRecord,
+} from "./domain/types";
 import { parseAtlasFile } from "./index/frontmatter";
 import type { RelationshipPreset } from "./settings/relationship-presets";
 import { validateRelationshipRoleFormat, validateStoredRelationshipPresets } from "./settings/relationship-presets";
@@ -74,6 +92,8 @@ export default class PeopleAtlasPlugin extends Plugin {
 	readonly t: Translator = createTranslator(getLanguage());
 	readonly index = new PersonIndex(this.app, () => this.settings);
 	private settingsWriteEnabled = true;
+	private originalSettingsData: unknown;
+	private settingsRecoveryBackup: SettingsRecoveryBackup | undefined;
 	private lifecycleGeneration = 0;
 	private readonly renderedNoteActionDocumentIds = new Set<string>();
 	private readonly viewStateWrites = new ViewStateWriteCoordinator((viewConfigurationKey, state) =>
@@ -124,9 +144,11 @@ export default class PeopleAtlasPlugin extends Plugin {
 
 	override async onload(): Promise<void> {
 		const lifecycleGeneration = ++this.lifecycleGeneration;
-		const loaded = loadPluginSettings(await this.loadData());
+		this.originalSettingsData = await this.loadData();
+		const loaded = loadPluginSettings(this.originalSettingsData);
 		this.settings = loaded.settings;
 		this.settingsWriteEnabled = loaded.writeEnabled;
+		this.settingsRecoveryBackup = loaded.recoveryBackup;
 		if (loaded.error) new Notice(this.t.noticeSettingsLoadFailed({ error: loaded.error }));
 
 		this.registerView(VIEW_TYPE_PEOPLE_ATLAS, (leaf) => new PeopleAtlasView(leaf, this));
@@ -136,7 +158,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 				icon: "map",
 				factory: (controller: QueryController, containerEl: HTMLElement) =>
 					new PeopleAtlasBasesView(controller, containerEl, this),
-				options: buildBasesOptions,
+				options: () => buildBasesOptions(this.t),
 			});
 		}
 
@@ -185,6 +207,21 @@ export default class PeopleAtlasPlugin extends Plugin {
 			id: "rebuild-index",
 			name: this.t.commandRebuildIndex,
 			callback: () => this.index.rebuildAll(),
+		});
+		this.addCommand({
+			id: "open-diagnostics",
+			name: this.t.recovery.commandDiagnostics,
+			callback: () => this.openDiagnostics(),
+		});
+		this.addCommand({
+			id: "adopt-person-notes",
+			name: this.t.recovery.commandAdopt,
+			callback: () => this.openPersonAdoption(),
+		});
+		this.addCommand({
+			id: "recover-older-settings",
+			name: this.t.recovery.commandSettings,
+			callback: () => void this.openSettingsRecovery(),
 		});
 		this.addSettingTab(new PeopleAtlasSettingTab(this));
 		this.registerEditorSuggest(
@@ -263,7 +300,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			}
 			this.settings = next;
 			try {
-				await this.saveData(this.settings);
+				await this.saveData(settingsDataWithBackup(this.settings, this.settingsRecoveryBackup));
 				return true;
 			} catch (error) {
 				this.settings = previous;
@@ -281,6 +318,100 @@ export default class PeopleAtlasPlugin extends Plugin {
 
 	canWritePeopleAtlasData(): boolean {
 		return this.settingsWriteEnabled;
+	}
+
+	openDiagnostics(diagnostics?: readonly AtlasDiagnostic[], allowedSourcePaths?: ReadonlySet<string>): void {
+		new DiagnosticsModal(
+			this.app,
+			diagnostics ?? this.index.getSnapshot().diagnostics ?? [],
+			(path) => {
+				if (!allowedSourcePaths || allowedSourcePaths.has(path)) void this.openDiagnosticSource(path);
+			},
+			(diagnostic, path) => {
+				if (allowedSourcePaths && !allowedSourcePaths.has(path)) return;
+				if (diagnostic.code === "missing-person-id" || diagnostic.code === "duplicate-person-id") {
+					if (!this.canWritePeopleAtlasData()) {
+						this.noticePersonWritesDisabled();
+						return;
+					}
+					new PersonRecoveryModal(
+						this.app,
+						this.mutations,
+						this.t,
+						diagnostic.code === "missing-person-id" ? "missing-id" : "duplicate-id",
+						[path],
+						allowedSourcePaths,
+					).open();
+				} else if (!this.openEditRelationship(path)) void this.openDiagnosticSource(path);
+			},
+			this.t,
+			allowedSourcePaths,
+		).open();
+	}
+
+	openPersonAdoption(): void {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticePersonWritesDisabled();
+			return;
+		}
+		new PersonRecoveryModal(this.app, this.mutations, this.t).open();
+	}
+
+	private async openDiagnosticSource(path: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile) || file.path !== path || file.extension !== "md") {
+			new Notice(`The exact Markdown source “${path}” is unavailable.`);
+			return;
+		}
+		try {
+			await this.app.workspace.getLeaf("tab").openFile(file);
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	canRecoverOlderSettings(): boolean {
+		return !this.settingsWriteEnabled && canRecoverSettings(this.originalSettingsData);
+	}
+
+	async openSettingsRecovery(): Promise<void> {
+		if (!this.canRecoverOlderSettings()) {
+			new Notice(this.t.recovery.settingsUnavailable);
+			return;
+		}
+		try {
+			const originalText = await this.readOriginalSettingsText();
+			new SettingsRecoveryModal(
+				this.app,
+				this.originalSettingsData,
+				originalText,
+				(preview) => this.recoverReviewedSettings(preview),
+				this.t,
+			).open();
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private readOriginalSettingsText(): Promise<string> {
+		return readOriginalPluginDataText(this.app);
+	}
+
+	private async recoverReviewedSettings(preview: SettingsRecoveryPreview): Promise<void> {
+		await this.viewStateWrites.serialize(async () => {
+			if (!this.canRecoverOlderSettings()) throw new Error(this.t.recovery.settingsUnavailable);
+			const saved = await saveReviewedSettingsRecovery(
+				preview,
+				() => this.readOriginalSettingsText(),
+				(data) => this.saveData(data),
+			);
+			this.settings = saved.settings;
+			this.settingsRecoveryBackup = saved.backup;
+			this.settingsWriteEnabled = true;
+		});
+		this.index.rebuildAll();
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PEOPLE_ATLAS))
+			if (leaf.view instanceof PeopleAtlasView) leaf.view.onSettingsChanged();
 	}
 
 	getRelationshipPresetSyncChanges(presetId: string): RelationshipPresetSyncChange[] {
@@ -435,7 +566,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 			},
 		};
 		try {
-			await this.saveData(this.settings);
+			await this.saveData(settingsDataWithBackup(this.settings, this.settingsRecoveryBackup));
 		} catch (error) {
 			this.settings = previous;
 			new Notice(this.t.noticeViewStateSaveFailed({ error: error instanceof Error ? error.message : String(error) }));
@@ -670,7 +801,7 @@ export default class PeopleAtlasPlugin extends Plugin {
 		return true;
 	}
 
-	openLogContact(prefilledPersonPath?: string): boolean {
+	openLogContact(prefilledPersonPath?: string, prefilledRelationshipPath?: string): boolean {
 		if (!this.canWritePeopleAtlasData()) {
 			this.noticeContactMomentWritesDisabled();
 			return false;
@@ -690,11 +821,16 @@ export default class PeopleAtlasPlugin extends Plugin {
 			}
 		}
 		const context = this.contactMomentContext();
+		if (prefilledRelationshipPath && !this.resolveCanonicalRelationship(prefilledRelationshipPath)) {
+			this.noticeRelationshipUnavailable();
+			return false;
+		}
 		new ContactMomentModal(
 			this.app,
 			{
 				kind: "create",
 				...(canonicalPrefillPath ? { prefilledPersonPath: canonicalPrefillPath } : {}),
+				...(prefilledRelationshipPath ? { prefilledRelationshipPath } : {}),
 			},
 			context,
 			this.mutations,
@@ -817,6 +953,68 @@ export default class PeopleAtlasPlugin extends Plugin {
 				status,
 			});
 			new Notice(status === "done" ? this.t.noticeFollowUpMarkedDone : this.t.noticeFollowUpDismissed);
+			return true;
+		} catch (error) {
+			new Notice(this.t.noticeFollowUpChangeFailed({ error: error instanceof Error ? error.message : String(error) }));
+			return false;
+		}
+	}
+
+	canChangeContactMomentFollowUp(moment: ContactMomentSummary, action: "postpone" | "reopen"): boolean {
+		if (!this.canWritePeopleAtlasData() || !isCalendarDate(moment.followUpOn)) return false;
+		const open = moment.followUpStatus === undefined || moment.followUpStatus === "open";
+		if (action === "postpone" ? !open : moment.followUpStatus !== "done" && moment.followUpStatus !== "dismissed")
+			return false;
+		const target = this.resolveCanonicalContactMomentSummary(moment);
+		const indexed = this.resolveIndexedContactMomentSummary(moment);
+		return Boolean(
+			target &&
+				indexed?.actionable &&
+				indexed.followUpOn === moment.followUpOn &&
+				indexed.followUpStatus === moment.followUpStatus &&
+				target.contactMoment.followUpOn === moment.followUpOn &&
+				target.contactMoment.followUpStatus === moment.followUpStatus &&
+				target.contactMoment.summary === moment.summary &&
+				target.contactMoment.channel === moment.channel,
+		);
+	}
+
+	async changeContactMomentFollowUp(
+		moment: ContactMomentSummary,
+		action: "postpone" | "reopen",
+		reviewedDate?: string,
+	): Promise<boolean> {
+		if (!this.canWritePeopleAtlasData()) {
+			this.noticeContactMomentWritesDisabled();
+			return false;
+		}
+		const target = this.resolveCanonicalContactMomentSummary(moment);
+		if (
+			!target ||
+			!this.canChangeContactMomentFollowUp(moment, action) ||
+			!moment.followUpOn ||
+			(action === "postpone" && (!isCalendarDate(reviewedDate) || reviewedDate <= moment.followUpOn))
+		) {
+			new Notice(this.t.noticeFollowUpUnavailable);
+			return false;
+		}
+		try {
+			await this.mutations.changeContactMomentFollowUp({
+				filePath: moment.filePath,
+				contactMomentId: moment.id,
+				reviewedPersonIds: [...moment.personIds],
+				...(moment.relationshipId ? { reviewedRelationshipId: moment.relationshipId } : {}),
+				reviewedOccurredOn: moment.occurredOn,
+				reviewedFollowUpOn: moment.followUpOn,
+				reviewedFollowUpStatus: moment.followUpStatus,
+				sourceBaseline: target.sourceBaseline,
+				change: action === "postpone" ? { kind: "postpone", followUpOn: reviewedDate as string } : { kind: "reopen" },
+			});
+			new Notice(
+				action === "postpone"
+					? this.t.followUpAttention.postponed({ date: this.t.formatDateOnly(reviewedDate as string) })
+					: this.t.followUpAttention.reopened,
+			);
 			return true;
 		} catch (error) {
 			new Notice(this.t.noticeFollowUpChangeFailed({ error: error instanceof Error ? error.message : String(error) }));

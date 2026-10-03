@@ -31,6 +31,8 @@ export const DEFAULT_SETTINGS: PeopleAtlasSettings = {
 	relationshipToRoleProperty: "to_role",
 	closenessProperty: "closeness",
 	sinceProperty: "since",
+	untilProperty: "until",
+	contactIntervalDaysProperty: "contact_interval_days",
 	lastContactProperty: "last_contact",
 	statusProperty: "status",
 	contactMomentIdProperty: "contact_moment_id",

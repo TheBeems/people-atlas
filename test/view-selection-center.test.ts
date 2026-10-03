@@ -89,8 +89,9 @@ function standaloneHarness(): StandaloneHarness {
 		viewConfigurationKey: "standalone",
 		fullSnapshot,
 		plugin: { index: { getSnapshot: () => ({ people: [{ id: alice.id, filePath: alice.filePath as string }] }) } },
-		renderer: { setGraph: vi.fn() },
+		renderer: { setGraph: vi.fn(), getPersonSnapshot: vi.fn() },
 	});
+	Object.assign(harness.plugin, { saveViewState: vi.fn() });
 	return harness;
 }
 
@@ -99,11 +100,13 @@ function basesHarness(): BasesHarness {
 	Object.assign(harness, {
 		selectedPath: undefined,
 		selectedCenterPath: undefined,
+		config: { get: vi.fn(), name: "Selection test" },
 		plugin: { index: { getSnapshot: () => ({ people: [{ id: alice.id, filePath: alice.filePath as string }] }) } },
 		renderSelectionActions: vi.fn(),
 		readCenterMode: vi.fn(() => "selected-node"),
 		onDataUpdated: vi.fn(),
 	});
+	Object.assign(harness.plugin, { getViewState: () => structuredClone(DEFAULT_VIEW_STATE), saveViewState: vi.fn() });
 	return harness;
 }
 

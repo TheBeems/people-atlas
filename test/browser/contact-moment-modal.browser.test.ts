@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import { TFile as StubTFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { createTranslator, type Translator } from "../../src/i18n";
 import type { PersonRecord, RelationshipRecord } from "../../src/domain/types";
 import { ContactMomentModal, type ContactMomentModalMode } from "../../src/editor/contact-moment-modal";
@@ -193,6 +194,99 @@ afterEach(() => {
 });
 
 describe("contact-moment modal", () => {
+	it("keeps explicit same-name selections across searches and updates dependents only when selection changes", async () => {
+		const otherBob = { ...bob, id: "person-other-bob", filePath: "People/Other Bob.md" };
+		const mounted = mountModal({ context: { ...context, people: [alice, bob, otherBob] } });
+		const selectedPaths = () =>
+			Array.from(
+				mounted.content.querySelectorAll<HTMLElement>(".people-atlas-contact-selected li"),
+				(row) => row.dataset.personPath,
+			);
+		const relationshipSelect = selectForLabel(mounted.content, "Relationship");
+		relationshipSelect.value = relationship.filePath;
+		relationshipSelect.dispatchEvent(new Event("change", { bubbles: true }));
+		const path = inputForLabel(mounted.content, "Contact moment note path");
+		const initialPath = path.value;
+		const search = page.getByRole("searchbox", { name: "Search people", exact: true });
+		await search.fill("bob");
+		await page.getByRole("checkbox", { name: `Bob — ${bob.filePath}`, exact: true }).click();
+		await page.getByRole("checkbox", { name: `Bob — ${otherBob.filePath}`, exact: true }).click();
+		expect(selectedPaths()).toEqual([alice.filePath, bob.filePath, otherBob.filePath]);
+		await search.fill("no matches");
+		expect(mounted.content.textContent).toContain("No people found");
+		expect(selectedPaths()).toEqual([alice.filePath, bob.filePath, otherBob.filePath]);
+		expect(path.value).toBe(initialPath);
+		expect(relationshipSelect.value).toBe(relationship.filePath);
+		await userEvent.keyboard("{Enter}");
+		expect(mounted.createContactMoment).not.toHaveBeenCalled();
+		await page.getByRole("button", { name: "Remove Alice", exact: true }).click();
+		expect(path.value).toContain(" - Bob - ");
+		await page.getByRole("button", { name: `Remove Bob — ${bob.filePath}`, exact: true }).click();
+		expect(selectedPaths()).toEqual([otherBob.filePath]);
+		expect(relationshipSelect.value).toBe("");
+		await search.fill("Other Bob.md");
+		expect(mounted.content.querySelectorAll(".people-atlas-contact-candidates input")).toHaveLength(1);
+		await search.fill("");
+		expect(mounted.content.querySelector<HTMLInputElement>(`input[value="${otherBob.filePath}"]`)?.checked).toBe(true);
+		expect(mounted.createContactMoment).not.toHaveBeenCalled();
+		mounted.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+		await vi.waitFor(() => expect(mounted.createContactMoment).toHaveBeenCalledOnce());
+		expect(mounted.createContactMoment.mock.calls[0]?.[0].people).toEqual([
+			{ id: otherBob.id, filePath: otherBob.filePath },
+		]);
+	});
+
+	it("preserves edit prefill and supports keyboard selection without writes before cancel", async () => {
+		const path = "People/Contact moments/Existing.md";
+		const mounted = mountModal({
+			translator: createTranslator("nl"),
+			mode: {
+				kind: "edit",
+				file: mountedFile(path),
+				sourceBaseline: { signature: "reviewed-source" },
+				record: {
+					id: "existing-moment",
+					filePath: path,
+					people: [{ raw: alice.id, target: alice.id, kind: "id" }],
+					personIds: [alice.id],
+					occurredOn: "2026-07-30",
+					actionable: true,
+					followUpActionable: false,
+				},
+			},
+		});
+		expect(mounted.content.querySelector<HTMLInputElement>(`input[value="${alice.filePath}"]`)?.checked).toBe(true);
+		await page.getByRole("searchbox", { name: "Personen zoeken", exact: true }).fill("Bob");
+		await page.getByRole("checkbox", { name: "Bob", exact: true }).element().focus();
+		await userEvent.keyboard(" ");
+		expect(mounted.content.querySelector<HTMLInputElement>(`input[value="${bob.filePath}"]`)?.checked).toBe(true);
+		expect(inputForLabel(mounted.content, "Pad bronnotitie").value).toBe(path);
+		expect(inputForLabel(mounted.content, "Pad bronnotitie").readOnly).toBe(true);
+		expect(mounted.updateContactMoment).not.toHaveBeenCalled();
+		await page.getByRole("button", { name: "Annuleren", exact: true }).click();
+		expect(mounted.updateContactMoment).not.toHaveBeenCalled();
+		expect(mounted.createContactMoment).not.toHaveBeenCalled();
+	});
+
+	it("requires an explicit participant and restores search focus after removing the last filtered selection", async () => {
+		const mounted = mountModal({ mode: { kind: "create", occurredOn: "2026-07-30", contactMomentId: "moment-empty" } });
+		const search = inputForLabel(mounted.content, "Search people");
+		expect(search.validity.valid).toBe(false);
+		mounted.form.requestSubmit();
+		expect(mounted.createContactMoment).not.toHaveBeenCalled();
+		await page.getByRole("checkbox", { name: "Alice", exact: true }).click();
+		expect(search.validity.valid).toBe(true);
+		await page.getByRole("searchbox", { name: "Search people", exact: true }).fill("no match");
+		await page.getByRole("button", { name: "Remove Alice", exact: true }).click();
+		expect(document.activeElement).toBe(search);
+		expect(search.validity.valid).toBe(false);
+		expect(mounted.content.textContent).toContain("No people selected");
+		expect(mounted.content.textContent).toContain("No people found");
+		mounted.modal.onClose();
+		expect(mounted.createContactMoment).not.toHaveBeenCalled();
+		expect(mounted.updateContactMoment).not.toHaveBeenCalled();
+	});
+
 	it("localizes fixed contact-moment-modal and accessible form text without changing stored values", () => {
 		const mounted = mountModal({ translator: createTranslator("nl-NL") });
 
@@ -204,7 +298,7 @@ describe("contact-moment modal", () => {
 		]);
 		expect(selectForLabel(mounted.content, "Relatie").value).toBe("");
 		expect(inputForLabel(mounted.content, "Datum contactmoment").value).toBe("2026-07-30");
-		expect(selectForLabel(mounted.content, "Personen").selectedOptions[0]?.value).toBe(alice.filePath);
+		expect(mounted.content.querySelector<HTMLInputElement>(`input[value="${alice.filePath}"]`)?.checked).toBe(true);
 		expect(
 			Array.from(selectForLabel(mounted.content, "Status opvolging").options, ({ value, textContent }) => ({
 				value,
@@ -222,12 +316,17 @@ describe("contact-moment modal", () => {
 
 	it("uses explicit accessible labels, focuses people and keeps advancement unchecked on every open", () => {
 		const first = mountModal();
-		const firstPeople = selectForLabel(first.content, "People");
+		const firstPeople = inputForLabel(first.content, "Search people");
 		const firstRelationship = selectForLabel(first.content, "Relationship");
 		const firstAdvance = inputForLabel(first.content, "Advance linked relationship's last contact to this date");
 
 		expect(document.activeElement).toBe(firstPeople);
-		expect(Array.from(firstPeople.selectedOptions, (option) => option.value)).toEqual([alice.filePath]);
+		expect(
+			Array.from(
+				first.content.querySelectorAll<HTMLInputElement>(".people-atlas-contact-candidates input:checked"),
+				(input) => input.value,
+			),
+		).toEqual([alice.filePath]);
 		expect(firstAdvance.checked).toBe(false);
 		expect(firstAdvance.parentElement?.hidden).toBe(true);
 
@@ -250,6 +349,27 @@ describe("contact-moment modal", () => {
 
 		buttonWithText(mounted.content, "Cancel").click();
 
+		expect(mounted.close).toHaveBeenCalledOnce();
+		expect(mounted.createContactMoment).not.toHaveBeenCalled();
+		expect(mounted.updateContactMoment).not.toHaveBeenCalled();
+		expect(mounted.retryContactMomentRelationship).not.toHaveBeenCalled();
+	});
+
+	it("cancels a cadence-prefilled contact while leaving relationship advancement unselected", () => {
+		const mounted = mountModal({
+			mode: { kind: "create", prefilledPersonPath: alice.filePath, prefilledRelationshipPath: relationship.filePath },
+		});
+		expect(
+			Array.from(
+				mounted.content.querySelectorAll<HTMLElement>(".people-atlas-contact-selected li"),
+				(row) => row.dataset.personPath,
+			),
+		).toEqual([alice.filePath]);
+		expect(selectForLabel(mounted.content, "Relationship").value).toBe(relationship.filePath);
+		expect(inputForLabel(mounted.content, "Advance linked relationship's last contact to this date").checked).toBe(
+			false,
+		);
+		buttonWithText(mounted.content, "Cancel").click();
 		expect(mounted.close).toHaveBeenCalledOnce();
 		expect(mounted.createContactMoment).not.toHaveBeenCalled();
 		expect(mounted.updateContactMoment).not.toHaveBeenCalled();
@@ -328,11 +448,15 @@ describe("contact-moment modal", () => {
 		expect(buttonWithText(mounted.content, "Save").disabled).toBe(true);
 		expect(
 			Array.from(
-				mounted.content.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-					"input, select, textarea",
-				),
+				mounted.content.querySelectorAll<
+					HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+				>("input, select, textarea, .people-atlas-contact-selected button"),
 			).every((item) => item.disabled),
 		).toBe(true);
+		const removePerson = mounted.content.querySelector<HTMLButtonElement>(".people-atlas-contact-selected button");
+		expect(removePerson).not.toBeNull();
+		removePerson?.click();
+		expect(mounted.content.querySelectorAll(".people-atlas-contact-selected li")).toHaveLength(1);
 		expect(createContactMoment).toHaveBeenCalledOnce();
 		expect(mounted.openFile).not.toHaveBeenCalled();
 

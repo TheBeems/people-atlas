@@ -53,7 +53,7 @@ export class ContactMomentModal extends Modal {
 	private readonly values: ContactMomentFormValues;
 	private readonly session: ContactMomentFormSession;
 	private pathManuallyEdited = false;
-	private peopleSelect: HTMLSelectElement | undefined;
+	private peopleSearch: HTMLInputElement | undefined;
 	private relationshipSelect: HTMLSelectElement | undefined;
 	private pathInput: HTMLInputElement | undefined;
 	private followUpStatusSelect: HTMLSelectElement | undefined;
@@ -121,7 +121,7 @@ export class ContactMomentModal extends Modal {
 	override onClose(): void {
 		this.session.cancel();
 		this.contentEl.replaceChildren();
-		this.peopleSelect = undefined;
+		this.peopleSearch = undefined;
 		this.relationshipSelect = undefined;
 		this.pathInput = undefined;
 		this.followUpStatusSelect = undefined;
@@ -143,36 +143,7 @@ export class ContactMomentModal extends Modal {
 		form.className = "people-atlas-contact-moment-form";
 
 		const peopleGroup = this.addGroup(form, t.groupPeople);
-		const peopleDescriptionId = `people-atlas-contact-moment-people-description-${++contactMomentModalSequence}`;
-		const peopleLabel = document.createElement("label");
-		const peopleId = `people-atlas-contact-moment-people-${++contactMomentModalSequence}`;
-		peopleLabel.htmlFor = peopleId;
-		peopleLabel.textContent = t.people;
-		const peopleDescription = document.createElement("small");
-		peopleDescription.id = peopleDescriptionId;
-		peopleDescription.textContent = t.peopleDescription;
-		this.peopleSelect = document.createElement("select");
-		this.peopleSelect.id = peopleId;
-		this.peopleSelect.multiple = true;
-		this.peopleSelect.size = Math.min(8, Math.max(3, this.context.people.length));
-		this.peopleSelect.required = true;
-		this.peopleSelect.setAttribute("aria-describedby", peopleDescriptionId);
-		for (const person of [...this.context.people].sort(comparePeople)) {
-			const option = document.createElement("option");
-			option.value = person.filePath;
-			option.textContent = `${person.name} — ${person.filePath}`;
-			option.selected = this.values.peoplePaths.includes(person.filePath);
-			this.peopleSelect.append(option);
-		}
-		this.peopleSelect.addEventListener("change", () => {
-			this.values.peoplePaths = Array.from(this.peopleSelect?.selectedOptions ?? [], (option) => option.value);
-			this.refreshRelationshipOptions();
-			this.refreshProposedPath();
-		});
-		const peopleField = document.createElement("div");
-		peopleField.className = "people-atlas-form-field";
-		peopleField.append(peopleLabel, peopleDescription, this.peopleSelect);
-		peopleGroup.append(peopleField);
+		this.buildPeoplePicker(peopleGroup);
 
 		this.relationshipSelect = this.addSelect(peopleGroup, {
 			label: t.relationship,
@@ -333,7 +304,115 @@ export class ContactMomentModal extends Modal {
 
 		this.refreshRelationshipOptions();
 		this.refreshProposedPath();
-		this.peopleSelect.focus();
+		this.peopleSearch?.focus();
+	}
+
+	private buildPeoplePicker(container: HTMLElement): void {
+		const document = container.ownerDocument;
+		const t = this.t.contactMomentModal;
+		const people = [...this.context.people].sort(comparePeople);
+		const byPath = new Map(people.map((person) => [person.filePath, person]));
+		const nameCounts = new Map<string, number>();
+		for (const person of people) {
+			const name = person.name.trim().toLocaleLowerCase();
+			nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+		}
+		const labelFor = (person: PersonRecord) =>
+			(nameCounts.get(person.name.trim().toLocaleLowerCase()) ?? 0) > 1
+				? `${person.name} — ${person.filePath}`
+				: person.name;
+		const search = this.addInput(container, {
+			label: t.searchPeople,
+			description: t.peopleDescription,
+			value: "",
+			type: "search",
+			onInput: () => renderCandidates(),
+		});
+		this.peopleSearch = search;
+		search.placeholder = t.searchPeoplePlaceholder;
+		search.addEventListener("keydown", (event) => {
+			if (event.key === "Enter") event.preventDefault();
+		});
+		const selectedHeading = document.createElement("strong");
+		selectedHeading.id = `people-atlas-contact-selected-${++contactMomentModalSequence}`;
+		selectedHeading.textContent = t.selectedPeople;
+		const selected = document.createElement("ul");
+		selected.className = "people-atlas-contact-selected";
+		selected.setAttribute("aria-labelledby", selectedHeading.id);
+		const selectedEmpty = document.createElement("small");
+		selectedEmpty.textContent = t.noSelectedPeople;
+		const summary = document.createElement("small");
+		summary.setAttribute("role", "status");
+		const candidates = document.createElement("ul");
+		candidates.className = "people-atlas-contact-candidates";
+		candidates.setAttribute("aria-label", t.people);
+		const checksByPath = new Map<string, HTMLInputElement>();
+
+		const renderSelected = () => {
+			selected.replaceChildren();
+			selectedEmpty.hidden = this.values.peoplePaths.length > 0;
+			search.setCustomValidity(this.values.peoplePaths.length > 0 ? "" : t.peopleRequired);
+			for (const path of this.values.peoplePaths) {
+				const person = byPath.get(path);
+				if (!person) continue;
+				const row = document.createElement("li");
+				row.dataset.personPath = path;
+				const name = document.createElement("span");
+				name.textContent = labelFor(person);
+				const remove = document.createElement("button");
+				remove.type = "button";
+				remove.textContent = t.remove;
+				remove.setAttribute("aria-label", t.removePerson({ name: labelFor(person) }));
+				remove.addEventListener("click", () => {
+					const heldFocus = document.activeElement === remove;
+					setSelected(path, false);
+					if (heldFocus) (selected.querySelector("button") ?? search).focus();
+				});
+				row.append(name, remove);
+				selected.append(row);
+			}
+		};
+		const setSelected = (path: string, checked: boolean) => {
+			const paths = new Set(this.values.peoplePaths);
+			if (checked) paths.add(path);
+			else paths.delete(path);
+			this.values.peoplePaths = people.filter((person) => paths.has(person.filePath)).map((person) => person.filePath);
+			const input = checksByPath.get(path);
+			if (input) input.checked = checked;
+			renderSelected();
+			this.refreshRelationshipOptions();
+			this.refreshProposedPath();
+		};
+		const renderCandidates = () => {
+			const query = search.value.trim().toLocaleLowerCase();
+			const visible = people.filter(
+				(person) =>
+					person.name.toLocaleLowerCase().includes(query) || person.filePath.toLocaleLowerCase().includes(query),
+			);
+			checksByPath.clear();
+			candidates.replaceChildren();
+			for (const person of visible) {
+				const row = document.createElement("li");
+				const label = document.createElement("label");
+				const input = document.createElement("input");
+				input.type = "checkbox";
+				input.value = person.filePath;
+				input.checked = this.values.peoplePaths.includes(person.filePath);
+				input.addEventListener("change", () => setSelected(person.filePath, input.checked));
+				const name = document.createElement("span");
+				name.textContent = labelFor(person);
+				label.append(input, name);
+				row.append(label);
+				candidates.append(row);
+				checksByPath.set(person.filePath, input);
+			}
+			summary.textContent =
+				visible.length > 0 ? t.peopleResults({ count: this.t.formatInteger(visible.length) }) : t.noPeopleFound;
+			candidates.hidden = visible.length === 0;
+		};
+		container.append(selectedHeading, selected, selectedEmpty, summary, candidates);
+		renderSelected();
+		renderCandidates();
 	}
 
 	private async submit(): Promise<void> {
@@ -361,8 +440,8 @@ export class ContactMomentModal extends Modal {
 			}
 			if (this.retryButton) this.retryButton.hidden = false;
 			for (const control of Array.from(
-				this.contentEl.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-					"input, select, textarea",
+				this.contentEl.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>(
+					"input, select, textarea, .people-atlas-contact-selected button",
 				),
 			)) {
 				control.disabled = true;

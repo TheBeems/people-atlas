@@ -5,6 +5,7 @@ import {
 	MAX_CENTER_HISTORY,
 	rememberCenter,
 	normalizeViewStates,
+	validateStoredViewStates,
 } from "../src/settings/view-state";
 
 describe("view state", () => {
@@ -34,5 +35,28 @@ describe("view state", () => {
 		});
 
 		expect(Object.keys(result)).toEqual(["valid"]);
+	});
+
+	it("preserves optional browsing choices and stable centers while retaining schema-1 legacy defaults", () => {
+		const state = {
+			...structuredClone(DEFAULT_VIEW_STATE),
+			rendererMode: "list" as const,
+			peopleScope: "all" as const,
+			followUpScope: "current" as const,
+			selectedCenterId: "alice",
+		};
+		expect(normalizeViewStates({ remembered: state }).remembered).toEqual(state);
+		expect(normalizeViewStates({ legacy: DEFAULT_VIEW_STATE }).legacy).toEqual(DEFAULT_VIEW_STATE);
+		for (const [field, value] of [
+			["rendererMode", "other"],
+			["peopleScope", "outside"],
+			["followUpScope", 2],
+			["selectedCenterId", " "],
+		]) {
+			const invalid = { ...state, [field as string]: value };
+			expect(normalizeViewStates({ invalid })).toEqual({});
+			expect(validateStoredViewStates({ invalid })).toContain("invalid");
+		}
+		expect(normalizeViewStates({ cleared: { ...state, selectedCenterId: null } }).cleared?.selectedCenterId).toBeNull();
 	});
 });

@@ -388,10 +388,14 @@ export function buildAtlasSnapshot(
 ): AtlasSnapshot {
 	const resolutionPeople = options.resolutionPeople ?? raw.people;
 	const outputPeople = raw.people;
-	const outputIdCounts = new Map<PersonId, number>();
-	for (const person of outputPeople) outputIdCounts.set(person.id, (outputIdCounts.get(person.id) ?? 0) + 1);
+	const pathsById = new Map<PersonId, Set<string>>();
+	for (const person of [...resolutionPeople, ...outputPeople]) {
+		const paths = pathsById.get(person.id) ?? new Set<string>();
+		paths.add(person.filePath);
+		pathsById.set(person.id, paths);
+	}
 	const duplicateOutputIds = new Set<PersonId>(
-		[...outputIdCounts.entries()].filter(([, count]) => count > 1).map(([id]) => id),
+		[...pathsById.entries()].filter(([, paths]) => paths.size > 1).map(([id]) => id),
 	);
 	const outputNodeIdByPath = new Map<string, NodeId>();
 	for (const person of outputPeople)
@@ -412,6 +416,7 @@ export function buildAtlasSnapshot(
 			kind: "person",
 			personId: person.id,
 			label: person.name,
+			aliases: [...person.aliases],
 			filePath: person.filePath,
 			photoPath: person.photoPath,
 			organisations: person.organisations,
@@ -585,6 +590,8 @@ export function buildAtlasSnapshot(
 			toRole: relationship.toRole,
 			closeness: relationship.closeness,
 			since: relationship.since,
+			until: relationship.until,
+			contactIntervalDays: relationship.contactIntervalDays,
 			lastContact: relationship.lastContact,
 			status: relationship.status,
 			filePath: relationship.filePath,

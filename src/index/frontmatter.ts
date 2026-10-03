@@ -1,5 +1,6 @@
 import { getAllTags, type App, type CachedMetadata, type TFile } from "obsidian";
 import { parsePersonBirthDate, validatePersonEmails, validatePersonPhones } from "../domain/person-profile";
+import { isCalendarDate, isContactIntervalDays } from "../domain/calendar-date";
 import { parsePersonReference, referenceKey } from "../domain/wikilink";
 import type {
 	AtlasDiagnostic,
@@ -53,14 +54,7 @@ function readNumber(frontmatter: Frontmatter, property: string): number | undefi
 }
 
 function isFullIsoCalendarDate(raw: string): boolean {
-	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-	const date = match ? new Date(`${raw}T00:00:00Z`) : undefined;
-	return Boolean(
-		date &&
-			date.getUTCFullYear() === Number(match?.[1]) &&
-			date.getUTCMonth() + 1 === Number(match?.[2]) &&
-			date.getUTCDate() === Number(match?.[3]),
-	);
+	return isCalendarDate(raw);
 }
 
 function readIsoDate(
@@ -69,9 +63,11 @@ function readIsoDate(
 	filePath: string,
 	diagnostics: AtlasDiagnostic[],
 ): string | undefined {
-	const raw = readString(frontmatter, property);
-	if (!raw) return undefined;
-	if (!isFullIsoCalendarDate(raw)) {
+	const authored = frontmatter[property];
+	if (authored === undefined || authored === null || authored === "") return undefined;
+	const raw = typeof authored === "string" ? authored.trim() : authored;
+	if (raw === "") return undefined;
+	if (!isCalendarDate(raw)) {
 		diagnostics.push({
 			id: `invalid-date:${filePath}:${property}`,
 			severity: "error",
@@ -82,6 +78,25 @@ function readIsoDate(
 		return undefined;
 	}
 	return raw;
+}
+
+function readContactInterval(
+	frontmatter: Frontmatter,
+	property: string,
+	filePath: string,
+	diagnostics: AtlasDiagnostic[],
+): number | undefined {
+	const raw = frontmatter[property];
+	if (raw === undefined || raw === null || raw === "") return undefined;
+	if (isContactIntervalDays(raw)) return raw;
+	diagnostics.push({
+		id: `invalid-contact-interval:${filePath}:${property}`,
+		severity: "error",
+		code: "invalid-relationship-contact-interval",
+		message: `Relationship “${filePath}” has an invalid ${property}; expected a positive whole number of days.`,
+		filePaths: [filePath],
+	});
+	return undefined;
 }
 
 function readStatus(
@@ -583,6 +598,26 @@ export function parseAtlasFile(
 		const status = readStatus(frontmatter, settings.statusProperty, file.path);
 		const fromRole = readString(frontmatter, settings.relationshipFromRoleProperty);
 		const toRole = readString(frontmatter, settings.relationshipToRoleProperty);
+		const since = readIsoDate(frontmatter, settings.sinceProperty, file.path, diagnostics);
+		let until = readIsoDate(frontmatter, settings.untilProperty, file.path, diagnostics);
+		const authoredBound = (property: string): boolean => {
+			const raw = frontmatter[property];
+			return raw !== undefined && raw !== null && !(typeof raw === "string" && !raw.trim());
+		};
+		if (
+			(authoredBound(settings.sinceProperty) && !since) ||
+			(authoredBound(settings.untilProperty) && !until) ||
+			(since && until && until < since)
+		) {
+			diagnostics.push({
+				id: `invalid-period:${file.path}`,
+				severity: "error",
+				code: "invalid-relationship-period",
+				message: `Relationship “${file.path}” has invalid period bounds; ${settings.untilProperty} must be a valid date on or after ${settings.sinceProperty}.`,
+				filePaths: [file.path],
+			});
+			until = undefined;
+		}
 		if (status.diagnostic) diagnostics.push(status.diagnostic);
 		if (Boolean(fromRole) !== Boolean(toRole)) {
 			diagnostics.push({
@@ -606,7 +641,14 @@ export function parseAtlasFile(
 				toRole,
 				types: readStringList(frontmatter, settings.relationshipTypesProperty),
 				closeness: rawCloseness === undefined ? undefined : Math.min(5, Math.max(1, rawCloseness)),
-				since: readIsoDate(frontmatter, settings.sinceProperty, file.path, diagnostics),
+				since,
+				until,
+				contactIntervalDays: readContactInterval(
+					frontmatter,
+					settings.contactIntervalDaysProperty,
+					file.path,
+					diagnostics,
+				),
 				lastContact: readIsoDate(frontmatter, settings.lastContactProperty, file.path, diagnostics),
 				status: status.status,
 			},

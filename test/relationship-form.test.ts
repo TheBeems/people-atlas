@@ -21,6 +21,8 @@ import {
 	type RelationshipMutationPort,
 } from "../src/editor/relationship-form";
 import { contactMomentWikilink } from "../src/mutations/contact-moment";
+import { captureRelationshipEditSourceBaseline } from "../src/mutations/relationship-source-guard";
+import { DEFAULT_SETTINGS } from "../src/settings/defaults";
 import { validatePeopleRootFolder } from "../src/settings/validate";
 
 const people: PersonRecord[] = [
@@ -300,6 +302,24 @@ describe("relationship form contract", () => {
 		});
 	});
 
+	it("round-trips periods/cadence and treats an explicit blank as removal", () => {
+		const original = editRelationshipFormValues(
+			{ ...relationship, until: "2026-10-03", contactIntervalDays: 30 },
+			people,
+			() => "People/Alice.md",
+		);
+		expect(original).toMatchObject({ until: "2026-10-03", contactIntervalDays: "30" });
+		expect(buildRelationshipUpdates(original, original, people)).toEqual({});
+		expect(buildRelationshipUpdates({ ...original, until: "", contactIntervalDays: "" }, original, people)).toEqual({
+			until: null,
+			contactIntervalDays: null,
+		});
+		expect(buildRelationshipCreateInput(original, people)).toMatchObject({
+			until: "2026-10-03",
+			contactIntervalDays: 30,
+		});
+	});
+
 	it("applies, detects, customizes and detaches a preset without losing copied values", () => {
 		const preset = {
 			id: "sibling",
@@ -360,7 +380,89 @@ describe("relationship form contract", () => {
 
 		const values = editRelationshipFormValues(stored, ambiguousPeople, () => "People/Alice.md");
 
-		expect(values.fromPath).toBe("person-alice");
+		expect(values.fromPath).toBe("");
+	});
+
+	it("leaves colliding wikilink evidence unselected and supports an explicit path repair", () => {
+		const competingPeople = people.map((person) => (person.id === "person-alice" ? { ...person, id: "Bob" } : person));
+		const stored: RelationshipRecord = {
+			...relationship,
+			to: { raw: "[[Bob]]", target: "Bob", kind: "wikilink", resolvedPath: "People/Bob.md" },
+		};
+		const original = editRelationshipFormValues(stored, competingPeople, () => undefined);
+		expect(original.toPath).toBe("");
+		expect(getRelationshipFormPresentation(original, competingPeople).toPerson).toBeUndefined();
+		expect(buildRelationshipUpdates({ ...original, toPath: "People/Bob.md" }, original, competingPeople)).toEqual({
+			to: "[[People/Bob]]",
+		});
+	});
+
+	it("does not rescue an unresolved wikilink with a matching person ID", () => {
+		const stored: RelationshipRecord = {
+			...relationship,
+			to: { raw: "[[person-bob]]", target: "person-bob", kind: "wikilink" },
+		};
+		expect(editRelationshipFormValues(stored, people, () => undefined).toPath).toBe("[[person-bob]]");
+	});
+
+	it("requires explicit canonical selection before saving an ambiguous endpoint", async () => {
+		const port = mutations();
+		const file = { path: relationship.filePath } as TFile;
+		const competingPeople = people.map((person) => (person.id === "person-alice" ? { ...person, id: "Bob" } : person));
+		const stored: RelationshipRecord = {
+			...relationship,
+			to: { raw: "[[Bob]]", target: "Bob", kind: "wikilink", resolvedPath: "People/Bob.md" },
+		};
+		const original = editRelationshipFormValues(stored, competingPeople, () => undefined);
+		const session = new RelationshipFormSession({ kind: "edit", file, original }, competingPeople, port);
+		expect(await session.submit({ ...original, closeness: "3" })).toEqual({
+			status: "error",
+			message: "Both relationship endpoints must be selected from indexed people.",
+		});
+		expect(port.updateRelationship).not.toHaveBeenCalled();
+		expect(await session.submit({ ...original, toPath: "People/Bob.md", closeness: "3" })).toMatchObject({
+			status: "success",
+		});
+		expect(port.updateRelationship).toHaveBeenCalledWith(file, { to: "[[People/Bob]]", closeness: 3 });
+	});
+
+	it("preserves an unresolved raw reference during unrelated metadata editing", async () => {
+		const port = mutations();
+		const file = { path: relationship.filePath } as TFile;
+		const stored: RelationshipRecord = {
+			...relationship,
+			to: { raw: "[[person-bob]]", target: "person-bob", kind: "wikilink" },
+		};
+		const original = editRelationshipFormValues(stored, people, () => undefined);
+		expect(original.toPath).toBe("[[person-bob]]");
+		expect(getRelationshipFormPresentation(original, people).toPerson).toBeUndefined();
+		const session = new RelationshipFormSession({ kind: "edit", file, original }, people, port);
+		expect(await session.submit({ ...original, closeness: "3" })).toMatchObject({ status: "success" });
+		expect(port.updateRelationship).toHaveBeenCalledWith(file, { closeness: 3 });
+	});
+
+	it("never turns an unresolved ID's raw text into a coincidentally matching path selection", () => {
+		const stored: RelationshipRecord = {
+			...relationship,
+			to: { raw: "People/Bob.md", target: "People/Bob.md", kind: "id" },
+		};
+		expect(editRelationshipFormValues(stored, people, () => undefined).toPath).toBe("");
+	});
+
+	it.each(["person-bob", "People/Bob.md", "[[People/Bob]]"])("keeps unique reference %s editable", (raw) => {
+		const reference = parsePersonReference(raw);
+		if (!reference) throw new Error("Expected a reference.");
+		const stored = { ...relationship, to: reference };
+		expect(editRelationshipFormValues(stored, people, () => "People/Bob.md").toPath).toBe("People/Bob.md");
+	});
+
+	it("keeps a same-person ID and wikilink resolution editable", () => {
+		const samePeople = people.map((person) => (person.id === "person-bob" ? { ...person, id: "Bob" } : person));
+		const reference = parsePersonReference("[[Bob]]");
+		if (!reference) throw new Error("Expected a reference.");
+		expect(
+			editRelationshipFormValues({ ...relationship, to: reference }, samePeople, () => "People/Bob.md").toPath,
+		).toBe("People/Bob.md");
 	});
 
 	it("preserves stored endpoint and role order while My person is second", () => {
@@ -517,6 +619,20 @@ describe("relationship form contract", () => {
 		expect(result.status).toBe("success");
 		expect(port.updateRelationship).toHaveBeenCalledWith(file, { closeness: 3 });
 		expect(port.createRelationship).not.toHaveBeenCalled();
+	});
+
+	it("retains the opening source baseline when submitting an edit", async () => {
+		const port = mutations();
+		const file = { path: relationship.filePath } as TFile;
+		const original = editRelationshipFormValues(relationship, people, () => undefined);
+		const sourceBaseline = captureRelationshipEditSourceBaseline(
+			file.path,
+			{ type: "relationship", relationship_id: relationship.id, closeness: 4 },
+			DEFAULT_SETTINGS,
+		);
+		const session = new RelationshipFormSession({ kind: "edit", file, original, sourceBaseline }, people, port);
+		expect(await session.submit({ ...original, closeness: "3" })).toMatchObject({ status: "success" });
+		expect(port.updateRelationship).toHaveBeenCalledWith(file, { closeness: 3 }, sourceBaseline);
 	});
 
 	it("validates only changed edit endpoints so historical unresolved people do not block metadata edits", async () => {

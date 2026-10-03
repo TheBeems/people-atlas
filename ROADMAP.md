@@ -38,10 +38,25 @@ integration order is:
 Ticket `Depends-On` fields remain authoritative where work can branch or must
 wait for an earlier outcome.
 
+## October 2026 product improvements
+
+Implemented under `.10x/tickets/2026-10-03-product-improvements.md`; independent
+reviews and the integrated validation ticket record delivery evidence.
+
+- [x] Alias/work/email/phone discovery with independent current/all-permitted
+      people and follow-up scopes, including Base admission and graph-cap fences.
+- [x] Stable-ID center restoration and optional remembered renderer modes/scopes.
+- [x] Complete filtered diagnostics, previewed existing-note adoption and explicit
+      missing/duplicate person-ID repair with per-note results.
+- [x] Reviewed schema 7 settings recovery with exact local backup and explicit root.
+- [x] Relationship end dates and desired contact interval fields, historical
+      network filtering, explicit-role family layout, shortest paths/common contacts.
+- [x] Follow-up history filters, reviewed one-week postponement/reopening and local
+      birthday/cadence attention without automatic notes or notifications.
+
 ## Later candidates requiring shaping
 
-Merge person, zoom-dependent clustering, PNG/SVG export, shortest paths,
-mutual contacts, communities/isolated-node analysis and suggestions from
+Merge person, zoom-dependent clustering, PNG/SVG export, communities/isolated-node analysis and suggestions from
 links or meeting notes have no active specification or executable ticket.
 They are candidates rather than implementation commitments.
 

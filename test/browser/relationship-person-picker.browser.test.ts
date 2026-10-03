@@ -30,6 +30,26 @@ afterEach(() => {
 });
 
 describe("relationship person picker", () => {
+	it("shows an unresolved raw reference without selecting or rewriting a person", () => {
+		const container = document.createElement("div");
+		const onInput = vi.fn();
+		document.body.append(container);
+		const picker = appendRelationshipPersonPicker(container, {
+			label: "First person",
+			description: "Choose a person",
+			value: "[[Historical Bob]]",
+			people,
+			onInput,
+			activate: () => undefined,
+		});
+		expect(picker.control.value).toBe("[[Historical Bob]]");
+		picker.control.focus();
+		expect(picker.control.getAttribute("aria-activedescendant")).toBeNull();
+		expect(onInput).not.toHaveBeenCalled();
+		picker.close();
+		expect(picker.control.value).toBe("[[Historical Bob]]");
+	});
+
 	it("owns combobox semantics, keyboard selection and close lifecycle", () => {
 		const container = document.createElement("div");
 		const onInput = vi.fn();

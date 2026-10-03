@@ -7,11 +7,17 @@ import type {
 	PersonId,
 	ProjectGraphOptions,
 } from "../domain/types";
+import { isAmbiguousAtlasNode } from "../domain/node-capabilities";
 
 const DEFAULT_HOPS = 2;
 const DEFAULT_MAX_NODES = 500;
 
-export function projectGraph(snapshot: AtlasSnapshot, options: ProjectGraphOptions = {}): AtlasSnapshot {
+export function projectGraph(
+	snapshot: AtlasSnapshot,
+	options: ProjectGraphOptions = {},
+	/** Relationship evidence from the same permitted population, before optional historical filtering. */
+	contactRelationshipEvidence: readonly AtlasEdge[] = snapshot.edges,
+): AtlasSnapshot {
 	const hops = normalizeHops(options.hops);
 	const maxNodes = normalizeMaxNodes(options.maxNodes);
 	const projectionMode = options.projectionMode ?? (options.centerId || options.centerPath ? "ego" : "free-network");
@@ -42,7 +48,7 @@ export function projectGraph(snapshot: AtlasSnapshot, options: ProjectGraphOptio
 	const limited = limitGraph(projectedNodes, projectedEdges, maxNodes);
 	const omittedNodes = snapshot.nodes.length - limited.nodes.length;
 	const omittedEdges = snapshot.edges.length - limited.edges.length;
-	const projectedContactMoments = projectContactMoments(snapshot, limited.nodes);
+	const projectedContactMoments = projectContactMoments(snapshot, limited.nodes, contactRelationshipEvidence);
 	return {
 		nodes: limited.nodes,
 		edges: limited.edges,
@@ -59,11 +65,12 @@ export function projectGraph(snapshot: AtlasSnapshot, options: ProjectGraphOptio
 function projectContactMoments(
 	snapshot: AtlasSnapshot,
 	nodes: readonly AtlasNode[],
+	contactRelationshipEvidence: readonly AtlasEdge[],
 ): { contactMoments: AtlasSnapshot["contactMoments"]; hiddenContactMomentCount: number } {
 	const nodeIds = new Set(nodes.map((node) => node.id));
 	const personIds = new Set(nodes.filter((node) => node.kind === "person").map((node) => node.personId ?? node.id));
 	const relationshipEdges = new Map<string, AtlasEdge[]>();
-	for (const edge of snapshot.edges) {
+	for (const edge of contactRelationshipEvidence) {
 		if (edge.inferred) continue;
 		const matches = relationshipEdges.get(edge.id) ?? [];
 		matches.push(edge);
@@ -101,10 +108,10 @@ function resolveCenter(
 		if (centerPath) return node.filePath === centerPath;
 		return node.personId === centerId || (!node.personId && node.id === centerId);
 	});
-	if (candidates.length === 1 && candidates[0]) return { node: candidates[0] };
+	if (candidates.length === 1 && candidates[0] && !isAmbiguousAtlasNode(candidates[0])) return { node: candidates[0] };
 	if (mode !== "configured" && !centerId && !centerPath) return {};
 	const requested = centerPath ?? centerId ?? "unknown";
-	const ambiguous = candidates.length > 1;
+	const ambiguous = candidates.length > 1 || candidates.some(isAmbiguousAtlasNode);
 	return {
 		diagnostic: {
 			id: `${ambiguous ? "projection-center-ambiguous" : "projection-center-unresolved"}:${requested}`,

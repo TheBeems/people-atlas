@@ -213,6 +213,12 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 			),
 			property("Closeness property", "Optional closeness value from 1 to 5.", "closenessProperty"),
 			property("Since property", "Optional ISO date when the relationship began.", "sinceProperty"),
+			property("Until property", "Optional ISO end date, inclusive and no earlier than since.", "untilProperty"),
+			property(
+				"Contact interval property",
+				"Optional positive whole days for the desired contact cadence.",
+				"contactIntervalDaysProperty",
+			),
 			property("Last contact property", "Optional ISO date for the last interaction.", "lastContactProperty"),
 			property("Status property", "Optional relationship lifecycle status.", "statusProperty"),
 			contactMomentProperty(
@@ -360,6 +366,21 @@ export class PeopleAtlasSettingTab extends PluginSettingTab {
 				type: "group",
 				heading: t.settingsGeneral,
 				items: [
+					...(this.plugin.canRecoverOlderSettings?.()
+						? [
+								{
+									name: t.recovery.settingsTitle,
+									desc: t.recovery.settingsExplanation,
+									render: (setting) => {
+										setting.addButton((button) =>
+											button
+												.setButtonText(t.recovery.reviewSettings)
+												.onClick(() => void this.plugin.openSettingsRecovery()),
+										);
+									},
+								} satisfies SettingDefinition,
+							]
+						: []),
 					peopleRootFolder as SettingDefinition,
 					myPerson as SettingDefinition,
 					relationshipTemplates as SettingDefinition,

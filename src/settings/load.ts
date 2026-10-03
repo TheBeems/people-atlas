@@ -12,11 +12,13 @@ import {
 } from "./validate";
 import type { PeopleAtlasSettings } from "./types";
 import { validateStoredViewStates } from "./view-state";
+import { loadSettingsRecoveryBackup, type SettingsRecoveryBackup } from "./recovery-backup";
 
 export interface PluginSettingsLoadResult {
 	settings: PeopleAtlasSettings;
 	writeEnabled: boolean;
 	error?: string;
+	recoveryBackup?: SettingsRecoveryBackup;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -71,7 +73,7 @@ export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
 		return {
 			settings: structuredClone(DEFAULT_SETTINGS),
 			writeEnabled: false,
-			error: `People Atlas settings use unsupported schema version ${String(raw.schemaVersion)}; recreate the test vault or delete the plugin data file.`,
+			error: `People Atlas settings use unsupported schema version ${String(raw.schemaVersion)}; the original data remains unchanged and writes are disabled.${raw.schemaVersion === 7 ? " Use Review older settings recovery to preview an explicit recovery." : " A compatible plugin version or reviewed repair is required."}`,
 		};
 	}
 	const shapeError = validateStoredShape(raw);
@@ -83,6 +85,7 @@ export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
 		};
 	}
 	try {
+		const recoveryBackup = loadSettingsRecoveryBackup(raw);
 		const rawPeopleRootFolderError =
 			typeof raw.peopleRootFolder === "string" ? validatePeopleRootFolder(raw.peopleRootFolder) : undefined;
 		if (rawPeopleRootFolderError) throw new Error(`peopleRootFolder is invalid: ${rawPeopleRootFolderError}`);
@@ -99,7 +102,7 @@ export function loadPluginSettings(raw: unknown): PluginSettingsLoadResult {
 		if (noteTypeValueError) throw new Error(noteTypeValueError);
 		const roleFormatError = validateRelationshipRoleFormatSetting(settings.relationshipRoleFormat);
 		if (roleFormatError) throw new Error(roleFormatError);
-		return { settings, writeEnabled: true };
+		return { settings, writeEnabled: true, ...(recoveryBackup ? { recoveryBackup } : {}) };
 	} catch (error) {
 		return {
 			settings: structuredClone(DEFAULT_SETTINGS),

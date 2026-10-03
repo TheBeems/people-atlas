@@ -6,8 +6,8 @@ import { DEFAULT_SETTINGS } from "../../src/settings/defaults";
 import "../../styles.css";
 
 const expectedFactor = inject("browserMatrixExpectedFactor");
-const primarySize = { width: 420, height: 320 };
-const resizedSize = { width: 510, height: 390 };
+const primarySize = { width: 420.34375, height: 320.21875 };
+const resizedSize = { width: 510.21875, height: 390.34375 };
 const matrixNode: AtlasNode = {
 	id: "matrix-person",
 	personId: "matrix-person",
@@ -123,6 +123,13 @@ function canvasDimensions(canvas: HTMLCanvasElement): {
 	};
 }
 
+function cssPixelLength(doc: Document, value: number): string {
+	// CSSOM serializes fractional pixel lengths; compare its exact native representation.
+	const style = doc.createElement("div").style;
+	style.width = `${value}px`;
+	return style.width;
+}
+
 async function waitFor(boundary: string, predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
 	const started = performance.now();
 	while (!predicate()) {
@@ -193,10 +200,11 @@ describe(`P7c renderer browser matrix at DPR ${expectedFactor}`, () => {
 
 		const primarySurface = (surface as HTMLElement).getBoundingClientRect();
 		expect(primarySurface.width).toBe(primarySize.width);
+		expect(Number.isInteger(primarySurface.width)).toBe(false);
 		expect(primarySurface.height).toBeGreaterThan(0);
 		await waitForCanvas("main-document scale", canvasElement, primarySurface.width, primarySurface.height);
-		expect(canvasElement.style.width).toBe(`${primarySurface.width}px`);
-		expect(canvasElement.style.height).toBe(`${primarySurface.height}px`);
+		expect(canvasElement.style.width).toBe(cssPixelLength(canvasElement.ownerDocument, primarySurface.width));
+		expect(canvasElement.style.height).toBe(cssPixelLength(canvasElement.ownerDocument, primarySurface.height));
 
 		await waitFor("main-document far-pixel draw", () => {
 			const context = canvasElement.getContext("2d");

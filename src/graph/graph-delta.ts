@@ -18,6 +18,7 @@ import { filteredEndpointDiagnostic, inferredContactEdgeId } from "./graph-eleme
 
 export interface ApplyGraphDeltaOptions {
 	resolutionPeople?: PersonRecord[];
+	graphResolutionPeople?: PersonRecord[];
 	visiblePaths?: Set<string>;
 	contactMoments?: readonly ContactMomentRecord[];
 	relationships?: readonly RelationshipRecord[];
@@ -233,6 +234,8 @@ function addRelationshipEdge(
 		toRole: relationship.toRole,
 		closeness: relationship.closeness,
 		since: relationship.since,
+		until: relationship.until,
+		contactIntervalDays: relationship.contactIntervalDays,
 		lastContact: relationship.lastContact,
 		status: relationship.status,
 		filePath: relationship.filePath,
@@ -268,6 +271,7 @@ export function applyGraphDelta(
 			kind: "person",
 			personId: person.id,
 			label: person.name,
+			aliases: [...person.aliases],
 			filePath: person.filePath,
 			photoPath: person.photoPath,
 			organisations: person.organisations,
@@ -308,7 +312,7 @@ export function applyGraphDelta(
 		idRemap.set(oldId, desired);
 		remappedNodes.set(desired, { ...node, id: desired });
 	}
-	const context = buildResolutionContext(people, remappedNodes, resolveLink);
+	const context = buildResolutionContext(options.graphResolutionPeople ?? people, remappedNodes, resolveLink);
 	const previousNodeById = new Map(previous.nodes.map((node) => [node.id, node]));
 
 	const edges = new Map<string, AtlasEdge>();

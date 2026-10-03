@@ -18,6 +18,10 @@ People Atlas maps people, explicit relationships, and unresolved person links st
 - An incremental vault index that reparses changed files without rescanning the whole vault.
 - A standalone graph view and custom Bases view using the same graph snapshot.
 - Deterministic layout, pan, zoom, node dragging, touch gestures, and a keyboard-accessible list view.
+- Search names, aliases, work details, email addresses and phone numbers across
+  this view or an explicitly selected complete permitted population.
+- Remembered view modes, populations and stable-ID centers; optional family
+  layout, relationship date filtering, shortest paths and common contacts.
 - Curated person creation and editing for names, aliases, organisations, photos, optional profile details, and
   validated linked people.
 - Vault-only photo selection and profile images, plus bounded graph avatars
@@ -31,6 +35,8 @@ People Atlas maps people, explicit relationships, and unresolved person links st
   Follow-ups view.
 - `@` suggestions that insert stable wikilinks and create person notes only after an explicit choice.
 - Diagnostics for duplicate IDs, unresolved wikilinks, and broken relationship endpoints.
+- Complete filtered diagnostics, reviewed existing-note adoption and person-ID
+  repair, plus explicit recovery of supported older settings with a local backup.
 
 ## Compatibility
 
@@ -74,8 +80,9 @@ After People Atlas is listed:
 7. Run **People Atlas: Log contact** globally or from a selected canonical
    person. Use **Edit current contact moment** while a contact-moment note is
    active.
-8. Run **People Atlas: Open follow-ups** to review Overdue, Due today, and
-   Upcoming work and explicitly mark a follow-up done or dismissed.
+8. Run **People Atlas: Open follow-ups** for all permitted people, or choose
+   **Follow-up** in either atlas for its current population. Review open work,
+   postpone one week, mark done/dismissed, or filter completed history and reopen.
 
 Relationship notes default to `People/Relationships/<First person> - <Second person>.md`. The proposed path is reviewable, and existing notes are never overwritten.
 
@@ -201,10 +208,69 @@ canonical relationship does not change it by itself. The optional
 `last_contact` checkbox starts unchecked and only advances an older date; it
 never changes relationship status, roles, types, or template metadata.
 Selecting a canonical person shows bounded recent history and its next open
-follow-up. The Follow-ups view groups open work by local calendar date;
-done/dismissed actions update only that moment's configured status property.
+follow-up. **Follow-up status** defaults to **Open**, with **Completed**,
+**Dismissed** and **All** available. Terminal rows retain their status instead of
+becoming overdue. Done/dismissed/reopen actions change only status; **Postpone
+one week** shows the resulting date and changes only the due date. Seven calendar
+days are added to the later of today and the existing due date. Changed sources
+must be reviewed again before saving.
+
+The same population also shows birthdays today and in the next 30 calendar days.
+Age appears only when the birth year is stored; February 29 appears only in leap
+years. Desired contact intervals provide read-only suggestions from recorded
+contacts, with an explicit **Log contact** action. Opening or cancelling this
+dialog changes no notes, and relationship advancement starts unchecked.
+
+**People to search** and **Follow-ups for** independently offer **This view** or
+**All people**. All people includes the full population before the graph cap or
+network/date projection. In Bases this option is **All people in this Base** and
+never widens its filters. All-person attention uses today's calendar even when
+the network displays a historical date; network comparisons retain that date.
+Searching or selecting a result does not recenter or move the camera. Its exact
+person details/actions remain available outside the graph. Each view remembers
+its mode and population choices; centers restore by stable ID after renaming.
 
 Additional examples are available under [`examples/`](examples/).
+
+Optional relationship-note fields `until: YYYY-MM-DD` and
+`contact_interval_days: 30` record an inclusive end date and a desired contact
+interval in positive whole days. The end date cannot precede `since`. Blank
+fields remove these values only after an explicit Save. Neither field changes
+status, roles or `last_contact`. Invalid authored periods/cadence are diagnosed,
+not normalized. Contact suggestions require an observed contact date and exclude
+ended or ambiguous relationships.
+
+Both atlas views offer an optional **Relationships on date** filter and a
+**Family** layout. The date filter applies before ego traversal; undated bounds
+remain unknown. Contact moments remain observations and are shown when their
+participants belong to the permitted population. Family generations come only
+from literal paired `parent`/`child` roles; cycles/conflicts use a stable flat
+fallback. Radial remains the default. Layout/date choices and dragged layouts are
+isolated per view.
+
+Select a person and expand **Network insight** to choose a counterpart by its
+canonical record. Shortest paths and common contacts use existing connections in
+the selected population, distinguish relationship notes from Linked people, and
+exclude unresolved or ambiguous people. Bases never admits people outside its
+filters. Native translated dropdowns keep the existing center/projection keys.
+[`Family.base`](examples/Family.base), [`Work.base`](examples/Work.base) and
+[`Follow-up.base`](examples/Follow-up.base) provide saved atlas/table views. Adjust
+their example folder/organisation filters and field names to your vault; choose
+**Follow-up** inside the follow-up atlas to view the plugin's shared queue.
+
+Use **People Atlas: Open all diagnostics** for the complete filterable list and
+exact source actions. **Adopt existing person notes** previews classification,
+property mappings and each proposed ID at the existing path. It preserves unique
+authored IDs, note bodies and unrelated properties. Duplicate-ID repair changes
+only the explicitly chosen note; ID-based references need a separate review.
+Batch results are reported per note and completed rows are not applied twice.
+Base diagnostics and repair errors retain only their permitted source context.
+
+**Review older settings recovery** supports the inspected schema 7 configuration.
+Review retained/adjusted/reset/unsupported keys and choose the target People root before
+confirmation. The exact original plugin data stays in a local recovery backup,
+including after later settings saves. This does not move or migrate notes;
+unsupported, future or malformed configurations remain read-only.
 
 ## Privacy and data access
 
@@ -216,6 +282,8 @@ Additional examples are available under [`examples/`](examples/).
 - It creates or updates person, relationship, and contact-moment notes only
   after an explicit user action and validation.
 - It stores plugin settings and view state through Obsidian's plugin data API.
+- Explicit settings recovery reads only this plugin's local `data.json` to retain
+  the exact original backup; ordinary loading and saving use the plugin data API.
 
 ## Development
 
@@ -242,6 +310,12 @@ npm run verify:reproducible
 ```
 
 `npm run check` covers formatting, lint, types, tests, the production build, release metadata, bundle size, and the Community Plugins readiness contract. `npm run community:check` can run the directory-specific contract separately.
+
+Browser tests use Playwright's managed Chromium by default. To explicitly test
+an installed Edge instead, set `PEOPLE_ATLAS_BROWSER_CHANNEL=msedge` before
+running the same commands (PowerShell: `$env:PEOPLE_ATLAS_BROWSER_CHANNEL='msedge'`).
+This also applies to integration and DPR tests; report the chosen browser with
+the results. These controlled browser tests do not replace testing in Obsidian.
 
 The release tag must exactly match `manifest.json.version` without a `v` prefix. The release workflow verifies the remote tag revision, repeats the build gates, attests the artifacts, and attaches only `main.js`, `manifest.json`, and `styles.css`.
 
